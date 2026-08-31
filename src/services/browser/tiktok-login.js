@@ -123,10 +123,22 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   }
 
   await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForTimeout(1500);
-  await selectUsernameLogin(page);
   const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
   let captcha = await hasCaptcha();
+  // The direct email URL can redirect to /login and render the method chooser
+  // asynchronously. Keep selecting the ordinary username path until the real
+  // credential form is present, instead of failing after one short delay.
+  for (let i = 0; !captcha && i < 40; i += 1) {
+    const usernameReady = await firstVisible(page, [
+      'input[name="username"]', 'input[autocomplete="username"]', 'input[placeholder*="Email"]',
+      'input[placeholder*="email"]', 'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
+    ]);
+    const passwordReady = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
+    if (usernameReady && passwordReady) break;
+    await selectUsernameLogin(page);
+    await page.waitForTimeout(500);
+    captcha = await hasCaptcha();
+  }
   let screenshot = '';
   if (captcha) {
     screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
