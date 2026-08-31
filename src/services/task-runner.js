@@ -62,7 +62,7 @@ async function execute(task) {
 }
 async function tick() {
   if (busy) return;
-  const task = db.prepare("SELECT * FROM tasks WHERE status='queued' AND (scheduled_at IS NULL OR scheduled_at <= CURRENT_TIMESTAMP) ORDER BY id ASC LIMIT 1").get();
+  const task = db.prepare("SELECT * FROM tasks WHERE status='queued' AND (scheduled_at IS NULL OR datetime(scheduled_at) <= datetime('now')) ORDER BY id ASC LIMIT 1").get();
   if (!task) return;
   busy = true;
   try { await execute(task); } catch (error) { db.prepare("UPDATE tasks SET status='failed',fail_count=fail_count+1,finished_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id); event(task.id, `任务异常终止：${error.message}`, 'error'); } finally { busy = false; }
