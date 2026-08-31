@@ -149,6 +149,8 @@ router.get('/:id/runs', (req, res) => {
   return ok(res, rows);
 });
 
+router.get('/:id/results.csv', (req,res)=>{const task=db.prepare('SELECT id FROM tasks WHERE id=?').get(req.params.id);if(!task)return fail(res,'任务不存在',404);const rows=db.prepare('SELECT r.id,a.username,r.action_type,r.status,r.error_message,r.created_at FROM task_action_results r JOIN accounts a ON a.id=r.account_id WHERE r.task_id=? ORDER BY r.id').all(task.id);const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;const csv=['ID,账号,动作类型,状态,错误信息,时间',...rows.map(r=>[r.id,r.username,r.action_type,r.status,r.error_message,r.created_at].map(esc).join(','))].join('\\r\\n');res.setHeader('Content-Type','text/csv; charset=utf-8');res.setHeader('Content-Disposition','attachment; filename="task-results.csv"');return res.send('\\ufeff'+csv);});
+
 router.get('/:id/results', (req,res)=>{const task=db.prepare('SELECT id FROM tasks WHERE id=?').get(req.params.id);if(!task)return fail(res,'任务不存在',404);return ok(res,db.prepare(`SELECT r.id,r.account_id,a.username,r.action_type,r.status,r.result_json,r.error_message,r.created_at FROM task_action_results r JOIN accounts a ON a.id=r.account_id WHERE r.task_id=? ORDER BY r.id DESC LIMIT 500`).all(task.id).map(x=>({...x,result:JSON.parse(x.result_json||'{}'),result_json:undefined})));});
 
 router.post('/:id/cancel', (req, res) => {
