@@ -10,6 +10,8 @@ const defaults = {
   browserApiToken: '',
   useSystemProxy: true,
   messageSyncInterval: 10,
+  taskConcurrency: 1,
+  taskAccountTimeout: 180,
   language: 'zh-CN',
 };
 
