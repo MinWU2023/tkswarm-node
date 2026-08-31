@@ -165,7 +165,7 @@ router.post('/:id/retry', (req, res) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
   if (task.status !== 'failed') return fail(res, '只有失败任务可以重试', 409);
-  if (!['sync', 'profile'].includes(task.type)) return fail(res, '当前任务类型暂不支持自动重试', 409);
+  if (!['sync', 'profile', 'publish', 'message'].includes(task.type)) return fail(res, '当前任务类型不支持自动重试', 409);
   let payload = {};
   try { payload = JSON.parse(task.payload || '{}'); } catch {}
   payload.onlyFailed = true;
