@@ -7,6 +7,7 @@ const router = express.Router();
 const defaults = {
   browserType: 'bit',
   browserApiUrl: 'http://127.0.0.1:54345',
+  browserApiToken: '',
   useSystemProxy: true,
   messageSyncInterval: 10,
   language: 'zh-CN',
