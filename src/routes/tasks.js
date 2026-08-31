@@ -103,6 +103,12 @@ router.post('/:id/preflight', (req, res) => {
   return ok(res, { canRun: issues.length === 0, issues });
 });
 
+router.post('/:id/message-preview', (req,res)=>{
+  const task=db.prepare('SELECT id,type,payload FROM tasks WHERE id=?').get(req.params.id); if(!task)return fail(res,'任务不存在',404); if(task.type!=='message')return fail(res,'只有消息任务支持内容预览',400);
+  let payload={};try{payload=JSON.parse(task.payload||'{}')}catch{}; const template=payload.templateId?db.prepare('SELECT name,content,variables,enabled FROM message_templates WHERE id=?').get(payload.templateId):null; if(!template)return fail(res,'消息模板不存在',404);
+  const variables=req.body&&typeof req.body.variables==='object'&&req.body.variables?req.body.variables:{}; const rendered=template.content.replace(/\{\{?\s*([a-zA-Z0-9_]+)\s*\}?\}/g,(_,key)=>variables[key]===undefined?`{${key}}`:String(variables[key])); return ok(res,{template:template.name,enabled:Boolean(template.enabled),variables,content:rendered},'消息内容预览生成');
+});
+
 router.post('/:id/prepare', (req, res) => {
   const task = db.prepare('SELECT id,name,type,status,total_count FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
