@@ -39,8 +39,17 @@ async function preparePublish(accountId, materialId, title='', caption='') {
     const session=await inspectTikTokSession(connection.ws); if(!session.loggedIn) throw new Error('当前浏览器没有有效 TikTok 登录状态');
     const before=await capture(connection.page,accountId,'publish','before'); const security=await inspectPage(connection.page);
     if(security.blocked)return {status:'security_paused',reason:security.reason,screenshot:before,manualRequired:true};
-    const input=connection.page.locator('input[type=file]').first(); if(await input.count()===0)throw new Error('未找到视频上传控件');
-    await input.setInputFiles(material.file_path); await connection.page.waitForTimeout(1500);
+    let input=connection.page.locator('input[type=file]').first();
+    if(await input.count()===0){
+      const triggers=connection.page.getByText(/上传视频|Upload video|Select video|选择视频/i).first();
+      if(await triggers.count()) { await triggers.click().catch(()=>{}); await connection.page.waitForTimeout(1200); }
+      input=connection.page.locator('input[type=file]').first();
+    }
+    if(await input.count()===0){
+      for(const frame of connection.page.frames()) { const candidate=frame.locator('input[type=file]').first(); if(await candidate.count()){input=candidate;break;} }
+    }
+    if(await input.count()===0){const info=await inspectPage(connection.page);throw new Error(`未找到视频上传控件（当前页面：${info.url||connection.page.url()}）`);}
+    await input.setInputFiles(material.file_path); await connection.page.waitForTimeout(2000);
     const textareas=connection.page.locator('textarea'); if(title||caption) await textareas.first().fill(`${title}${title&&caption?'\n':''}${caption}`).catch(()=>{});
     const prepared=await capture(connection.page,accountId,'publish','prepared'); const after=await inspectPage(connection.page);
     if(after.blocked)return {status:'security_paused',reason:after.reason,screenshot:prepared,manualRequired:true};
