@@ -6,6 +6,7 @@ const { BitBrowserProvider } = require('../services/browser/bit-browser-provider
 const { inspectTikTokSession } = require('../services/browser/cdp-client');
 const { loginAssist, closeSession } = require('../services/browser/tiktok-login');
 const { syncProfile, getProfile, syncVideos, getVideos, getStats } = require('../services/browser/tiktok-data');
+const { preparePublish } = require('../services/browser/tiktok-actions');
 
 const router = express.Router();
 
@@ -49,6 +50,8 @@ async function createProfileForAccount(provider, account) {
   }
   return { accountId: account.id, username: account.username, profileId: profile.id, profileName: profile.name };
 }
+
+router.post('/accounts/:accountId/publish-prepare', async (req,res)=>{try{const accountId=Number(req.params.accountId);const materialId=Number(req.body?.materialId);if(!Number.isInteger(materialId)||materialId<1)return fail(res,'请选择素材',400);const result=await preparePublish(accountId,materialId,String(req.body?.title||''),String(req.body?.caption||''));return ok(res,result,result.status==='security_paused'?'检测到安全验证，任务已暂停':'发布内容已准备，等待人工确认');}catch(error){req.log?.error?.({accountId:req.params.accountId,error:error.message},'publish preparation failed');return fail(res,error.message,422);}});
 
 router.get('/status', async (req, res) => {
   const provider = new BitBrowserProvider();
