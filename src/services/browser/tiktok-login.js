@@ -18,6 +18,39 @@ async function firstVisible(page, selectors) {
   return null;
 }
 
+async function firstVisibleText(page, texts) {
+  for (const text of texts) {
+    const locator = page.getByText(text, { exact: true }).first();
+    if (await locator.count() && await locator.isVisible().catch(() => false)) return locator;
+  }
+  return null;
+}
+
+async function selectUsernameLogin(page) {
+  // TikTok sometimes redirects the direct email URL back to the login-method
+  // chooser. Select only the ordinary phone/email/username path; never choose
+  // an external social-login provider on the user's behalf.
+  if (/tiktok\.com\/login\/?(?:\?|$)/i.test(page.url())) {
+    const method = await firstVisibleText(page, [
+      'Use phone / email / username', '使用手机号 / 邮箱 / 用户名',
+      '使用手机号/邮箱/用户名',
+    ]);
+    if (method) {
+      await method.click();
+      await page.waitForTimeout(800);
+    }
+  }
+  if (/\/login\/phone-or-email\/?(?:\?|$)/i.test(page.url())) {
+    const email = await firstVisibleText(page, [
+      'Log in with email or username', '使用邮箱或用户名登录', '使用邮箱/用户名登录',
+    ]);
+    if (email) {
+      await email.click();
+      await page.waitForTimeout(800);
+    }
+  }
+}
+
 async function getSession(profileId, provider) {
   const existing = sessions.get(profileId);
   if (existing && existing.browser.isConnected() && !existing.page.isClosed()) return existing;
@@ -91,6 +124,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
 
   await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(1500);
+  await selectUsernameLogin(page);
   const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
   let captcha = await hasCaptcha();
   let screenshot = '';
