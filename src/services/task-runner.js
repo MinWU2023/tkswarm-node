@@ -14,6 +14,7 @@ function accountsFor(task) {
   return db.prepare(`SELECT a.id FROM accounts a ${where} ORDER BY a.id ASC LIMIT @limit`).all(params);
 }
 function timeout(ms) { return new Promise((_, reject) => setTimeout(() => reject(new Error(`账号处理超时（${ms} 秒）`)), ms * 1000)); }
+function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function processAccount(task, account, timeoutSeconds) {
   event(task.id, `开始处理账号 #${account.id}`);
   const run = db.prepare("INSERT INTO task_runs(task_id,account_id,status) VALUES (?,?,'running')").run(task.id, account.id);
@@ -36,12 +37,14 @@ async function execute(task) {
   const accounts = accountsFor(task);
   const concurrency = Math.min(3, Math.max(1, Number(setting('taskConcurrency', 1)) || 1));
   const timeoutSeconds = Math.min(600, Math.max(30, Number(setting('taskAccountTimeout', 180)) || 180));
-  event(task.id, `任务开始执行，共 ${accounts.length} 个账号，并发数 ${concurrency}，单账号超时 ${timeoutSeconds} 秒`);
+  const batchInterval = Math.min(60000, Math.max(0, Number(setting('taskBatchInterval', 3000)) || 0));
+  event(task.id, `任务开始执行，共 ${accounts.length} 个账号，并发数 ${concurrency}，单账号超时 ${timeoutSeconds} 秒，批次间隔 ${batchInterval} 毫秒`);
   db.prepare("UPDATE tasks SET total_count=?,success_count=0,fail_count=0,status='running',started_at=COALESCE(started_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accounts.length, task.id);
   for (let i = 0; i < accounts.length; i += concurrency) {
     const current = db.prepare('SELECT status FROM tasks WHERE id=?').get(task.id);
     if (!current || current.status === 'paused' || current.status === 'cancelled') return;
     await Promise.all(accounts.slice(i, i + concurrency).map(account => processAccount(task, account, timeoutSeconds)));
+    if (i + concurrency < accounts.length && batchInterval > 0) await delay(batchInterval);
   }
   const final = db.prepare('SELECT status,fail_count FROM tasks WHERE id=?').get(task.id);
   if (final && !['paused','cancelled'].includes(final.status)) {

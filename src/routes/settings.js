@@ -12,6 +12,8 @@ const defaults = {
   messageSyncInterval: 10,
   taskConcurrency: 1,
   taskAccountTimeout: 180,
+  taskBatchInterval: 3000,
+  taskMaxRetries: 1,
   language: 'zh-CN',
 };
 
