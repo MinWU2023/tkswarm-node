@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
 const { z } = require('zod');
 const { db } = require('../db');
 const { ok, fail } = require('../http');
@@ -50,6 +52,9 @@ async function createProfileForAccount(provider, account) {
   }
   return { accountId: account.id, username: account.username, profileId: profile.id, profileName: profile.name };
 }
+
+router.get('/accounts/:accountId/diagnostics', (req,res)=>{const dir=path.resolve(__dirname,'../data/automation');const marker=`account-${Number(req.params.accountId)}-`;const files=fs.existsSync(dir)?fs.readdirSync(dir).filter(name=>name.includes(marker)).sort().reverse().slice(0,100):[];return ok(res,files.map(name=>({name,download:`/api/browser/diagnostics/${encodeURIComponent(name)}`})));});
+router.get('/diagnostics/:name', (req,res)=>{const name=path.basename(req.params.name);if(!/^\\d+-account-\\d+-(publish|message)-[a-z]+\\.png$/.test(name))return fail(res,'诊断文件无效',400);const file=path.resolve(__dirname,'../data/automation',name);if(!fs.existsSync(file))return fail(res,'诊断文件不存在',404);return res.sendFile(file);});
 
 router.post('/accounts/:accountId/message-prepare', async (req,res)=>{try{const content=String(req.body?.content||'').trim();if(!content)return fail(res,'消息内容不能为空',400);const result=await prepareMessage(Number(req.params.accountId),content,String(req.body?.recipient||''));return ok(res,result,result.status==='security_paused'?'检测到安全验证，任务已暂停':'消息已准备，等待人工确认');}catch(error){req.log?.error?.({accountId:req.params.accountId,error:error.message},'message preparation failed');return fail(res,error.message,422);}});
 

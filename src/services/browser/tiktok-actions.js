@@ -3,6 +3,7 @@ const { BitBrowserProvider } = require('./bit-browser-provider');
 const { inspectTikTokSession } = require('./cdp-client');
 const { inspectPage, capture, classify } = require('../automation-guard');
 const { db } = require('../../db');
+const { waitForSlot } = require('../action-rate-limit');
 
 async function connectAccount(accountId, url) {
   const account=db.prepare('SELECT id,username,browser_profile_id FROM accounts WHERE id=?').get(accountId);
@@ -17,6 +18,7 @@ async function connectAccount(accountId, url) {
 }
 async function closeConnection(connection){if(!connection)return;await connection.browser.close().catch(()=>{});await connection.provider.close(connection.account.browser_profile_id).catch(()=>{});}
 async function prepareMessage(accountId, content, recipient='') {
+  const wait=waitForSlot(`message:${accountId}`,3000); if(wait) await new Promise(resolve=>setTimeout(resolve,wait));
   const connection=await connectAccount(accountId,'https://www.tiktok.com/messages'); try {
     const session=await inspectTikTokSession(connection.ws); if(!session.loggedIn) throw new Error('当前浏览器没有有效 TikTok 登录状态');
     const before=await capture(connection.page,accountId,'message','before'); const security=await inspectPage(connection.page);
@@ -30,6 +32,7 @@ async function prepareMessage(accountId, content, recipient='') {
 }
 
 async function preparePublish(accountId, materialId, title='', caption='') {
+  const wait=waitForSlot(`publish:${accountId}`,3000); if(wait) await new Promise(resolve=>setTimeout(resolve,wait));
   const material=db.prepare('SELECT id,name,file_path,file_name,mime_type,size_bytes,status FROM materials WHERE id=?').get(materialId);
   if(!material) throw new Error('素材不存在'); if(material.status!=='ready') throw new Error('素材状态不可用');
   const connection=await connectAccount(accountId,'https://www.tiktok.com/upload'); try {
