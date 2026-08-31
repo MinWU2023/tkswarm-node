@@ -43,6 +43,7 @@ router.get('/:id/runs', (req, res) => {
 router.post('/:id/cancel', (req, res) => {
   const result = db.prepare("UPDATE tasks SET status='cancelled', finished_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('queued','running','paused')").run(req.params.id);
   if (!result.changes) return fail(res, '任务不存在或当前不能取消', 409);
+  db.prepare("UPDATE task_runs SET status='skipped', error_message='任务被取消', finished_at=CURRENT_TIMESTAMP WHERE task_id=? AND status='running'").run(req.params.id);
   return ok(res, null, '任务已取消');
 });
 
