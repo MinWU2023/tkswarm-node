@@ -13,6 +13,15 @@ const schema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
 });
 
+router.post('/batch-retry', (req, res) => {
+  const ids = Array.isArray(req.body?.taskIds) ? [...new Set(req.body.taskIds.map(Number).filter(Number.isInteger))].slice(0, 100) : [];
+  if (!ids.length) return fail(res, '请选择失败任务', 400);
+  const placeholders = ids.map(() => '?').join(',');
+  const result = db.prepare(`UPDATE tasks SET status='queued', payload=json_set(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END, '$.onlyFailed', 1), finished_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id IN (${placeholders}) AND status='failed' AND type IN ('sync','profile')`).run(...ids);
+  db.prepare(`INSERT INTO task_events(task_id,level,message) SELECT id,'info','失败账号已批量重新进入队列' FROM tasks WHERE id IN (${placeholders}) AND status='queued'`).run(...ids);
+  return ok(res, { requested: ids.length, changed: result.changes }, '批量重试已提交');
+});
+
 router.post('/batch-action', (req, res) => {
   const ids = Array.isArray(req.body?.taskIds) ? [...new Set(req.body.taskIds.map(Number).filter(Number.isInteger))].slice(0, 100) : [];
   const action = req.body?.action;
