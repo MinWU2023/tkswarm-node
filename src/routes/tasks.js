@@ -33,6 +33,17 @@ router.post('/', (req, res) => {
   return ok(res, { id: result.lastInsertRowid, ...b, status: 'draft' }, '任务已创建', 201);
 });
 
+router.put('/:id', (req, res) => {
+  const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id);
+  if (!task) return fail(res, '任务不存在', 404);
+  if (!['draft', 'paused', 'failed'].includes(task.status)) return fail(res, '只有草稿、暂停或失败任务可以编辑', 409);
+  const b = schema.parse(req.body);
+  db.prepare(`UPDATE tasks SET name=@name,type=@type,group_id=@groupId,total_count=@totalCount,scheduled_at=@scheduledAt,payload=@payload,updated_at=CURRENT_TIMESTAMP WHERE id=@id`)
+    .run({ ...b, id: task.id, payload: JSON.stringify(b.payload) });
+  db.prepare("INSERT INTO task_events(task_id,level,message) VALUES (?, 'info', '任务配置已更新')").run(task.id);
+  return ok(res, { id: task.id, ...b, status: task.status }, '任务已更新');
+});
+
 router.get('/:id/events', (req, res) => {
   const task = db.prepare('SELECT id FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
