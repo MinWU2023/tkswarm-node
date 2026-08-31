@@ -52,6 +52,8 @@ async function syncProfile(accountId) {
     profile.displayName = title.replace(/\s*\|\s*TikTok.*$/i, '').trim() || account.username;
     const avatar = await page.locator('img').first().getAttribute('src').catch(() => '');
     profile.avatarUrl = avatar || '';
+    db.prepare(`INSERT INTO tiktok_stat_snapshots(account_id,followers_count,following_count,likes_count,videos_count)
+      VALUES (?,?,?,?,?)`).run(account.id, profile.followersCount, profile.followingCount, profile.likesCount, profile.videosCount);
     db.prepare(`INSERT INTO tiktok_profiles
       (account_id,handle,display_name,bio,avatar_url,followers_count,following_count,likes_count,videos_count,verified,source_url,last_synced_at,sync_status,sync_error,updated_at)
       VALUES (@accountId,@handle,@displayName,@bio,@avatarUrl,@followersCount,@followingCount,@likesCount,@videosCount,@verified,@sourceUrl,CURRENT_TIMESTAMP,'success','',CURRENT_TIMESTAMP)
@@ -112,4 +114,8 @@ function getVideos(accountId) {
   return db.prepare('SELECT * FROM tiktok_videos WHERE account_id=? ORDER BY last_synced_at DESC, id DESC').all(accountId);
 }
 
-module.exports = { syncProfile, getProfile, syncVideos, getVideos };
+function getStats(accountId) {
+  return db.prepare('SELECT * FROM tiktok_stat_snapshots WHERE account_id=? ORDER BY captured_at DESC LIMIT 30').all(accountId);
+}
+
+module.exports = { syncProfile, getProfile, syncVideos, getVideos, getStats };

@@ -5,7 +5,7 @@ const { ok, fail } = require('../http');
 const { BitBrowserProvider } = require('../services/browser/bit-browser-provider');
 const { inspectTikTokSession } = require('../services/browser/cdp-client');
 const { loginAssist, closeSession } = require('../services/browser/tiktok-login');
-const { syncProfile, getProfile, syncVideos, getVideos } = require('../services/browser/tiktok-data');
+const { syncProfile, getProfile, syncVideos, getVideos, getStats } = require('../services/browser/tiktok-data');
 
 const router = express.Router();
 
@@ -131,6 +131,7 @@ router.post('/accounts/:accountId/sync-profile', async (req, res) => {
 });
 
 router.get('/accounts/:accountId/tiktok-videos', (req, res) => ok(res, getVideos(req.params.accountId)));
+router.get('/accounts/:accountId/tiktok-stats', (req, res) => ok(res, getStats(req.params.accountId)));
 
 router.post('/accounts/:accountId/sync-videos', async (req, res) => {
   try {
