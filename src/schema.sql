@@ -140,6 +140,17 @@ CREATE TABLE IF NOT EXISTS task_events (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS task_action_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  action_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('success','failed','skipped')),
+  result_json TEXT NOT NULL DEFAULT '{}',
+  error_message TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS task_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -181,6 +192,7 @@ CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
 CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, id);
+CREATE INDEX IF NOT EXISTS idx_task_action_results_task ON task_action_results(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_task_plans_task ON task_plans(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_materials_status ON materials(status);

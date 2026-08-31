@@ -21,10 +21,12 @@ async function processAccount(task, account, timeoutSeconds) {
     const work = task.type === 'profile' ? syncProfile(account.id) : task.type === 'sync' ? syncProfile(account.id).then(() => syncVideos(account.id)) : Promise.reject(new Error(`任务类型“${task.type}”的执行器尚未启用`));
     await Promise.race([work, timeout(timeoutSeconds)]);
     db.prepare("UPDATE task_runs SET status='success',finished_at=CURRENT_TIMESTAMP WHERE id=?").run(run.lastInsertRowid);
+    db.prepare("INSERT INTO task_action_results(task_id,account_id,action_type,status,result_json) VALUES (?,?,?,?,?)").run(task.id,account.id,task.type,'success',JSON.stringify({runId:run.lastInsertRowid}));
     event(task.id, `账号 #${account.id} 处理成功`);
     db.prepare('UPDATE tasks SET success_count=success_count+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(task.id);
   } catch (error) {
     db.prepare("UPDATE task_runs SET status='failed',error_message=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").run(error.message, run.lastInsertRowid);
+    db.prepare("INSERT INTO task_action_results(task_id,account_id,action_type,status,result_json,error_message) VALUES (?,?,?,?,?,?)").run(task.id,account.id,task.type,'failed','{}',error.message);
     event(task.id, `账号 #${account.id} 处理失败：${error.message}`, 'error');
     db.prepare('UPDATE tasks SET fail_count=fail_count+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(task.id);
     console.error(JSON.stringify({ taskId: task.id, accountId: account.id, error: error.message }));
