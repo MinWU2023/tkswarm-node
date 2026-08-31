@@ -6,8 +6,12 @@ let timer;
 
 function accountsFor(task) {
   const params = { limit: task.total_count > 0 ? task.total_count : 200 };
-  const where = task.group_id ? 'WHERE a.enabled=1 AND a.group_id=@groupId' : 'WHERE a.enabled=1';
+  let where = task.group_id ? 'WHERE a.enabled=1 AND a.group_id=@groupId' : 'WHERE a.enabled=1';
   if (task.group_id) params.groupId = task.group_id;
+  let payload = {};
+  try { payload = JSON.parse(task.payload || '{}'); } catch {}
+  if (payload.onlyFailed) where += " AND EXISTS (SELECT 1 FROM task_runs fr WHERE fr.task_id=@taskId AND fr.account_id=a.id AND fr.status='failed')";
+  params.taskId = task.id;
   return db.prepare(`SELECT a.id FROM accounts a ${where} ORDER BY a.id ASC LIMIT @limit`).all(params);
 }
 
