@@ -71,8 +71,45 @@ async function syncProfile(accountId) {
   }
 }
 
+async function syncVideos(accountId, limit = 100) {
+  const account = db.prepare('SELECT id, username, browser_profile_id FROM accounts WHERE id=?').get(accountId);
+  if (!account) throw new Error('账号不存在');
+  if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
+  const provider = new BitBrowserProvider();
+  let browser;
+  try {
+    const opened = await provider.open(account.browser_profile_id);
+    if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
+    browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
+    const context = browser.contexts()[0];
+    const page = context.pages().find(item => /tiktok\.com/i.test(item.url())) || context.pages()[0] || await context.newPage();
+    await page.goto(`https://www.tiktok.com/@${encodeURIComponent(account.username)}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(2500);
+    const links = await page.locator(`a[href*="/@${account.username}/video/"]`).evaluateAll((els, max) => els.slice(0, max).map(el => ({
+      url: el.href, text: (el.innerText || el.getAttribute('aria-label') || '').trim(),
+      image: el.querySelector('img')?.src || '',
+    })), Math.min(100, Math.max(1, Number(limit) || 100));
+    const items = links.map(item => {
+      const match = item.url.match(/\/video\/(\d+)/);
+      return match ? { videoId: match[1], videoUrl: item.url, description: item.text.slice(0, 1000), thumbnailUrl: item.image } : null;
+    }).filter(Boolean);
+    const upsert = db.prepare(`INSERT INTO tiktok_videos(account_id,video_id,video_url,description,thumbnail_url,last_synced_at)
+      VALUES (@accountId,@videoId,@videoUrl,@description,@thumbnailUrl,CURRENT_TIMESTAMP)
+      ON CONFLICT(account_id,video_id) DO UPDATE SET video_url=@videoUrl,description=@description,thumbnail_url=@thumbnailUrl,last_synced_at=CURRENT_TIMESTAMP`);
+    db.transaction(() => items.forEach(item => upsert.run({ accountId: account.id, ...item })) )();
+    return { accountId: account.id, count: items.length, items };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    await provider.close(account.browser_profile_id).catch(() => {});
+  }
+}
+
 function getProfile(accountId) {
   return db.prepare('SELECT * FROM tiktok_profiles WHERE account_id=?').get(accountId) || null;
 }
 
-module.exports = { syncProfile, getProfile };
+function getVideos(accountId) {
+  return db.prepare('SELECT * FROM tiktok_videos WHERE account_id=? ORDER BY last_synced_at DESC, id DESC').all(accountId);
+}
+
+module.exports = { syncProfile, getProfile, syncVideos, getVideos };

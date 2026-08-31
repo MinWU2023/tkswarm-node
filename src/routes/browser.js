@@ -5,7 +5,7 @@ const { ok, fail } = require('../http');
 const { BitBrowserProvider } = require('../services/browser/bit-browser-provider');
 const { inspectTikTokSession } = require('../services/browser/cdp-client');
 const { loginAssist, closeSession } = require('../services/browser/tiktok-login');
-const { syncProfile, getProfile } = require('../services/browser/tiktok-data');
+const { syncProfile, getProfile, syncVideos, getVideos } = require('../services/browser/tiktok-data');
 
 const router = express.Router();
 
@@ -126,6 +126,18 @@ router.post('/accounts/:accountId/sync-profile', async (req, res) => {
     return ok(res, result, 'TikTok 资料同步完成');
   } catch (error) {
     req.log.error({ accountId: req.params.accountId, error: error.message }, 'TikTok profile sync failed');
+    return fail(res, error.message, 422);
+  }
+});
+
+router.get('/accounts/:accountId/tiktok-videos', (req, res) => ok(res, getVideos(req.params.accountId)));
+
+router.post('/accounts/:accountId/sync-videos', async (req, res) => {
+  try {
+    const result = await syncVideos(req.params.accountId, req.body?.limit);
+    return ok(res, result, `TikTok 视频同步完成：${result.count} 条`);
+  } catch (error) {
+    req.log.error({ accountId: req.params.accountId, error: error.message }, 'TikTok video sync failed');
     return fail(res, error.message, 422);
   }
 });

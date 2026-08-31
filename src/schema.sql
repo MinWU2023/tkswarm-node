@@ -72,6 +72,22 @@ CREATE TABLE IF NOT EXISTS tiktok_profiles (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS tiktok_videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  video_id TEXT NOT NULL,
+  video_url TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  thumbnail_url TEXT NOT NULL DEFAULT '',
+  views_count INTEGER,
+  likes_count INTEGER,
+  comments_count INTEGER,
+  shares_count INTEGER,
+  published_at TEXT,
+  last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(account_id, video_id)
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -103,3 +119,4 @@ CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
 CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_status, last_synced_at);
+CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account ON tiktok_videos(account_id, last_synced_at);
