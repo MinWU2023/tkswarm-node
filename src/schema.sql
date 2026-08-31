@@ -54,6 +54,24 @@ CREATE TABLE IF NOT EXISTS account_secrets (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS tiktok_profiles (
+  account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  handle TEXT NOT NULL DEFAULT '',
+  display_name TEXT NOT NULL DEFAULT '',
+  bio TEXT NOT NULL DEFAULT '',
+  avatar_url TEXT NOT NULL DEFAULT '',
+  followers_count INTEGER,
+  following_count INTEGER,
+  likes_count INTEGER,
+  videos_count INTEGER,
+  verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN (0,1)),
+  source_url TEXT NOT NULL DEFAULT '',
+  last_synced_at TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'never' CHECK(sync_status IN ('never','success','failed')),
+  sync_error TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -84,3 +102,4 @@ CREATE INDEX IF NOT EXISTS idx_proxies_group ON proxies(group_id);
 CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
+CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_status, last_synced_at);

@@ -5,6 +5,7 @@ const { ok, fail } = require('../http');
 const { BitBrowserProvider } = require('../services/browser/bit-browser-provider');
 const { inspectTikTokSession } = require('../services/browser/cdp-client');
 const { loginAssist, closeSession } = require('../services/browser/tiktok-login');
+const { syncProfile, getProfile } = require('../services/browser/tiktok-data');
 
 const router = express.Router();
 
@@ -112,6 +113,20 @@ router.post('/profiles/:id/tiktok-status', async (req, res) => {
     if (opened) {
       try { await provider.close(req.params.id); } catch { /* keep the inspection result */ }
     }
+  }
+});
+
+router.get('/accounts/:accountId/tiktok-profile', (req, res) => {
+  return ok(res, getProfile(req.params.accountId));
+});
+
+router.post('/accounts/:accountId/sync-profile', async (req, res) => {
+  try {
+    const result = await syncProfile(req.params.accountId);
+    return ok(res, result, 'TikTok 资料同步完成');
+  } catch (error) {
+    req.log.error({ accountId: req.params.accountId, error: error.message }, 'TikTok profile sync failed');
+    return fail(res, error.message, 422);
   }
 });
 
