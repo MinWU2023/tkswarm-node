@@ -14,6 +14,17 @@ const schema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
 });
 
+router.get('/export.csv', (req, res) => {
+  const filters = []; const params = {};
+  if (req.query.type) { filters.push('t.type=@type'); params.type=req.query.type; }
+  if (req.query.status) { filters.push('t.status=@status'); params.status=req.query.status; }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const rows = db.prepare(`SELECT t.id,t.name,t.type,t.status,t.total_count,t.success_count,t.fail_count,t.scheduled_at,t.started_at,t.finished_at,t.created_at,g.name group_name FROM tasks t LEFT JOIN groups g ON g.id=t.group_id ${where} ORDER BY t.id DESC`).all(params);
+  const esc = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const csv = ['ID,任务名称,类型,状态,分组,总数,成功,失败,计划时间,开始时间,结束时间,创建时间', ...rows.map(r => [r.id,r.name,r.type,r.status,r.group_name,r.total_count,r.success_count,r.fail_count,r.scheduled_at,r.started_at,r.finished_at,r.created_at].map(esc).join(','))].join('\r\n');
+  res.setHeader('Content-Type','text/csv; charset=utf-8'); res.setHeader('Content-Disposition','attachment; filename="tkswarm-tasks.csv"'); return res.send('\ufeff'+csv);
+});
+
 router.post('/batch-retry', (req, res) => {
   const ids = Array.isArray(req.body?.taskIds) ? [...new Set(req.body.taskIds.map(Number).filter(Number.isInteger))].slice(0, 100) : [];
   if (!ids.length) return fail(res, '请选择失败任务', 400);
