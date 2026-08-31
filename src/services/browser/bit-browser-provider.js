@@ -40,6 +40,42 @@ class BitBrowserProvider {
   profiles(page = 0, pageSize = 100, name = '') { return this.request('browser/list', { page, pageSize, name }); }
   open(id) { return this.request('browser/open', { id }, 60000); }
   close(id) { return this.request('browser/close', { id }, 30000); }
+  delete(id) { return this.request('browser/delete', { id }, 30000); }
+
+  create({ name, username = '', remark = '', proxy = null, language = 'en-US' }) {
+    const hasProxy = Boolean(proxy?.host && proxy?.port);
+    return this.request('browser/update', {
+      platform: 'https://www.tiktok.com',
+      platformIcon: 'other',
+      url: 'https://www.tiktok.com',
+      name,
+      remark,
+      userName: username,
+      password: '',
+      cookie: '',
+      otherCookie: '',
+      isGlobalProxyInfo: false,
+      proxyMethod: 2,
+      proxyType: hasProxy ? proxy.protocol : 'noproxy',
+      host: hasProxy ? proxy.host : '',
+      port: hasProxy ? proxy.port : '',
+      proxyUserName: hasProxy ? proxy.username : '',
+      proxyPassword: hasProxy ? proxy.password : '',
+      ipCheckService: 'ip2location',
+      browserFingerPrint: {
+        coreVersion: '148',
+        ostype: 'PC',
+        os: 'Win32',
+        isIpCreateTimeZone: true,
+        isIpCreatePosition: true,
+        isIpCreateLanguage: true,
+        languages: language,
+        resolutionType: '0',
+        resolution: '1920 x 1080',
+        webRTC: '0',
+      },
+    }, 30000);
+  }
 
   sanitizeProfile(profile) {
     return {

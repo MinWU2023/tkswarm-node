@@ -3,8 +3,50 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { ok, fail } = require('../http');
 const { BitBrowserProvider } = require('../services/browser/bit-browser-provider');
+const { inspectTikTokSession } = require('../services/browser/cdp-client');
 
 const router = express.Router();
+
+const languageByCountry = {
+  CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK', US: 'en-US', GB: 'en-GB', CA: 'en-CA', AU: 'en-AU',
+  JP: 'ja-JP', KR: 'ko-KR', DE: 'de-DE', FR: 'fr-FR', ES: 'es-ES', IT: 'it-IT', BR: 'pt-BR',
+  PT: 'pt-PT', RU: 'ru-RU', TH: 'th-TH', VN: 'vi-VN', ID: 'id-ID', MY: 'ms-MY', PH: 'en-PH',
+};
+
+function accountWithProxy(accountId) {
+  return db.prepare(`SELECT a.*, p.protocol proxy_protocol, p.host proxy_host, p.port proxy_port,
+    p.username proxy_username, p.password proxy_password, p.status proxy_status
+    FROM accounts a LEFT JOIN proxies p ON p.id=a.proxy_id WHERE a.id=?`).get(accountId);
+}
+
+async function createProfileForAccount(provider, account) {
+  if (!account) throw new Error('账号不存在');
+  if (account.browser_profile_id) throw new Error('账号已经绑定浏览器环境');
+  const proxy = account.proxy_host ? {
+    protocol: account.proxy_protocol,
+    host: account.proxy_host,
+    port: account.proxy_port,
+    username: account.proxy_username,
+    password: account.proxy_password,
+  } : null;
+  const country = String(account.country || '').toUpperCase();
+  const profile = await provider.create({
+    name: `TK-${account.username}`.slice(0, 100),
+    username: account.username,
+    remark: `TkSwarm account #${account.id}`,
+    proxy,
+    language: languageByCountry[country] || 'en-US',
+  });
+  try {
+    const update = db.prepare(`UPDATE accounts SET browser_type='bit', browser_profile_id=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND browser_profile_id=''`).run(profile.id, account.id);
+    if (!update.changes) throw new Error('保存环境绑定失败，账号可能已被其他任务处理');
+  } catch (error) {
+    try { await provider.delete(profile.id); } catch { /* best-effort compensation */ }
+    throw error;
+  }
+  return { accountId: account.id, username: account.username, profileId: profile.id, profileName: profile.name };
+}
 
 router.get('/status', async (req, res) => {
   const provider = new BitBrowserProvider();
@@ -49,6 +91,74 @@ router.post('/profiles/:id/close', async (req, res) => {
   const provider = new BitBrowserProvider();
   const data = await provider.close(req.params.id);
   return ok(res, data, '浏览器环境已关闭');
+});
+
+router.post('/profiles/:id/tiktok-status', async (req, res) => {
+  const provider = new BitBrowserProvider();
+  let opened = false;
+  try {
+    const connection = await provider.open(req.params.id);
+    opened = true;
+    if (!connection?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
+    const status = await inspectTikTokSession(connection.ws);
+    const account = db.prepare("SELECT id, username FROM accounts WHERE browser_type='bit' AND browser_profile_id=?").get(req.params.id);
+    if (account) {
+      db.prepare('UPDATE accounts SET login_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+        .run(status.loggedIn ? 'online' : 'offline', account.id);
+    }
+    return ok(res, { ...status, account: account || null }, status.loggedIn ? 'TikTok 登录状态有效' : '未检测到有效 TikTok 登录会话');
+  } finally {
+    if (opened) {
+      try { await provider.close(req.params.id); } catch { /* keep the inspection result */ }
+    }
+  }
+});
+
+router.delete('/profiles/:id', async (req, res) => {
+  const binding = db.prepare("SELECT id, username FROM accounts WHERE browser_type='bit' AND browser_profile_id=?").get(req.params.id);
+  if (binding) return fail(res, `环境仍绑定账号 ${binding.username}，请先解绑`, 409);
+  const provider = new BitBrowserProvider();
+  const data = await provider.delete(req.params.id);
+  return ok(res, data, '浏览器环境已删除');
+});
+
+router.post('/accounts/:accountId/create', async (req, res) => {
+  const provider = new BitBrowserProvider();
+  const result = await createProfileForAccount(provider, accountWithProxy(req.params.accountId));
+  return ok(res, result, '浏览器环境已创建并绑定', 201);
+});
+
+router.post('/accounts/batch-create', async (req, res) => {
+  const body = z.object({
+    accountIds: z.array(z.coerce.number().int().positive()).max(200).optional(),
+    groupId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
+    requireProxy: z.boolean().default(false),
+  }).parse(req.body);
+  const filters = ["a.browser_profile_id=''", "a.enabled=1"];
+  const params = {};
+  if (body.accountIds?.length) {
+    filters.push(`a.id IN (${body.accountIds.map(() => '?').join(',')})`);
+  } else if (body.groupId) {
+    filters.push('a.group_id=?');
+  }
+  if (body.requireProxy) filters.push('a.proxy_id IS NOT NULL');
+  const values = body.accountIds?.length ? body.accountIds : body.groupId ? [body.groupId] : [];
+  const accounts = db.prepare(`SELECT a.id FROM accounts a WHERE ${filters.join(' AND ')} ORDER BY a.id LIMIT 200`).all(...values);
+  if (!accounts.length) return fail(res, '没有符合条件的未绑定账号', 422);
+
+  const provider = new BitBrowserProvider();
+  const result = { total: accounts.length, created: 0, failed: 0, items: [], errors: [] };
+  for (const row of accounts) {
+    try {
+      const item = await createProfileForAccount(provider, accountWithProxy(row.id));
+      result.created += 1;
+      result.items.push(item);
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push({ accountId: row.id, reason: error.message });
+    }
+  }
+  return ok(res, result, `批量创建完成：成功 ${result.created}，失败 ${result.failed}`);
 });
 
 router.post('/bind', (req, res) => {
