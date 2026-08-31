@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('node:fs');
 const { z } = require('zod');
 const { db } = require('../db');
 const { ok, fail } = require('../http');
@@ -30,6 +31,7 @@ router.put('/:id', (req, res) => {
   db.prepare(`UPDATE materials SET name=@name,file_path=@filePath,file_name=@fileName,mime_type=@mimeType,size_bytes=@sizeBytes,description=@description,tags=@tags,status=@status,updated_at=CURRENT_TIMESTAMP WHERE id=@id`).run({ ...b, id: old.id });
   return ok(res, { id: old.id, ...b }, '素材已更新');
 });
+router.post('/:id/check', (req, res) => { const row=db.prepare('SELECT id,file_path FROM materials WHERE id=?').get(req.params.id); if(!row)return fail(res,'素材不存在',404); const exists=Boolean(row.file_path&&fs.existsSync(row.file_path)); db.prepare('UPDATE materials SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(exists?'ready':'missing',row.id); return ok(res,{id:row.id,exists,status:exists?'ready':'missing'},exists?'素材文件存在':'未找到素材文件'); });
 router.delete('/:id', (req, res) => {
   const r = db.prepare('DELETE FROM materials WHERE id=?').run(req.params.id);
   if (!r.changes) return fail(res, '素材不存在', 404);

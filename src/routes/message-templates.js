@@ -1,0 +1,11 @@
+const express = require('express');
+const { z } = require('zod');
+const { db } = require('../db');
+const { ok, fail } = require('../http');
+const router = express.Router();
+const schema = z.object({ name: z.string().trim().min(1).max(100), content: z.string().trim().min(1).max(5000), variables: z.string().max(500).default(''), enabled: z.coerce.boolean().default(true) });
+router.get('/', (req, res) => ok(res, db.prepare('SELECT id,name,content,variables,enabled,created_at,updated_at FROM message_templates ORDER BY id DESC').all()));
+router.post('/', (req, res) => { const b=schema.parse(req.body); try { const r=db.prepare('INSERT INTO message_templates(name,content,variables,enabled) VALUES (@name,@content,@variables,@enabled)').run({...b,enabled:b.enabled?1:0}); return ok(res,{id:r.lastInsertRowid,...b},'消息模板已创建',201); } catch(e) { if(e.code==='SQLITE_CONSTRAINT_UNIQUE') return fail(res,'模板名称已存在',409); throw e; } });
+router.put('/:id', (req,res)=>{const old=db.prepare('SELECT id FROM message_templates WHERE id=?').get(req.params.id);if(!old)return fail(res,'消息模板不存在',404);const b=schema.parse(req.body);try{db.prepare('UPDATE message_templates SET name=@name,content=@content,variables=@variables,enabled=@enabled,updated_at=CURRENT_TIMESTAMP WHERE id=@id').run({...b,id:old.id,enabled:b.enabled?1:0});return ok(res,{id:old.id,...b},'消息模板已更新')}catch(e){if(e.code==='SQLITE_CONSTRAINT_UNIQUE')return fail(res,'模板名称已存在',409);throw e;}});
+router.delete('/:id',(req,res)=>{const r=db.prepare('DELETE FROM message_templates WHERE id=?').run(req.params.id);if(!r.changes)return fail(res,'消息模板不存在',404);return ok(res,null,'消息模板已删除');});
+module.exports=router;
