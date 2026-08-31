@@ -122,6 +122,7 @@ router.post('/accounts/:accountId/login-assist', async (req, res) => {
     return ok(res, result, result.message);
   } catch (error) {
     db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(req.params.accountId);
+    req.log.error({ accountId: req.params.accountId, error: error.message }, 'TikTok login assist failed');
     return fail(res, error.message || '登录辅助失败', 422);
   }
 });
