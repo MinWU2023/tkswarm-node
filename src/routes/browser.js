@@ -116,7 +116,7 @@ router.post('/profiles/:id/tiktok-status', async (req, res) => {
 });
 
 router.post('/accounts/:accountId/login-assist', async (req, res) => {
-  const body = z.object({ autoSubmit: z.boolean().default(false) }).parse(req.body || {});
+  const body = z.object({ autoSubmit: z.boolean().default(false), submitAfterTotp: z.boolean().default(true) }).parse(req.body || {});
   const result = await loginAssist(req.params.accountId, body);
   return ok(res, result, result.message);
 });

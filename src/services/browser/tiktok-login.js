@@ -31,7 +31,7 @@ async function getSession(profileId, provider) {
   return session;
 }
 
-async function loginAssist(accountId, { autoSubmit = false } = {}) {
+async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = true } = {}) {
   const account = db.prepare(`SELECT id, username, browser_profile_id, login_status FROM accounts WHERE id=?`).get(accountId);
   if (!account) throw new Error('账号不存在');
   if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
@@ -47,8 +47,8 @@ async function loginAssist(accountId, { autoSubmit = false } = {}) {
 
   await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(1500);
-  const bodyText = await page.locator('body').innerText().catch(() => '');
-  const captcha = /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(bodyText);
+  const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
+  let captcha = await hasCaptcha();
   let screenshot = '';
   if (captcha) {
     screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
@@ -78,11 +78,40 @@ async function loginAssist(accountId, { autoSubmit = false } = {}) {
     }
   }
   let submitted = false;
+  let twoFactorRequired = Boolean(totpFilled);
   if (autoSubmit && !captcha) {
-    const button = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")']);
-    if (button) { await button.click(); submitted = true; await page.waitForTimeout(2500); }
+    const button = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")', 'button:has-text("Continue")', 'button:has-text("继续")']);
+    if (button) {
+      await button.click();
+      submitted = true;
+      // TikTok may reveal the 2FA field only after the password step is submitted.
+      for (let i = 0; i < 12; i += 1) {
+        await page.waitForTimeout(500);
+        if (await hasCaptcha()) { captcha = true; break; }
+        const nextTotp = await firstVisible(page, [
+          'input[autocomplete="one-time-code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
+          'input[placeholder*="Code"]', 'input[placeholder*="验证码"]',
+        ]);
+        if (nextTotp) {
+          twoFactorRequired = true;
+          if (!totpFilled && totpSecret) {
+            await nextTotp.fill(generateTotp(totpSecret).code);
+            totpFilled = true;
+          }
+          if (totpFilled && submitAfterTotp && !captcha) {
+            const nextButton = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")', 'button:has-text("Verify")', 'button:has-text("验证")']);
+            if (nextButton) { await nextButton.click(); await page.waitForTimeout(2500); }
+          }
+          break;
+        }
+      }
+    }
   }
-  const result = { accountId, username: account.username, filled: true, submitted, totpFilled, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交') };
+  if (captcha && !screenshot) {
+    screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
+    await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
+  }
+  const result = { accountId, username: account.username, filled: true, submitted, twoFactorRequired, totpFilled, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
   if (!submitted) db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   return result;
 }
