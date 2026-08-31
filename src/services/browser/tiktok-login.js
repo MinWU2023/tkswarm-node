@@ -7,6 +7,7 @@ const { BitBrowserProvider } = require('./bit-browser-provider');
 const { db } = require('../../db');
 
 const sessions = new Map();
+const activeLogins = new Set();
 const screenshotDir = path.resolve(__dirname, '../../data/automation');
 fs.mkdirSync(screenshotDir, { recursive: true });
 
@@ -73,6 +74,10 @@ async function getSession(profileId, provider) {
 }
 
 async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = true } = {}) {
+  const lockKey = String(accountId);
+  if (activeLogins.has(lockKey)) throw new Error('该账号正在执行登录流程，请勿重复点击');
+  activeLogins.add(lockKey);
+  try {
   const account = db.prepare(`SELECT id, username, browser_profile_id, login_status FROM accounts WHERE id=?`).get(accountId);
   if (!account) throw new Error('账号不存在');
   if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
@@ -176,7 +181,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
       submitted = true;
       // TikTok may reveal the 2FA field only after the password step is submitted.
       // Wait for the actual 2SV page/input; never generate TOTP on the password page.
-      for (let i = 0; i < 60; i += 1) {
+      for (let i = 0; i < 80; i += 1) {
         await page.waitForTimeout(500);
         if (await hasCaptcha()) { captcha = true; break; }
         const nextTotp = await firstVisible(page, [
@@ -210,6 +215,9 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   const result = { accountId, username: account.username, filled: true, submitted, twoFactorRequired, totpFilled, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
   if (!submitted) db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   return result;
+  } finally {
+    activeLogins.delete(lockKey);
+  }
 }
 
 async function closeSession(profileId) {
