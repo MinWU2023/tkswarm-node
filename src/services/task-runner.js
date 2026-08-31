@@ -43,7 +43,7 @@ async function execute(task) {
 
 async function tick() {
   if (busy) return;
-  const task = db.prepare("SELECT * FROM tasks WHERE status='queued' ORDER BY id ASC LIMIT 1").get();
+  const task = db.prepare("SELECT * FROM tasks WHERE status='queued' AND (scheduled_at IS NULL OR scheduled_at <= CURRENT_TIMESTAMP) ORDER BY id ASC LIMIT 1").get();
   if (!task) return;
   busy = true;
   try { await execute(task); } catch (error) {
