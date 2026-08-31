@@ -1,0 +1,38 @@
+const express = require('express');
+const { z } = require('zod');
+const { db } = require('../db');
+const { ok, fail } = require('../http');
+const router = express.Router();
+const materialSchema = z.object({
+  name: z.string().trim().min(1).max(150),
+  filePath: z.string().trim().max(1000).default(''),
+  fileName: z.string().trim().max(255).default(''),
+  mimeType: z.string().trim().max(100).default(''),
+  sizeBytes: z.coerce.number().int().min(0).max(5_000_000_000).default(0),
+  description: z.string().max(2000).default(''),
+  tags: z.string().max(500).default(''),
+  status: z.enum(['ready','disabled','missing']).default('ready'),
+});
+function map(row) { return { ...row, filePath: undefined, sizeBytes: row.size_bytes }; }
+router.get('/', (req, res) => {
+  const rows = db.prepare('SELECT * FROM materials ORDER BY id DESC').all().map(map);
+  return ok(res, rows);
+});
+router.post('/', (req, res) => {
+  const b = materialSchema.parse(req.body);
+  const r = db.prepare(`INSERT INTO materials(name,file_path,file_name,mime_type,size_bytes,description,tags,status) VALUES (@name,@filePath,@fileName,@mimeType,@sizeBytes,@description,@tags,@status)`).run(b);
+  return ok(res, { id: r.lastInsertRowid, ...b }, '素材已添加', 201);
+});
+router.put('/:id', (req, res) => {
+  const old = db.prepare('SELECT id FROM materials WHERE id=?').get(req.params.id);
+  if (!old) return fail(res, '素材不存在', 404);
+  const b = materialSchema.parse(req.body);
+  db.prepare(`UPDATE materials SET name=@name,file_path=@filePath,file_name=@fileName,mime_type=@mimeType,size_bytes=@sizeBytes,description=@description,tags=@tags,status=@status,updated_at=CURRENT_TIMESTAMP WHERE id=@id`).run({ ...b, id: old.id });
+  return ok(res, { id: old.id, ...b }, '素材已更新');
+});
+router.delete('/:id', (req, res) => {
+  const r = db.prepare('DELETE FROM materials WHERE id=?').run(req.params.id);
+  if (!r.changes) return fail(res, '素材不存在', 404);
+  return ok(res, null, '素材已删除');
+});
+module.exports = router;

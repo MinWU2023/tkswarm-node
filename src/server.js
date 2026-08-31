@@ -33,6 +33,7 @@ app.use('/api/groups', require('./routes/groups'));
 app.use('/api/accounts', require('./routes/accounts'));
 app.use('/api/proxies', require('./routes/proxies'));
 app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/materials', require('./routes/materials'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/browser', require('./routes/browser'));
 

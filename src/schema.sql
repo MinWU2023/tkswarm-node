@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS tiktok_videos (
   UNIQUE(account_id, video_id)
 );
 
+CREATE TABLE IF NOT EXISTS materials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  file_path TEXT NOT NULL DEFAULT '',
+  file_name TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'ready' CHECK(status IN ('ready','disabled','missing')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS task_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -148,6 +162,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
 CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
+CREATE INDEX IF NOT EXISTS idx_materials_status ON materials(status);
 CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_status, last_synced_at);
 CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account ON tiktok_videos(account_id, last_synced_at);
 CREATE INDEX IF NOT EXISTS idx_tiktok_stats_account ON tiktok_stat_snapshots(account_id, captured_at);
