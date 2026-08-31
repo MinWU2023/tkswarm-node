@@ -131,6 +131,29 @@ router.post('/profiles/:id/session-close', async (req, res) => {
   return ok(res, null, '登录辅助会话已关闭');
 });
 
+router.post('/profiles/batch-delete', async (req, res) => {
+  const body = z.object({ profileIds: z.array(z.string().trim().min(1).max(150)).min(1).max(500) }).parse(req.body);
+  const profileIds = [...new Set(body.profileIds)];
+  const provider = new BitBrowserProvider();
+  const result = { requested: profileIds.length, deleted: 0, blocked: 0, failed: 0, errors: [] };
+  for (const profileId of profileIds) {
+    const binding = db.prepare("SELECT id, username FROM accounts WHERE browser_type='bit' AND browser_profile_id=?").get(profileId);
+    if (binding) {
+      result.blocked += 1;
+      result.errors.push({ profileId, reason: `仍绑定账号 ${binding.username}，请先解绑` });
+      continue;
+    }
+    try {
+      await provider.delete(profileId);
+      result.deleted += 1;
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push({ profileId, reason: error.message });
+    }
+  }
+  return ok(res, result, `批量删除完成：成功 ${result.deleted}，阻止 ${result.blocked}，失败 ${result.failed}`);
+});
+
 router.delete('/profiles/:id', async (req, res) => {
   const binding = db.prepare("SELECT id, username FROM accounts WHERE browser_type='bit' AND browser_profile_id=?").get(req.params.id);
   if (binding) return fail(res, `环境仍绑定账号 ${binding.username}，请先解绑`, 409);
