@@ -1,5 +1,6 @@
 const { db } = require('../db');
 const { syncProfile, syncVideos } = require('./browser/tiktok-data');
+const { preparePublish, prepareMessage } = require('./browser/tiktok-actions');
 
 let busy = false;
 let timer;
@@ -19,8 +20,15 @@ async function processAccount(task, account, timeoutSeconds) {
   event(task.id, `开始处理账号 #${account.id}`);
   const run = db.prepare("INSERT INTO task_runs(task_id,account_id,status) VALUES (?,?,'running')").run(task.id, account.id);
   try {
-    const work = task.type === 'profile' ? syncProfile(account.id) : task.type === 'sync' ? syncProfile(account.id).then(() => syncVideos(account.id)) : Promise.reject(new Error(`任务类型“${task.type}”的执行器尚未启用`));
-    await Promise.race([work, timeout(timeoutSeconds)]);
+    let payload={}; try { payload=JSON.parse(task.payload||'{}'); } catch {}
+    const work = task.type === 'profile' ? syncProfile(account.id) : task.type === 'sync' ? syncProfile(account.id).then(() => syncVideos(account.id)) : task.type === 'publish' ? preparePublish(account.id, Number(payload.materialIds?.[0]), payload.publishTitle||'', payload.publishCaption||'') : task.type === 'message' ? prepareMessage(account.id, payload.publishCaption||payload.content||'', payload.recipient||'') : Promise.reject(new Error(`任务类型“${task.type}”的执行器尚未启用`));
+    const result=await Promise.race([work, timeout(timeoutSeconds)]);
+    if (result?.status === 'security_paused' || result?.status === 'manual_required') {
+      const message=result.status==='security_paused'?'检测到安全验证，任务已暂停':'执行方案已准备，等待人工确认';
+      db.prepare("UPDATE task_runs SET status='skipped',error_message=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").run(message,run.lastInsertRowid);
+      db.prepare("INSERT INTO task_action_results(task_id,account_id,action_type,status,result_json,error_message) VALUES (?,?,?,?,?,?)").run(task.id,account.id,task.type,'skipped',JSON.stringify({status:result.status,screenshot:result.screenshot||''}),message);
+      db.prepare("UPDATE tasks SET status='paused',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id); event(task.id,`账号 #${account.id}：${message}`,'warn'); return;
+    }
     db.prepare("UPDATE task_runs SET status='success',finished_at=CURRENT_TIMESTAMP WHERE id=?").run(run.lastInsertRowid);
     db.prepare("INSERT INTO task_action_results(task_id,account_id,action_type,status,result_json) VALUES (?,?,?,?,?)").run(task.id,account.id,task.type,'success',JSON.stringify({runId:run.lastInsertRowid}));
     event(task.id, `账号 #${account.id} 处理成功`);

@@ -42,7 +42,7 @@ router.post('/batch-action', (req, res) => {
   const placeholders = ids.map(() => '?').join(',');
   const allowed = action === 'start' ? ['draft','paused','failed'] : action === 'pause' ? ['queued','running'] : ['queued','running','paused'];
   const statusPlaceholders = allowed.map(() => '?').join(',');
-  const supported = action === 'start' ? " AND type IN ('sync','profile')" : '';
+  const supported = action === 'start' ? " AND type IN ('sync','profile','publish','message')" : '';
   const result = db.prepare(`UPDATE tasks SET status=?, finished_at=${action === 'cancel' ? 'CURRENT_TIMESTAMP' : 'NULL'}, updated_at=CURRENT_TIMESTAMP WHERE id IN (${placeholders}) AND status IN (${statusPlaceholders})${supported}`)
     .run(action === 'start' ? 'queued' : action === 'pause' ? 'paused' : 'cancelled', ...ids, ...allowed);
   if (action === 'cancel') db.prepare(`UPDATE task_runs SET status='skipped',error_message='任务被批量取消',finished_at=CURRENT_TIMESTAMP WHERE task_id IN (${placeholders}) AND status='running'`).run(...ids);
@@ -179,7 +179,7 @@ router.post('/:id/start', (req, res) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
   if (!['draft', 'paused', 'failed'].includes(task.status)) return fail(res, `当前状态 ${task.status} 不允许启动`, 409);
-  if (!['sync', 'profile'].includes(task.type)) return fail(res, `“${task.type}”任务执行器尚未接入，请先使用资料同步任务`, 409);
+  if (!['sync', 'profile', 'publish', 'message'].includes(task.type)) return fail(res, `不支持的任务类型：${task.type}`, 409);
   db.prepare("UPDATE tasks SET status='queued', started_at=COALESCE(started_at,CURRENT_TIMESTAMP), finished_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id);
   db.prepare("INSERT INTO task_events(task_id,level,message) VALUES (?, 'info', '任务已进入队列')").run(task.id);
   return ok(res, null, '任务已进入队列');
