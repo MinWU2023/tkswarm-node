@@ -17,12 +17,15 @@ async function execute(task) {
   for (const account of accounts) {
     const current = db.prepare('SELECT status FROM tasks WHERE id=?').get(task.id);
     if (!current || current.status === 'paused' || current.status === 'cancelled') return;
+    const run = db.prepare("INSERT INTO task_runs(task_id,account_id,status) VALUES (?,?,'running')").run(task.id, account.id);
     try {
       if (task.type === 'profile') await syncProfile(account.id);
       else if (task.type === 'sync') { await syncProfile(account.id); await syncVideos(account.id); }
       else throw new Error(`任务类型“${task.type}”的执行器尚未启用`);
+      db.prepare("UPDATE task_runs SET status='success',finished_at=CURRENT_TIMESTAMP WHERE id=?").run(run.lastInsertRowid);
       db.prepare('UPDATE tasks SET success_count=success_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(task.id);
     } catch (error) {
+      db.prepare("UPDATE task_runs SET status='failed',error_message=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").run(error.message, run.lastInsertRowid);
       db.prepare('UPDATE tasks SET fail_count=fail_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(task.id);
       console.error(JSON.stringify({ taskId: task.id, accountId: account.id, error: error.message }));
     }

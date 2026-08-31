@@ -98,6 +98,16 @@ CREATE TABLE IF NOT EXISTS tiktok_videos (
   UNIQUE(account_id, video_id)
 );
 
+CREATE TABLE IF NOT EXISTS task_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK(status IN ('running','success','failed','skipped')),
+  error_message TEXT NOT NULL DEFAULT '',
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -128,6 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_proxies_group ON proxies(group_id);
 CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
+CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_status, last_synced_at);
 CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account ON tiktok_videos(account_id, last_synced_at);
 CREATE INDEX IF NOT EXISTS idx_tiktok_stats_account ON tiktok_stat_snapshots(account_id, captured_at);

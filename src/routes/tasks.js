@@ -33,6 +33,19 @@ router.post('/', (req, res) => {
   return ok(res, { id: result.lastInsertRowid, ...b, status: 'draft' }, '任务已创建', 201);
 });
 
+router.get('/:id/runs', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id=?').get(req.params.id);
+  if (!task) return fail(res, '任务不存在', 404);
+  const rows = db.prepare(`SELECT r.*, a.username FROM task_runs r JOIN accounts a ON a.id=r.account_id WHERE r.task_id=? ORDER BY r.id DESC`).all(task.id);
+  return ok(res, rows);
+});
+
+router.post('/:id/cancel', (req, res) => {
+  const result = db.prepare("UPDATE tasks SET status='cancelled', finished_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('queued','running','paused')").run(req.params.id);
+  if (!result.changes) return fail(res, '任务不存在或当前不能取消', 409);
+  return ok(res, null, '任务已取消');
+});
+
 router.post('/:id/start', (req, res) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
