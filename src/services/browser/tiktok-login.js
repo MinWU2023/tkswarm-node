@@ -44,6 +44,27 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   const session = await getSession(account.browser_profile_id, provider);
   const { page } = session;
+  const totpSelectors = [
+    'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]',
+    'input[name*="code"]', 'input[placeholder*="code"]', 'input[placeholder*="Code"]',
+    'input[placeholder*="验证码"]',
+  ];
+
+  // If the user is already looking at TikTok's 2-step page, continue that step
+  // instead of navigating back to the username/password page.
+  if (/\/login\/2sv\//i.test(page.url())) {
+    const currentTotp = await firstVisible(page, totpSelectors);
+    if (!currentTotp) throw new Error('当前处于 TikTok 2-step 页面，但未找到 2FA 输入框');
+    const code = generateTotp(totpSecret).code;
+    await currentTotp.fill(code);
+    const next = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']);
+    if (next) { await next.click(); await page.waitForTimeout(2500); }
+    return {
+      accountId, username: account.username, filled: true, submitted: Boolean(next),
+      twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: '',
+      currentUrl: page.url(), pageTitle: await page.title(), message: '已在 2-step 页面填入并提交 TOTP 验证码',
+    };
+  }
 
   await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(1500);
@@ -69,7 +90,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   let totpFilled = false;
   if (totpSecret) {
     const totpInput = await firstVisible(page, [
-      'input[autocomplete="one-time-code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
+      'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
       'input[placeholder*="Code"]', 'input[placeholder*="验证码"]',
     ]);
     if (totpInput) {
@@ -89,7 +110,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
         await page.waitForTimeout(500);
         if (await hasCaptcha()) { captcha = true; break; }
         const nextTotp = await firstVisible(page, [
-          'input[autocomplete="one-time-code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
+          'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
           'input[placeholder*="Code"]', 'input[placeholder*="验证码"]',
         ]);
         if (nextTotp) {
