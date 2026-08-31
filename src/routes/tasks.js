@@ -13,6 +13,22 @@ const schema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
 });
 
+router.post('/batch-action', (req, res) => {
+  const ids = Array.isArray(req.body?.taskIds) ? [...new Set(req.body.taskIds.map(Number).filter(Number.isInteger))].slice(0, 100) : [];
+  const action = req.body?.action;
+  if (!ids.length) return fail(res, '请选择任务', 400);
+  if (!['start', 'pause', 'cancel'].includes(action)) return fail(res, '不支持的批量操作', 400);
+  const placeholders = ids.map(() => '?').join(',');
+  const allowed = action === 'start' ? ['draft','paused','failed'] : action === 'pause' ? ['queued','running'] : ['queued','running','paused'];
+  const statusPlaceholders = allowed.map(() => '?').join(',');
+  const supported = action === 'start' ? " AND type IN ('sync','profile')" : '';
+  const result = db.prepare(`UPDATE tasks SET status=?, finished_at=${action === 'cancel' ? 'CURRENT_TIMESTAMP' : 'NULL'}, updated_at=CURRENT_TIMESTAMP WHERE id IN (${placeholders}) AND status IN (${statusPlaceholders})${supported}`)
+    .run(action === 'start' ? 'queued' : action === 'pause' ? 'paused' : 'cancelled', ...ids, ...allowed);
+  if (action === 'cancel') db.prepare(`UPDATE task_runs SET status='skipped',error_message='任务被批量取消',finished_at=CURRENT_TIMESTAMP WHERE task_id IN (${placeholders}) AND status='running'`).run(...ids);
+  db.prepare(`INSERT INTO task_events(task_id,level,message) SELECT id,?,? FROM tasks WHERE id IN (${placeholders})`).run(action === 'cancel' ? 'warn' : 'info', `任务已批量${action === 'start' ? '启动' : action === 'pause' ? '暂停' : '取消'}`, ...ids);
+  return ok(res, { requested: ids.length, changed: result.changes }, '批量操作完成');
+});
+
 router.get('/', (req, res) => {
   const { page, pageSize, offset } = pagination(req.query);
   const filters = [];
