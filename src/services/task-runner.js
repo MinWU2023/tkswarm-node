@@ -54,5 +54,15 @@ async function tick() {
   busy = true;
   try { await execute(task); } catch (error) { db.prepare("UPDATE tasks SET status='failed',fail_count=fail_count+1,finished_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id); event(task.id, `任务异常终止：${error.message}`, 'error'); } finally { busy = false; }
 }
-function startTaskRunner() { if (timer) return; timer = setInterval(() => tick().catch(error => console.error(error.message)), 1500); timer.unref?.(); tick().catch(error => console.error(error.message)); }
+function recoverInterruptedTasks() {
+  const rows = db.prepare("SELECT id FROM tasks WHERE status='running'").all();
+  if (!rows.length) return;
+  const recover = db.transaction(() => rows.forEach(row => {
+    db.prepare("UPDATE task_runs SET status='skipped',error_message='服务重启，任务已恢复到队列',finished_at=CURRENT_TIMESTAMP WHERE task_id=? AND status='running'").run(row.id);
+    db.prepare("UPDATE tasks SET status='queued',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(row.id);
+    event(row.id, '检测到服务重启，任务已恢复到队列', 'warn');
+  }));
+  recover();
+}
+function startTaskRunner() { if (timer) return; recoverInterruptedTasks(); timer = setInterval(() => tick().catch(error => console.error(error.message)), 1500); timer.unref?.(); tick().catch(error => console.error(error.message)); }
 module.exports = { startTaskRunner };

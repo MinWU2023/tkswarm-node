@@ -158,6 +158,14 @@ router.post('/:id/pause', (req, res) => {
   return ok(res, null, '任务已暂停');
 });
 
+router.post('/batch-delete', (req, res) => {
+  const ids = Array.isArray(req.body?.taskIds) ? [...new Set(req.body.taskIds.map(Number).filter(Number.isInteger))].slice(0, 100) : [];
+  if (!ids.length) return fail(res, '请选择任务', 400);
+  const placeholders=ids.map(()=>'?').join(',');
+  const result=db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders}) AND status NOT IN ('queued','running')`).run(...ids);
+  return ok(res,{requested:ids.length,deleted:result.changes,blocked:ids.length-result.changes},'批量删除完成');
+});
+
 router.delete('/:id', (req, res) => {
   const result = db.prepare("DELETE FROM tasks WHERE id=? AND status NOT IN ('queued','running')").run(req.params.id);
   if (!result.changes) return fail(res, '任务不存在或正在运行', 409);
