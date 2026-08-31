@@ -69,6 +69,16 @@ router.put('/:id', (req, res) => {
   return ok(res, { id: task.id, ...b, status: task.status }, '任务已更新');
 });
 
+router.get('/:id/preview', (req, res) => {
+  const task = db.prepare('SELECT id,name,type,group_id,payload,total_count,scheduled_at,status FROM tasks WHERE id=?').get(req.params.id);
+  if (!task) return fail(res, '任务不存在', 404);
+  let payload = {}; try { payload = JSON.parse(task.payload || '{}'); } catch {}
+  const ids = Array.isArray(payload.materialIds) ? payload.materialIds.map(Number).filter(Number.isInteger) : [];
+  const materials = ids.length ? db.prepare(`SELECT id,name,file_name,mime_type,size_bytes,description,tags,status FROM materials WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  const template = payload.templateId ? db.prepare('SELECT id,name,content,variables,enabled FROM message_templates WHERE id=?').get(payload.templateId) : null;
+  return ok(res, { task: { ...task, payload: undefined }, payload, materials, template });
+});
+
 router.get('/:id/events', (req, res) => {
   const task = db.prepare('SELECT id FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
