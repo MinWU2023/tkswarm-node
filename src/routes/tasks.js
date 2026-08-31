@@ -37,8 +37,9 @@ router.post('/:id/start', (req, res) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
   if (!['draft', 'paused', 'failed'].includes(task.status)) return fail(res, `当前状态 ${task.status} 不允许启动`, 409);
-  db.prepare("UPDATE tasks SET status='queued', started_at=COALESCE(started_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id);
-  return ok(res, null, '任务已进入队列；自动化执行器将在后续阶段接入');
+  if (!['sync', 'profile'].includes(task.type)) return fail(res, `“${task.type}”任务执行器尚未接入，请先使用资料同步任务`, 409);
+  db.prepare("UPDATE tasks SET status='queued', started_at=COALESCE(started_at,CURRENT_TIMESTAMP), finished_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id);
+  return ok(res, null, '任务已进入队列');
 });
 
 router.post('/:id/pause', (req, res) => {

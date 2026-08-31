@@ -6,6 +6,7 @@ const pinoHttp = require('pino-http');
 const { WebSocketServer } = require('ws');
 const { dbPath } = require('./db');
 const { ok } = require('./http');
+const { startTaskRunner } = require('./services/task-runner');
 const { notFound, errorHandler } = require('./middleware/error-handler');
 
 const app = express();
@@ -55,6 +56,7 @@ wss.on('connection', socket => {
 });
 
 server.listen(port, host, () => {
+  startTaskRunner();
   console.log(`TkSwarm Rebuild running at http://${host}:${port}`);
   console.log(`Database: ${dbPath}`);
 });
