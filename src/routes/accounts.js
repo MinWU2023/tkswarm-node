@@ -2,9 +2,17 @@ const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
 const { ok, fail, pagination, listResult } = require('../http');
+const { encrypt } = require('../services/secret-store');
 
 const router = express.Router();
 const optionalId = z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null);
+const batchSchema = z.object({
+  content: z.string().trim().min(1).max(2_000_000),
+  groupId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
+  proxyId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
+  browserType: z.string().trim().min(1).max(30).default('bit'),
+  country: z.string().trim().max(50).default(''),
+});
 const schema = z.object({
   username: z.string().trim().min(1).max(100),
   nickname: z.string().trim().max(100).default(''),
@@ -46,6 +54,48 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const row = db.prepare(`${selectSql} WHERE a.id = ?`).get(req.params.id);
   return row ? ok(res, row) : fail(res, '账号不存在', 404);
+});
+
+router.post('/batch-import', (req, res) => {
+  const body = batchSchema.parse(req.body);
+  const lines = body.content.split(/\r?\n/);
+  if (lines.length > 20_000) return fail(res, '单次最多导入 20000 行', 422);
+
+  const insertAccount = db.prepare(`INSERT OR IGNORE INTO accounts
+    (username,country,group_id,proxy_id,browser_type,login_status,chat_status,enabled)
+    VALUES (@username,@country,@groupId,@proxyId,@browserType,'offline','offline',1)`);
+  const insertSecrets = db.prepare(`INSERT INTO account_secrets (account_id,password_encrypted,totp_secret_encrypted)
+    VALUES (?,?,?)`);
+  const result = { total: 0, imported: 0, duplicates: 0, ignored: 0, errors: [] };
+
+  db.transaction(() => {
+    lines.forEach((source, index) => {
+      const line = source.trim();
+      if (!line || line.startsWith('#')) { result.ignored += 1; return; }
+      result.total += 1;
+      try {
+        const first = line.indexOf('----');
+        const last = line.lastIndexOf('----');
+        if (first <= 0 || last <= first) throw new Error('格式应为 账号----密码----2FA密钥');
+        const username = line.slice(0, first).trim();
+        const password = line.slice(first + 4, last);
+        const totpSecret = line.slice(last + 4).replace(/\s+/g, '').toUpperCase();
+        if (!username || username.length > 100) throw new Error('账号不能为空且不能超过 100 个字符');
+        if (!password || password.length > 500) throw new Error('密码不能为空且不能超过 500 个字符');
+        if (!/^[A-Z2-7]+=*$/.test(totpSecret) || totpSecret.length < 16 || totpSecret.length > 256) {
+          throw new Error('2FA 密钥不是有效的 Base32 格式');
+        }
+        const account = insertAccount.run({ username, country: body.country, groupId: body.groupId, proxyId: body.proxyId, browserType: body.browserType });
+        if (!account.changes) { result.duplicates += 1; return; }
+        insertSecrets.run(account.lastInsertRowid, encrypt(password), encrypt(totpSecret));
+        result.imported += 1;
+      } catch (error) {
+        if (result.errors.length < 100) result.errors.push({ line: index + 1, reason: error.message });
+      }
+    });
+  })();
+
+  return ok(res, result, `导入完成：成功 ${result.imported}，重复 ${result.duplicates}，错误 ${result.errors.length}`);
 });
 
 router.post('/', (req, res) => {
