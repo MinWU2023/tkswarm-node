@@ -163,7 +163,8 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
       await button.click();
       submitted = true;
       // TikTok may reveal the 2FA field only after the password step is submitted.
-      for (let i = 0; i < 12; i += 1) {
+      // Wait for the actual 2SV page/input; never generate TOTP on the password page.
+      for (let i = 0; i < 60; i += 1) {
         await page.waitForTimeout(500);
         if (await hasCaptcha()) { captcha = true; break; }
         const nextTotp = await firstVisible(page, [
