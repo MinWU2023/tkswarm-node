@@ -20,14 +20,19 @@ async function firstVisible(page, selectors) {
 
 async function getSession(profileId, provider) {
   const existing = sessions.get(profileId);
-  if (existing) return existing;
+  if (existing && existing.browser.isConnected() && !existing.page.isClosed()) return existing;
+  if (existing) { await existing.browser.close().catch(() => {}); sessions.delete(profileId); }
   const opened = await provider.open(profileId);
   if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
   const browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
   const context = browser.contexts()[0] || await browser.newContext();
-  const page = context.pages()[0] || await context.newPage();
+  let page = context.pages().find(item => !item.isClosed());
+  if (!page) page = await context.newPage();
   const session = { browser, context, page, profileId };
   sessions.set(profileId, session);
+  browser.on('disconnected', () => {
+    if (sessions.get(profileId) === session) sessions.delete(profileId);
+  });
   return session;
 }
 

@@ -117,8 +117,13 @@ router.post('/profiles/:id/tiktok-status', async (req, res) => {
 
 router.post('/accounts/:accountId/login-assist', async (req, res) => {
   const body = z.object({ autoSubmit: z.boolean().default(false), submitAfterTotp: z.boolean().default(true) }).parse(req.body || {});
-  const result = await loginAssist(req.params.accountId, body);
-  return ok(res, result, result.message);
+  try {
+    const result = await loginAssist(req.params.accountId, body);
+    return ok(res, result, result.message);
+  } catch (error) {
+    db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(req.params.accountId);
+    return fail(res, error.message || '登录辅助失败', 422);
+  }
 });
 
 router.post('/profiles/:id/session-close', async (req, res) => {
