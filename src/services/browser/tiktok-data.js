@@ -88,7 +88,7 @@ async function syncVideos(accountId, limit = 100) {
     const links = await page.locator(`a[href*="/@${account.username}/video/"]`).evaluateAll((els, max) => els.slice(0, max).map(el => ({
       url: el.href, text: (el.innerText || el.getAttribute('aria-label') || '').trim(),
       image: el.querySelector('img')?.src || '',
-    })), Math.min(100, Math.max(1, Number(limit) || 100));
+    })), Math.min(100, Math.max(1, Number(limit) || 100)));
     const items = links.map(item => {
       const match = item.url.match(/\/video\/(\d+)/);
       return match ? { videoId: match[1], videoUrl: item.url, description: item.text.slice(0, 1000), thumbnailUrl: item.image } : null;
