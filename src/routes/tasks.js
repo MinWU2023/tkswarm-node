@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('node:fs');
 const { z } = require('zod');
 const { db } = require('../db');
 const { ok, fail, pagination, listResult } = require('../http');
@@ -67,6 +68,22 @@ router.put('/:id', (req, res) => {
     .run({ ...b, id: task.id, payload: JSON.stringify(b.payload) });
   db.prepare("INSERT INTO task_events(task_id,level,message) VALUES (?, 'info', '任务配置已更新')").run(task.id);
   return ok(res, { id: task.id, ...b, status: task.status }, '任务已更新');
+});
+
+router.post('/:id/preflight', (req, res) => {
+  const task = db.prepare('SELECT id,type,payload FROM tasks WHERE id=?').get(req.params.id);
+  if (!task) return fail(res, '任务不存在', 404);
+  let payload = {}; try { payload = JSON.parse(task.payload || '{}'); } catch { payload = {}; }
+  const issues = [];
+  const materialIds = Array.isArray(payload.materialIds) ? payload.materialIds.map(Number).filter(Number.isInteger) : [];
+  if (task.type === 'publish' && !materialIds.length) issues.push('视频发布任务未关联素材');
+  if (materialIds.length) {
+    const materials = db.prepare(`SELECT id,name,file_path,status FROM materials WHERE id IN (${materialIds.map(() => '?').join(',')})`).all(...materialIds);
+    for (const m of materials) { if (m.status !== 'ready') issues.push(`素材“${m.name}”状态不是可用`); if (!m.file_path || !fs.existsSync(m.file_path)) issues.push(`素材“${m.name}”文件不存在`); }
+    if (materials.length !== materialIds.length) issues.push('部分关联素材不存在');
+  }
+  if (task.type === 'message') { if (!payload.templateId) issues.push('消息任务未关联模板'); else { const t=db.prepare('SELECT enabled FROM message_templates WHERE id=?').get(payload.templateId); if (!t) issues.push('关联消息模板不存在'); else if (!t.enabled) issues.push('关联消息模板已停用'); } }
+  return ok(res, { canRun: issues.length === 0, issues });
 });
 
 router.get('/:id/preview', (req, res) => {
