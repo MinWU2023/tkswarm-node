@@ -4,6 +4,7 @@ const { chromium } = require('playwright-core');
 const { decrypt } = require('../secret-store');
 const { generateTotp } = require('../totp');
 const { BitBrowserProvider } = require('./bit-browser-provider');
+const { inspectTikTokSession } = require('./cdp-client');
 const { db } = require('../../db');
 
 const sessions = new Map();
@@ -65,7 +66,7 @@ async function getSession(profileId, provider) {
     || openPages.find(item => /tiktok\.com/i.test(item.url()))
     || openPages[0];
   if (!page) page = await context.newPage();
-  const session = { browser, context, page, profileId };
+  const session = { browser, context, page, profileId, ws: opened.ws };
   sessions.set(profileId, session);
   browser.on('disconnected', () => {
     if (sessions.get(profileId) === session) sessions.delete(profileId);
@@ -96,6 +97,13 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     || openPages.find(item => /tiktok\.com/i.test(item.url()))
     || session.page;
   session.page = page;
+  // Cookies are stored in the BitBrowser profile, not in TkSwarm memory. Check
+  // them before starting a new login so a later click does not log in again.
+  const existingSession = await inspectTikTokSession(session.ws);
+  if (existingSession.loggedIn) {
+    db.prepare("UPDATE accounts SET login_status='online', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+    return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha: false, alreadyLoggedIn: true, screenshot: '', currentUrl: page.url(), pageTitle: await page.title(), message: '检测到已有有效 TikTok 登录状态，无需重复登录' };
+  }
   const totpSelectors = [
     'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]',
     'input[name*="code"]', 'input[placeholder*="code"]', 'input[placeholder*="Code"]',
