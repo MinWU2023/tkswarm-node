@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const multer = require('multer');
 const { z } = require('zod');
 const { db } = require('../db');
@@ -8,8 +9,10 @@ const { ok, fail } = require('../http');
 const router = express.Router();
 const uploadDir = path.resolve(__dirname, '../../data/materials');
 fs.mkdirSync(uploadDir, { recursive: true });
+try { db.exec('ALTER TABLE materials ADD COLUMN sha256 TEXT NOT NULL DEFAULT \'\''); } catch {}
 const upload = multer({ storage: multer.diskStorage({ destination: uploadDir, filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2,10)}${path.extname(file.originalname).toLowerCase()}`) }), limits: { fileSize: 500 * 1024 * 1024 } });
 const materialSchema = z.object({
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).default(''),
   name: z.string().trim().min(1).max(150),
   filePath: z.string().trim().max(1000).default(''),
   fileName: z.string().trim().max(255).default(''),
@@ -34,6 +37,7 @@ function repairNames() {
 }
 repairNames();
 function map(row) { const { file_path, ...safe } = row; return { ...safe, name: decodeName(row.name), file_name: decodeName(row.file_name), sizeBytes: row.size_bytes }; }
+function sha256(filePath) { return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'); }
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM materials ORDER BY id DESC').all().map(map);
   return ok(res, rows);
@@ -49,10 +53,12 @@ router.post('/', upload.single('file'), (req, res) => {
     body.mimeType = req.file.mimetype;
     body.sizeBytes = req.file.size;
     body.status = 'ready';
+    body.sha256 = sha256(req.file.path);
   }
   const b = materialSchema.parse(body);
   try {
-    const r = db.prepare(`INSERT INTO materials(name,file_path,file_name,mime_type,size_bytes,description,tags,status) VALUES (@name,@filePath,@fileName,@mimeType,@sizeBytes,@description,@tags,@status)`).run(b);
+    if (b.sha256) { const duplicate=db.prepare('SELECT id,name FROM materials WHERE sha256=?').get(b.sha256); if (duplicate) { if (req.file) fs.unlink(req.file.path, () => {}); return fail(res, `素材与“${duplicate.name}”内容重复`, 409); } }
+    const r = db.prepare(`INSERT INTO materials(name,file_path,file_name,mime_type,size_bytes,description,tags,status,sha256) VALUES (@name,@filePath,@fileName,@mimeType,@sizeBytes,@description,@tags,@status,@sha256)`).run(b);
     return ok(res, { id: r.lastInsertRowid, ...b, filePath: undefined }, '素材已上传', 201);
   } catch (error) {
     if (req.file) fs.unlink(req.file.path, () => {});

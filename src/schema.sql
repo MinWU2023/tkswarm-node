@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS materials (
   file_name TEXT NOT NULL DEFAULT '',
   mime_type TEXT NOT NULL DEFAULT '',
   size_bytes INTEGER NOT NULL DEFAULT 0,
+  sha256 TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT '',
   tags TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'ready' CHECK(status IN ('ready','disabled','missing')),
@@ -173,6 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
 CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_materials_status ON materials(status);
+CREATE INDEX IF NOT EXISTS idx_materials_sha256 ON materials(sha256);
 CREATE INDEX IF NOT EXISTS idx_message_templates_enabled ON message_templates(enabled);
 CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_status, last_synced_at);
 CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account ON tiktok_videos(account_id, last_synced_at);
