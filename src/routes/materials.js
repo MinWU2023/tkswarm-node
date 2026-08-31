@@ -33,7 +33,7 @@ function repairNames() {
   db.transaction(() => rows.forEach(row => { const name=decodeName(row.name), fileName=decodeName(row.file_name); if(name!==row.name||fileName!==row.file_name) update.run(name,fileName,row.id); }))();
 }
 repairNames();
-function map(row) { return { ...row, name: decodeName(row.name), file_name: decodeName(row.file_name), filePath: undefined, sizeBytes: row.size_bytes }; }
+function map(row) { const { file_path, ...safe } = row; return { ...safe, name: decodeName(row.name), file_name: decodeName(row.file_name), sizeBytes: row.size_bytes }; }
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM materials ORDER BY id DESC').all().map(map);
   return ok(res, rows);
