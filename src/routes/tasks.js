@@ -103,6 +103,18 @@ router.post('/:id/preflight', (req, res) => {
   return ok(res, { canRun: issues.length === 0, issues });
 });
 
+router.post('/:id/prepare', (req, res) => {
+  const task = db.prepare('SELECT id,name,type,status,total_count FROM tasks WHERE id=?').get(req.params.id);
+  if (!task) return fail(res, '任务不存在', 404);
+  if (!['publish','message'].includes(task.type)) return fail(res, '只有发布或消息任务需要准备', 400);
+  let payload={}; try { payload=JSON.parse(db.prepare('SELECT payload FROM tasks WHERE id=?').get(task.id).payload||'{}'); } catch {}
+  const materialIds=Array.isArray(payload.materialIds)?payload.materialIds.map(Number).filter(Number.isInteger):[];
+  const materials=materialIds.length?db.prepare(`SELECT id,name,file_name,mime_type,size_bytes,status FROM materials WHERE id IN (${materialIds.map(()=>'?').join(',')})`).all(...materialIds):[];
+  const template=payload.templateId?db.prepare('SELECT id,name,enabled FROM message_templates WHERE id=?').get(payload.templateId):null;
+  db.prepare("INSERT INTO task_events(task_id,level,message) VALUES (?, 'info', ?)").run(task.id, `${task.type==='publish'?'视频发布':'消息发送'}执行方案已生成，等待人工确认`);
+  return ok(res,{task,plan:{requiresManualConfirmation:true,materials,template,title:payload.publishTitle||'',content:payload.publishCaption||''}},'执行方案已生成，实际操作前需要人工确认');
+});
+
 router.get('/:id/preview', (req, res) => {
   const task = db.prepare('SELECT id,name,type,group_id,payload,total_count,scheduled_at,status FROM tasks WHERE id=?').get(req.params.id);
   if (!task) return fail(res, '任务不存在', 404);
