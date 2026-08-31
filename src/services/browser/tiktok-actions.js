@@ -42,7 +42,12 @@ async function preparePublish(accountId, materialId, title='', caption='') {
     let input=connection.page.locator('input[type=file]').first();
     if(await input.count()===0){
       const triggers=connection.page.getByText(/上传视频|Upload video|Select video|选择视频/i).first();
-      if(await triggers.count()) { await triggers.click().catch(()=>{}); await connection.page.waitForTimeout(1200); }
+      if(await triggers.count()) { await triggers.click().catch(()=>{}); await connection.page.waitForTimeout(2500); }
+      input=connection.page.locator('input[type=file]').first();
+    }
+    if(await input.count()===0){
+      const uploadLink=connection.page.getByRole('link',{name:/^Upload$/i}).first();
+      if(await uploadLink.count()){ await uploadLink.click().catch(()=>{}); await connection.page.waitForTimeout(3500); }
       input=connection.page.locator('input[type=file]').first();
     }
     if(await input.count()===0){
