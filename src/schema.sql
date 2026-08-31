@@ -123,6 +123,15 @@ CREATE TABLE IF NOT EXISTS materials (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS task_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'prepared' CHECK(status IN ('prepared','confirmed','cancelled')),
+  plan_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  confirmed_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS task_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -173,6 +182,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
 CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
+CREATE INDEX IF NOT EXISTS idx_task_plans_task ON task_plans(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_materials_status ON materials(status);
 CREATE INDEX IF NOT EXISTS idx_message_templates_enabled ON message_templates(enabled);
 CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_status, last_synced_at);

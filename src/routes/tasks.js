@@ -111,9 +111,14 @@ router.post('/:id/prepare', (req, res) => {
   const materialIds=Array.isArray(payload.materialIds)?payload.materialIds.map(Number).filter(Number.isInteger):[];
   const materials=materialIds.length?db.prepare(`SELECT id,name,file_name,mime_type,size_bytes,status FROM materials WHERE id IN (${materialIds.map(()=>'?').join(',')})`).all(...materialIds):[];
   const template=payload.templateId?db.prepare('SELECT id,name,enabled FROM message_templates WHERE id=?').get(payload.templateId):null;
+  const plan={requiresManualConfirmation:true,materials,template,title:payload.publishTitle||'',content:payload.publishCaption||''};
+  const saved=db.prepare('INSERT INTO task_plans(task_id,plan_json) VALUES (?,?)').run(task.id,JSON.stringify(plan));
   db.prepare("INSERT INTO task_events(task_id,level,message) VALUES (?, 'info', ?)").run(task.id, `${task.type==='publish'?'视频发布':'消息发送'}执行方案已生成，等待人工确认`);
-  return ok(res,{task,plan:{requiresManualConfirmation:true,materials,template,title:payload.publishTitle||'',content:payload.publishCaption||''}},'执行方案已生成，实际操作前需要人工确认');
+  return ok(res,{id:saved.lastInsertRowid,task,plan},'执行方案已生成，实际操作前需要人工确认');
 });
+
+router.get('/:id/plans', (req,res)=>{const task=db.prepare('SELECT id FROM tasks WHERE id=?').get(req.params.id);if(!task)return fail(res,'任务不存在',404);return ok(res,db.prepare('SELECT id,status,plan_json,created_at,confirmed_at FROM task_plans WHERE task_id=? ORDER BY id DESC').all(task.id).map(x=>({...x,plan:JSON.parse(x.plan_json||'{}'),plan_json:undefined})));});
+router.post('/:id/plans/:planId/confirm', (req,res)=>{const plan=db.prepare('SELECT * FROM task_plans WHERE id=? AND task_id=?').get(req.params.planId,req.params.id);if(!plan)return fail(res,'执行方案不存在',404);if(plan.status!=='prepared')return fail(res,'执行方案当前不能确认',409);db.prepare("UPDATE task_plans SET status='confirmed',confirmed_at=CURRENT_TIMESTAMP WHERE id=?").run(plan.id);db.prepare("INSERT INTO task_events(task_id,level,message) VALUES (?, 'info', '执行方案已人工确认，但实际执行仍受执行器状态保护')").run(req.params.id);return ok(res,{id:plan.id,status:'confirmed'},'方案已确认，等待对应执行器接入');});
 
 router.get('/:id/preview', (req, res) => {
   const task = db.prepare('SELECT id,name,type,group_id,payload,total_count,scheduled_at,status FROM tasks WHERE id=?').get(req.params.id);
