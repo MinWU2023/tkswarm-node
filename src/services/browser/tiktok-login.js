@@ -26,7 +26,10 @@ async function getSession(profileId, provider) {
   if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
   const browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
   const context = browser.contexts()[0] || await browser.newContext();
-  let page = context.pages().find(item => !item.isClosed());
+  const openPages = context.pages().filter(item => !item.isClosed());
+  let page = openPages.find(item => /tiktok\.com\/login\/2sv\//i.test(item.url()))
+    || openPages.find(item => /tiktok\.com/i.test(item.url()))
+    || openPages[0];
   if (!page) page = await context.newPage();
   const session = { browser, context, page, profileId };
   sessions.set(profileId, session);
@@ -48,7 +51,13 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   const provider = new BitBrowserProvider();
   db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   const session = await getSession(account.browser_profile_id, provider);
-  const { page } = session;
+  // BitBrowser may add its own workbench tab after the TikTok tab. Always target
+  // the active TikTok 2FA/login page rather than relying on the first cached tab.
+  const openPages = session.context.pages().filter(item => !item.isClosed());
+  const page = openPages.find(item => /tiktok\.com\/login\/2sv\//i.test(item.url()))
+    || openPages.find(item => /tiktok\.com/i.test(item.url()))
+    || session.page;
+  session.page = page;
   const totpSelectors = [
     'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]',
     'input[name*="code"]', 'input[placeholder*="code"]', 'input[placeholder*="Code"]',
@@ -58,16 +67,25 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // If the user is already looking at TikTok's 2-step page, continue that step
   // instead of navigating back to the username/password page.
   if (/\/login\/2sv\//i.test(page.url())) {
+    if (!totpSecret) throw new Error('账号没有已保存的 2FA 密钥，请重新导入账号凭据');
     const currentTotp = await firstVisible(page, totpSelectors);
     if (!currentTotp) throw new Error('当前处于 TikTok 2-step 页面，但未找到 2FA 输入框');
-    const code = generateTotp(totpSecret).code;
-    await currentTotp.fill(code);
-    const next = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']);
+    let token = generateTotp(totpSecret);
+    if (token.validForSeconds <= 8) {
+      await page.waitForTimeout((token.validForSeconds + 1) * 1000);
+      token = generateTotp(totpSecret);
+    }
+    await currentTotp.fill(token.code);
+    const codeVisible = (await currentTotp.inputValue().catch(() => '')).length === 6;
+    if (!codeVisible) throw new Error('已生成 2FA 验证码，但 TikTok 输入框未接受填写');
+    const next = submitAfterTotp
+      ? await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']) : null;
     if (next) { await next.click(); await page.waitForTimeout(2500); }
     return {
       accountId, username: account.username, filled: true, submitted: Boolean(next),
       twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: '',
-      currentUrl: page.url(), pageTitle: await page.title(), message: '已在 2-step 页面填入并提交 TOTP 验证码',
+      currentUrl: page.url(), pageTitle: await page.title(),
+      message: next ? '已在 2-step 页面填入并提交 TOTP 验证码' : '已在 2-step 页面填入 TOTP 验证码，请确认后点击 Next',
     };
   }
 
@@ -121,11 +139,16 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
         if (nextTotp) {
           twoFactorRequired = true;
           if (!totpFilled && totpSecret) {
-            await nextTotp.fill(generateTotp(totpSecret).code);
-            totpFilled = true;
+            let token = generateTotp(totpSecret);
+            if (token.validForSeconds <= 8) {
+              await page.waitForTimeout((token.validForSeconds + 1) * 1000);
+              token = generateTotp(totpSecret);
+            }
+            await nextTotp.fill(token.code);
+            totpFilled = (await nextTotp.inputValue().catch(() => '')).length === 6;
           }
           if (totpFilled && submitAfterTotp && !captcha) {
-            const nextButton = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")', 'button:has-text("Verify")', 'button:has-text("验证")']);
+            const nextButton = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")', 'button:has-text("Log in")', 'button:has-text("登录")', 'button:has-text("Verify")', 'button:has-text("验证")']);
             if (nextButton) { await nextButton.click(); await page.waitForTimeout(2500); }
           }
           break;
