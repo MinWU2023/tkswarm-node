@@ -19,7 +19,21 @@ const materialSchema = z.object({
   tags: z.string().max(500).default(''),
   status: z.enum(['ready','disabled','missing']).default('ready'),
 });
-function map(row) { return { ...row, filePath: undefined, sizeBytes: row.size_bytes }; }
+function decodeName(value) {
+  const text = String(value || '');
+  if (!/[ÃÂæåçéèêëïðñòóôõöøùúûü]/.test(text)) return text;
+  try {
+    const decoded = Buffer.from(text, 'latin1').toString('utf8');
+    return decoded.includes('�') ? text : decoded;
+  } catch { return text; }
+}
+function repairNames() {
+  const rows = db.prepare('SELECT id,name,file_name FROM materials').all();
+  const update = db.prepare('UPDATE materials SET name=?,file_name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?');
+  db.transaction(() => rows.forEach(row => { const name=decodeName(row.name), fileName=decodeName(row.file_name); if(name!==row.name||fileName!==row.file_name) update.run(name,fileName,row.id); }))();
+}
+repairNames();
+function map(row) { return { ...row, name: decodeName(row.name), file_name: decodeName(row.file_name), filePath: undefined, sizeBytes: row.size_bytes }; }
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM materials ORDER BY id DESC').all().map(map);
   return ok(res, rows);
@@ -28,9 +42,10 @@ router.post('/', upload.single('file'), (req, res) => {
   const body = { ...req.body };
   if (req.file) {
     if (!req.file.mimetype.startsWith('video/')) { fs.unlink(req.file.path, () => {}); return fail(res, '只能上传视频文件', 415); }
-    body.name = String(body.name || path.parse(req.file.originalname).name).trim();
+    const originalName = decodeName(req.file.originalname);
+    body.name = String(body.name || path.parse(originalName).name).trim();
     body.filePath = req.file.path;
-    body.fileName = req.file.originalname;
+    body.fileName = originalName;
     body.mimeType = req.file.mimetype;
     body.sizeBytes = req.file.size;
     body.status = 'ready';
