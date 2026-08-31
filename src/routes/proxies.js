@@ -15,6 +15,55 @@ const schema = z.object({
   country: z.string().trim().max(50).default(''),
   groupId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
 });
+const batchSchema = z.object({
+  content: z.string().trim().min(1).max(1_000_000),
+  defaultProtocol: z.enum(['http', 'https', 'socks5']).default('http'),
+  groupId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
+  country: z.string().trim().max(50).default(''),
+});
+
+function parseProxyLine(source, defaultProtocol) {
+  const line = source.trim();
+  if (!line || line.startsWith('#')) return null;
+
+  let protocol = defaultProtocol;
+  let host;
+  let port;
+  let username = '';
+  let password = '';
+
+  if (line.includes('://')) {
+    let url;
+    try { url = new URL(line); } catch { throw new Error('URL 格式不正确'); }
+    protocol = url.protocol.replace(':', '').toLowerCase();
+    if (!['http', 'https', 'socks5'].includes(protocol)) throw new Error('不支持的代理协议');
+    host = url.hostname.replace(/^\[|\]$/g, '');
+    port = Number(url.port);
+    username = decodeURIComponent(url.username);
+    password = decodeURIComponent(url.password);
+  } else if (line.includes('@')) {
+    const at = line.lastIndexOf('@');
+    const auth = line.slice(0, at).split(':');
+    const address = line.slice(at + 1).split(':');
+    if (auth.length < 2 || address.length !== 2) throw new Error('认证代理格式应为 用户名:密码@主机:端口');
+    username = auth.shift();
+    password = auth.join(':');
+    [host, port] = address;
+  } else {
+    const separator = line.includes('|') ? '|' : line.includes(',') ? ',' : ':';
+    const parts = line.split(separator).map(value => value.trim());
+    if (parts.length === 2) [host, port] = parts;
+    else if (parts.length === 4) [host, port, username, password] = parts;
+    else throw new Error('支持 主机:端口 或 主机:端口:用户名:密码');
+  }
+
+  host = String(host || '').trim();
+  port = Number(port);
+  if (!host) throw new Error('主机不能为空');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口必须在 1-65535 之间');
+  if (username.length > 100 || password.length > 200) throw new Error('认证信息过长');
+  return { protocol, host, port, username, password };
+}
 
 router.get('/', (req, res) => {
   const { page, pageSize, offset } = pagination(req.query);
@@ -34,6 +83,40 @@ router.post('/', (req, res) => {
   const result = db.prepare(`INSERT INTO proxies (name,protocol,host,port,username,password,country,group_id)
     VALUES (@name,@protocol,@host,@port,@username,@password,@country,@groupId)`).run(b);
   return ok(res, { id: result.lastInsertRowid, ...b, password: undefined }, '代理已创建', 201);
+});
+
+router.post('/batch-import', (req, res) => {
+  const body = batchSchema.parse(req.body);
+  const lines = body.content.split(/\r?\n/);
+  if (lines.length > 10_000) return fail(res, '单次最多导入 10000 行', 422);
+
+  const insert = db.prepare(`INSERT OR IGNORE INTO proxies
+    (name,protocol,host,port,username,password,country,group_id)
+    VALUES (@name,@protocol,@host,@port,@username,@password,@country,@groupId)`);
+  const result = { total: 0, imported: 0, duplicates: 0, ignored: 0, errors: [] };
+
+  db.transaction(() => {
+    lines.forEach((source, index) => {
+      try {
+        const proxy = parseProxyLine(source, body.defaultProtocol);
+        if (!proxy) { result.ignored += 1; return; }
+        result.total += 1;
+        const write = insert.run({
+          ...proxy,
+          name: `${proxy.host}:${proxy.port}`.slice(0, 100),
+          country: body.country,
+          groupId: body.groupId,
+        });
+        if (write.changes) result.imported += 1;
+        else result.duplicates += 1;
+      } catch (error) {
+        result.total += 1;
+        if (result.errors.length < 100) result.errors.push({ line: index + 1, reason: error.message });
+      }
+    });
+  })();
+
+  return ok(res, result, `导入完成：成功 ${result.imported}，重复 ${result.duplicates}，错误 ${result.errors.length}`);
 });
 
 router.put('/:id', (req, res) => {
