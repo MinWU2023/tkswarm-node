@@ -12,9 +12,17 @@ const schema = z.object({
 
 router.get('/', (req, res) => {
   const type = req.query.type;
-  const rows = type
+  if (type && !['account', 'proxy', 'message', 'uid'].includes(type)) return fail(res, '分组类型不正确', 422);
+  const source = type
     ? db.prepare('SELECT * FROM groups WHERE type = ? ORDER BY id DESC').all(type)
     : db.prepare('SELECT * FROM groups ORDER BY type, id DESC').all();
+  const countAccount = db.prepare('SELECT COUNT(*) count FROM accounts WHERE group_id=?');
+  const countProxy = db.prepare('SELECT COUNT(*) count FROM proxies WHERE group_id=?');
+  const rows = source.map(group => ({
+    ...group,
+    member_count: group.type === 'account' ? countAccount.get(group.id).count
+      : group.type === 'proxy' ? countProxy.get(group.id).count : 0,
+  }));
   return ok(res, rows);
 });
 
