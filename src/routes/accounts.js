@@ -10,6 +10,8 @@ const batchSchema = z.object({
   content: z.string().trim().min(1).max(2_000_000),
   groupId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
   proxyId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
+  proxyGroupId: z.union([z.coerce.number().int().positive(), z.null()]).optional().default(null),
+  proxyStrategy: z.enum(['none', 'single', 'sequential']).default('none'),
   browserType: z.string().trim().min(1).max(30).default('bit'),
   country: z.string().trim().max(50).default(''),
 });
@@ -67,6 +69,16 @@ router.post('/batch-import', (req, res) => {
   const insertSecrets = db.prepare(`INSERT INTO account_secrets (account_id,password_encrypted,totp_secret_encrypted)
     VALUES (?,?,?)`);
   const result = { total: 0, imported: 0, duplicates: 0, ignored: 0, errors: [] };
+  let proxyIds = [];
+  if (body.proxyStrategy === 'single') {
+    if (!body.proxyId) return fail(res, '选择“统一代理”时必须指定代理', 422);
+    proxyIds = [body.proxyId];
+  } else if (body.proxyStrategy === 'sequential') {
+    const proxyWhere = body.proxyGroupId ? 'WHERE group_id = ?' : '';
+    proxyIds = db.prepare(`SELECT id FROM proxies ${proxyWhere} ORDER BY id ASC`).all(...(body.proxyGroupId ? [body.proxyGroupId] : [])).map(row => row.id);
+    if (!proxyIds.length) return fail(res, '没有可用于顺序绑定的代理，请先导入代理或选择其他绑定方式', 422);
+  }
+  let assignedCount = 0;
 
   db.transaction(() => {
     lines.forEach((source, index) => {
@@ -85,9 +97,11 @@ router.post('/batch-import', (req, res) => {
         if (!/^[A-Z2-7]+=*$/.test(totpSecret) || totpSecret.length < 16 || totpSecret.length > 256) {
           throw new Error('2FA 密钥不是有效的 Base32 格式');
         }
-        const account = insertAccount.run({ username, country: body.country, groupId: body.groupId, proxyId: body.proxyId, browserType: body.browserType });
+        const assignedProxyId = body.proxyStrategy === 'none' ? null : proxyIds[assignedCount % proxyIds.length];
+        const account = insertAccount.run({ username, country: body.country, groupId: body.groupId, proxyId: assignedProxyId, browserType: body.browserType });
         if (!account.changes) { result.duplicates += 1; return; }
         insertSecrets.run(account.lastInsertRowid, encrypt(password), encrypt(totpSecret));
+        assignedCount += 1;
         result.imported += 1;
       } catch (error) {
         if (result.errors.length < 100) result.errors.push({ line: index + 1, reason: error.message });
