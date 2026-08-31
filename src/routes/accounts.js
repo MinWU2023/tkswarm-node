@@ -98,6 +98,16 @@ router.post('/batch-import', (req, res) => {
   return ok(res, result, `导入完成：成功 ${result.imported}，重复 ${result.duplicates}，错误 ${result.errors.length}`);
 });
 
+router.post('/batch-delete', (req, res) => {
+  const body = z.object({ accountIds: z.array(z.coerce.number().int().positive()).min(1).max(500) }).parse(req.body);
+  const uniqueIds = [...new Set(body.accountIds)];
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const existing = db.prepare(`SELECT id FROM accounts WHERE id IN (${placeholders})`).all(...uniqueIds).map(row => row.id);
+  if (!existing.length) return fail(res, '没有找到要删除的账号', 404);
+  db.prepare(`DELETE FROM accounts WHERE id IN (${existing.map(() => '?').join(',')})`).run(...existing);
+  return ok(res, { requested: uniqueIds.length, deleted: existing.length, notFound: uniqueIds.length - existing.length }, '批量删除完成');
+});
+
 router.post('/', (req, res) => {
   const b = schema.parse(req.body);
   const result = db.prepare(`
