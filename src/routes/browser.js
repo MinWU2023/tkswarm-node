@@ -4,6 +4,7 @@ const { db } = require('../db');
 const { ok, fail } = require('../http');
 const { BitBrowserProvider } = require('../services/browser/bit-browser-provider');
 const { inspectTikTokSession } = require('../services/browser/cdp-client');
+const { loginAssist, closeSession } = require('../services/browser/tiktok-login');
 
 const router = express.Router();
 
@@ -112,6 +113,17 @@ router.post('/profiles/:id/tiktok-status', async (req, res) => {
       try { await provider.close(req.params.id); } catch { /* keep the inspection result */ }
     }
   }
+});
+
+router.post('/accounts/:accountId/login-assist', async (req, res) => {
+  const body = z.object({ autoSubmit: z.boolean().default(false) }).parse(req.body || {});
+  const result = await loginAssist(req.params.accountId, body);
+  return ok(res, result, result.message);
+});
+
+router.post('/profiles/:id/session-close', async (req, res) => {
+  await closeSession(req.params.id);
+  return ok(res, null, '登录辅助会话已关闭');
 });
 
 router.delete('/profiles/:id', async (req, res) => {
