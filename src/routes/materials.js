@@ -10,6 +10,7 @@ const router = express.Router();
 const uploadDir = path.resolve(__dirname, '../../data/materials');
 fs.mkdirSync(uploadDir, { recursive: true });
 try { db.exec('ALTER TABLE materials ADD COLUMN sha256 TEXT NOT NULL DEFAULT \'\''); } catch {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_materials_sha256 ON materials(sha256)'); } catch {}
 const upload = multer({ storage: multer.diskStorage({ destination: uploadDir, filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2,10)}${path.extname(file.originalname).toLowerCase()}`) }), limits: { fileSize: 500 * 1024 * 1024 } });
 const materialSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/).default(''),
