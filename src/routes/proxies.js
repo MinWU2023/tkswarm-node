@@ -71,6 +71,8 @@ router.get('/', (req, res) => {
   const params = {};
   if (req.query.keyword) { filters.push('(p.name LIKE @keyword OR p.host LIKE @keyword)'); params.keyword = `%${req.query.keyword}%`; }
   if (req.query.status) { filters.push('p.status = @status'); params.status = req.query.status; }
+  if (req.query.groupId === 'none') filters.push('p.group_id IS NULL');
+  else if (req.query.groupId) { filters.push('p.group_id = @groupId'); params.groupId = req.query.groupId; }
   const where = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) count FROM proxies p${where}`).get(params).count;
   const rows = db.prepare(`SELECT p.*, g.name group_name FROM proxies p LEFT JOIN groups g ON g.id=p.group_id${where} ORDER BY p.id DESC LIMIT @pageSize OFFSET @offset`)
@@ -117,6 +119,39 @@ router.post('/batch-import', (req, res) => {
   })();
 
   return ok(res, result, `导入完成：成功 ${result.imported}，重复 ${result.duplicates}，错误 ${result.errors.length}`);
+});
+
+router.post('/batch-move', (req, res) => {
+  const body = z.object({
+    proxyIds: z.array(z.coerce.number().int().positive()).min(1).max(1000),
+    groupId: z.union([z.coerce.number().int().positive(), z.null()]),
+  }).parse(req.body);
+  const ids = [...new Set(body.proxyIds)];
+  if (body.groupId) {
+    const group = db.prepare("SELECT id FROM groups WHERE id=? AND type='proxy'").get(body.groupId);
+    if (!group) return fail(res, '目标代理分组不存在', 422);
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  const result = db.prepare(`UPDATE proxies SET group_id=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${placeholders})`)
+    .run(body.groupId, ...ids);
+  return ok(res, { requested: ids.length, moved: result.changes, notFound: ids.length - result.changes }, '代理分组已更新');
+});
+
+router.post('/batch-delete', (req, res) => {
+  const body = z.object({ proxyIds: z.array(z.coerce.number().int().positive()).min(1).max(1000) }).parse(req.body);
+  const ids = [...new Set(body.proxyIds)];
+  const placeholders = ids.map(() => '?').join(',');
+  const existing = db.prepare(`SELECT id FROM proxies WHERE id IN (${placeholders})`).all(...ids).map(row => row.id);
+  if (!existing.length) return fail(res, '没有找到要删除的代理', 404);
+  const existingPlaceholders = existing.map(() => '?').join(',');
+  const affectedAccounts = db.prepare(`SELECT COUNT(*) count FROM accounts WHERE proxy_id IN (${existingPlaceholders})`).get(...existing).count;
+  db.prepare(`DELETE FROM proxies WHERE id IN (${existingPlaceholders})`).run(...existing);
+  return ok(res, {
+    requested: ids.length,
+    deleted: existing.length,
+    notFound: ids.length - existing.length,
+    unboundAccounts: affectedAccounts,
+  }, '批量删除完成');
 });
 
 router.put('/:id', (req, res) => {
