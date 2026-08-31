@@ -50,7 +50,9 @@ class BitBrowserProvider {
       url: 'https://www.tiktok.com',
       name,
       remark,
-      userName: username,
+      // Keep platform username blank. TikTok's username is stored only in TkSwarm;
+      // BitBrowser rejects creation when a deleted/hidden profile has the same username.
+      userName: '',
       password: '',
       cookie: '',
       otherCookie: '',
