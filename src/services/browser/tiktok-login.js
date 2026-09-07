@@ -28,6 +28,18 @@ async function firstVisibleText(page, texts) {
   return null;
 }
 
+async function fillAndVerify(locator, value) {
+  await locator.fill(value);
+  if ((await locator.inputValue().catch(() => '')) === value) return true;
+  // Some TikTok builds replace the controlled input during the first fill.
+  // Re-focus the current element and type into the replacement instead of
+  // silently continuing with only the password field populated.
+  await locator.click().catch(() => {});
+  await locator.press('ControlOrMeta+A').catch(() => {});
+  await locator.pressSequentially(value, { delay: 15 });
+  return (await locator.inputValue().catch(() => '')) === value;
+}
+
 async function clickSafeLoginMethod(page, pattern) {
   const candidates = [
     page.getByRole('button', { name: pattern }).first(),
@@ -180,17 +192,27 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
 
-  const usernameInput = await firstVisible(page, [
+  let usernameInput = await firstVisible(page, [
     'input[name="username"]', 'input[autocomplete="username"]', 'input[placeholder*="Email"]',
     'input[placeholder*="email"]', 'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
+    'input[type="text"]', 'input:not([type])', 'input:not([type="password"])',
   ]);
   const passwordInput = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
   if (!usernameInput || !passwordInput) {
     db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
     return { accountId, username: account.username, filled: false, submitted: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: '未找到登录表单，请在浏览器中人工确认页面状态' };
   }
-  await usernameInput.fill(account.username);
-  await passwordInput.fill(password);
+  let usernameFilled = await fillAndVerify(usernameInput, account.username);
+  if (!usernameFilled) {
+    // Re-query after a possible React/Vue DOM replacement.
+    usernameInput = await firstVisible(page, ['input[name="username"]', 'input[autocomplete="username"]', 'input[type="text"]', 'input:not([type="password"])']);
+    usernameFilled = usernameInput ? await fillAndVerify(usernameInput, account.username) : false;
+  }
+  const passwordFilled = await fillAndVerify(passwordInput, password);
+  if (!usernameFilled || !passwordFilled) {
+    db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+    return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: !usernameFilled ? 'TikTok 用户名输入框未接受填写，请检查页面后重试' : 'TikTok 密码输入框未接受填写，请检查页面后重试' };
+  }
   let totpFilled = false;
   if (totpSecret) {
     const totpInput = await firstVisible(page, [
