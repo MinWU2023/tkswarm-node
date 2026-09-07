@@ -28,29 +28,36 @@ async function firstVisibleText(page, texts) {
   return null;
 }
 
+async function clickSafeLoginMethod(page, pattern) {
+  const candidates = [
+    page.getByRole('button', { name: pattern }).first(),
+    page.getByRole('link', { name: pattern }).first(),
+    page.getByText(pattern).first(),
+  ];
+  for (const locator of candidates) {
+    if (!await locator.count() || !await locator.isVisible().catch(() => false)) continue;
+    await locator.scrollIntoViewIfNeeded().catch(() => {});
+    await locator.click({ timeout: 5000 }).catch(async () => {
+      const clickable = locator.locator('xpath=ancestor-or-self::*[self::button or @role="button" or self::a][1]');
+      if (await clickable.count()) await clickable.click({ timeout: 5000 }); else throw new Error('登录方式入口不可点击');
+    });
+    return true;
+  }
+  return false;
+}
+
 async function selectUsernameLogin(page) {
-  // TikTok sometimes redirects the direct email URL back to the login-method
-  // chooser. Select only the ordinary phone/email/username path; never choose
-  // an external social-login provider on the user's behalf.
-  if (/tiktok\.com\/login\/?(?:\?|$)/i.test(page.url())) {
-    const method = await firstVisibleText(page, [
-      'Use phone / email / username', '使用手机号 / 邮箱 / 用户名',
-      '使用手机号/邮箱/用户名',
-    ]);
-    if (method) {
-      await method.click();
-      await page.waitForTimeout(800);
-    }
-  }
-  if (/\/login\/phone-or-email\/?(?:\?|$)/i.test(page.url())) {
-    const email = await firstVisibleText(page, [
-      'Log in with email or username', '使用邮箱或用户名登录', '使用邮箱/用户名登录',
-    ]);
-    if (email) {
-      await email.click();
-      await page.waitForTimeout(800);
-    }
-  }
+  // Only select TikTok's ordinary credential flow. Never select Google,
+  // Facebook, Apple, QR code, or another external authentication provider.
+  const credentialReady = await firstVisible(page, ['input[name="username"]', 'input[autocomplete="username"]']);
+  if (credentialReady) return true;
+  const selectedPrimary = await clickSafeLoginMethod(page,
+    /(?:Use|Continue with)\s*(?:phone|email|username)|phone\s*\/\s*email\s*\/\s*username|使用.*(?:手机号|邮箱|用户名)/i);
+  if (selectedPrimary) await page.waitForTimeout(1200);
+  const selectedEmail = await clickSafeLoginMethod(page,
+    /Log in with (?:email|username)|email\s*(?:or|\/)\s*username|使用.*(?:邮箱|用户名).*登录/i);
+  if (selectedEmail) await page.waitForTimeout(1200);
+  return selectedPrimary || selectedEmail;
 }
 
 async function getSession(profileId, provider) {
