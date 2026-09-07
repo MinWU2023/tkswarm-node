@@ -107,10 +107,9 @@ router.post('/profiles/:id/close', async (req, res) => {
 
 router.post('/profiles/:id/tiktok-status', async (req, res) => {
   const provider = new BitBrowserProvider();
-  // Keep the environment open after inspection. Login assistance, manual 2FA,
-  // CAPTCHA handling, and the user's next manual action all use the same page.
-  // Closing it here also destroys the page immediately after a successful
-  // status check and makes the next login-assist call appear to refresh/restart.
+  // Keep the environment open while login is incomplete so the user can
+  // continue credential, 2FA, or CAPTCHA handling. Once a valid TikTok session
+  // is confirmed, close the account's bound environment as requested.
   const connection = await provider.open(req.params.id);
   if (!connection?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
   const status = await inspectTikTokSession(connection.ws);
@@ -119,7 +118,12 @@ router.post('/profiles/:id/tiktok-status', async (req, res) => {
     db.prepare('UPDATE accounts SET login_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
       .run(status.loggedIn ? 'online' : 'offline', account.id);
   }
-  return ok(res, { ...status, account: account || null, browserKeptOpen: true }, status.loggedIn ? 'TikTok 登录状态有效（浏览器保持打开）' : '未检测到有效 TikTok 登录会话（浏览器保持打开）');
+  let browserClosed = false;
+  if (status.loggedIn) {
+    await provider.close(req.params.id);
+    browserClosed = true;
+  }
+  return ok(res, { ...status, account: account || null, browserClosed }, status.loggedIn ? 'TikTok 登录状态有效，已关闭当前账号绑定的浏览器' : '未检测到有效 TikTok 登录会话，浏览器保持打开');
 });
 
 router.get('/accounts/:accountId/tiktok-profile', (req, res) => {
