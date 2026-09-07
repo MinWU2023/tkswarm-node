@@ -107,23 +107,19 @@ router.post('/profiles/:id/close', async (req, res) => {
 
 router.post('/profiles/:id/tiktok-status', async (req, res) => {
   const provider = new BitBrowserProvider();
-  let opened = false;
-  try {
-    const connection = await provider.open(req.params.id);
-    opened = true;
-    if (!connection?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
-    const status = await inspectTikTokSession(connection.ws);
-    const account = db.prepare("SELECT id, username FROM accounts WHERE browser_type='bit' AND browser_profile_id=?").get(req.params.id);
-    if (account) {
-      db.prepare('UPDATE accounts SET login_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-        .run(status.loggedIn ? 'online' : 'offline', account.id);
-    }
-    return ok(res, { ...status, account: account || null }, status.loggedIn ? 'TikTok 登录状态有效' : '未检测到有效 TikTok 登录会话');
-  } finally {
-    if (opened) {
-      try { await provider.close(req.params.id); } catch { /* keep the inspection result */ }
-    }
+  // Keep the environment open after inspection. Login assistance, manual 2FA,
+  // CAPTCHA handling, and the user's next manual action all use the same page.
+  // Closing it here also destroys the page immediately after a successful
+  // status check and makes the next login-assist call appear to refresh/restart.
+  const connection = await provider.open(req.params.id);
+  if (!connection?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
+  const status = await inspectTikTokSession(connection.ws);
+  const account = db.prepare("SELECT id, username FROM accounts WHERE browser_type='bit' AND browser_profile_id=?").get(req.params.id);
+  if (account) {
+    db.prepare('UPDATE accounts SET login_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(status.loggedIn ? 'online' : 'offline', account.id);
   }
+  return ok(res, { ...status, account: account || null, browserKeptOpen: true }, status.loggedIn ? 'TikTok 登录状态有效（浏览器保持打开）' : '未检测到有效 TikTok 登录会话（浏览器保持打开）');
 });
 
 router.get('/accounts/:accountId/tiktok-profile', (req, res) => {
