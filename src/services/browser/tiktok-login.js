@@ -38,10 +38,29 @@ async function fillAndVerify(locator, value) {
       await locator.pressSequentially(value, { delay: 15 }).catch(() => {});
     }
     if ((await locator.inputValue().catch(() => '')) === value) {
-      // Allow the page's controlled-input handler to settle before returning.
       await locator.page().waitForTimeout(350);
       if ((await locator.inputValue().catch(() => '')) === value) return true;
     }
+  }
+  return false;
+}
+
+async function fillTotpCode(page, selectors, code) {
+  const candidates = page.locator(selectors.join(', '));
+  const visible = [];
+  for (let i = 0; i < await candidates.count(); i += 1) {
+    const item = candidates.nth(i);
+    if (await item.isVisible().catch(() => false)) visible.push(item);
+  }
+  if (!visible.length) return false;
+  if (visible.length === 1) return fillAndVerify(visible[0], code);
+  // Some TikTok versions render six separate one-character inputs.
+  const boxes = visible.slice(0, 6);
+  if (boxes.length >= 6) {
+    for (let i = 0; i < 6; i += 1) await fillAndVerify(boxes[i], code[i]);
+    await page.waitForTimeout(350);
+    const values = await Promise.all(boxes.map(item => item.inputValue().catch(() => '')));
+    return values.join('') === code;
   }
   return false;
 }
@@ -148,22 +167,24 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // instead of navigating back to the username/password page.
   if (/\/login\/2sv\//i.test(page.url())) {
     if (!totpSecret) throw new Error('账号没有已保存的 2FA 密钥，请重新导入账号凭据');
-    const currentTotp = await firstVisible(page, totpSelectors);
-    if (!currentTotp) throw new Error('当前处于 TikTok 2-step 页面，但未找到 2FA 输入框');
+    const totpInputSelectors = [...totpSelectors, 'input[inputmode="numeric"]', 'input[type="tel"]', 'input[type="text"]', 'input:not([type])'];
+    const hasTotpInput = await firstVisible(page, totpInputSelectors);
+    if (!hasTotpInput) throw new Error('当前处于 TikTok 2-step 页面，但未找到 2FA 输入框');
     let token = generateTotp(totpSecret);
     if (token.validForSeconds <= 8) {
       await page.waitForTimeout((token.validForSeconds + 1) * 1000);
       token = generateTotp(totpSecret);
     }
-    await currentTotp.fill(token.code);
-    const codeVisible = (await currentTotp.inputValue().catch(() => '')).length === 6;
-    if (!codeVisible) throw new Error('已生成 2FA 验证码，但 TikTok 输入框未接受填写');
+    const codeVisible = await fillTotpCode(page, totpInputSelectors, token.code);
+    if (!codeVisible) throw new Error('已生成 2FA 验证码，但 TikTok 输入框未保持填写状态');
+    const preparedScreenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-2sv-prepared.png`);
+    await page.screenshot({ path: preparedScreenshot, fullPage: false }).catch(() => {});
     const next = submitAfterTotp
       ? await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']) : null;
     if (next) { await next.click(); await page.waitForTimeout(2500); }
     return {
       accountId, username: account.username, filled: true, submitted: Boolean(next),
-      twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: '',
+      twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: preparedScreenshot,
       currentUrl: page.url(), pageTitle: await page.title(),
       message: next ? '已在 2-step 页面填入并提交 TOTP 验证码' : '已在 2-step 页面填入 TOTP 验证码，请确认后点击 Next',
     };
@@ -226,13 +247,17 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   }
   let totpFilled = false;
   if (totpSecret) {
-    const totpInput = await firstVisible(page, [
+    const totpInputSelectors = [
       'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
-      'input[placeholder*="Code"]', 'input[placeholder*="验证码"]',
-    ]);
-    if (totpInput) {
-      await totpInput.fill(generateTotp(totpSecret).code);
-      totpFilled = true;
+      'input[placeholder*="Code"]', 'input[placeholder*="验证码"]', 'input[inputmode="numeric"]', 'input[type="tel"]',
+    ];
+    if (await firstVisible(page, totpInputSelectors)) {
+      let token = generateTotp(totpSecret);
+      if (token.validForSeconds <= 8) {
+        await page.waitForTimeout((token.validForSeconds + 1) * 1000);
+        token = generateTotp(totpSecret);
+      }
+      totpFilled = await fillTotpCode(page, totpInputSelectors, token.code);
     }
   }
   let submitted = false;
