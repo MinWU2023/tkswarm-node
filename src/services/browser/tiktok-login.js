@@ -110,6 +110,8 @@ async function getSession(profileId, provider) {
   const existing = sessions.get(profileId);
   if (existing && existing.browser.isConnected() && !existing.page.isClosed()) return existing;
   if (existing) { await existing.browser.close().catch(() => {}); sessions.delete(profileId); }
+  // Reuse an already connected CDP session. Calling BitBrowser open again can
+  // reactivate/reload the profile and races the user's manual Log in click.
   const opened = await provider.open(profileId);
   if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
   const browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
@@ -198,12 +200,15 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // login page, page.goto would refresh the form and erase a click that is still
   // being processed (or erase credentials already entered by the user).
   const currentUrl = page.url();
+  liveLog(`账号 #${accountId}：登录辅助选定页面 ${currentUrl}`,'info',{accountId});
   // Once a TikTok login page is open, never navigate it from login-assist.
   // TikTok submits the form through its SPA/router; a second goto here can
   // race the user's manual Log in click and look like an unexpected refresh.
   if (!/https?:\/\/([^/]+\.)?tiktok\.com\/login(?:\/|\?|$)/i.test(currentUrl)) {
-    liveLog(`账号 #${accountId}：打开 TikTok 登录页`,'info',{accountId});
+    liveLog(`账号 #${accountId}：当前不是登录页，首次打开 TikTok 登录页`,'info',{accountId});
     await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } else {
+    liveLog(`账号 #${accountId}：已在登录页，禁止重新导航或刷新`,'info',{accountId});
   }
   const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
   let captcha = await hasCaptcha();
