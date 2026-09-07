@@ -15,6 +15,10 @@ const batchSchema = z.object({
   browserType: z.string().trim().min(1).max(30).default('bit'),
   country: z.string().trim().max(50).default(''),
 });
+const secretSchema = z.object({
+  password: z.string().max(500).optional().default(''),
+  totpSecret: z.string().max(256).optional().default(''),
+}).refine(b => b.password.trim() || b.totpSecret.trim(), { message: '请至少填写新密码或新 2FA 密钥' });
 const schema = z.object({
   username: z.string().trim().min(1).max(100),
   nickname: z.string().trim().max(100).default(''),
@@ -140,6 +144,20 @@ router.put('/:id', (req, res) => {
   `).run({ ...b, enabled: b.enabled ? 1 : 0, id: req.params.id });
   if (!result.changes) return fail(res, '账号不存在', 404);
   return ok(res, db.prepare(`${selectSql} WHERE a.id = ?`).get(req.params.id), '账号已更新');
+});
+
+router.put('/:id/secrets', (req, res) => {
+  const account = db.prepare('SELECT id FROM accounts WHERE id=?').get(req.params.id);
+  if (!account) return fail(res, '账号不存在', 404);
+  const body = secretSchema.parse(req.body);
+  const password = body.password;
+  const totpSecret = body.totpSecret.replace(/\s+/g, '').toUpperCase();
+  if (totpSecret && (!/^[A-Z2-7]+=*$/.test(totpSecret) || totpSecret.length < 16)) return fail(res, '2FA 密钥不是有效的 Base32 格式', 422);
+  const existing = db.prepare('SELECT password_encrypted,totp_secret_encrypted FROM account_secrets WHERE account_id=?').get(account.id) || {};
+  db.prepare(`INSERT INTO account_secrets(account_id,password_encrypted,totp_secret_encrypted,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(account_id) DO UPDATE SET password_encrypted=excluded.password_encrypted,totp_secret_encrypted=excluded.totp_secret_encrypted,updated_at=CURRENT_TIMESTAMP`)
+    .run(account.id, password ? encrypt(password) : existing.password_encrypted || '', totpSecret ? encrypt(totpSecret) : existing.totp_secret_encrypted || '');
+  return ok(res, { passwordUpdated: Boolean(password), totpUpdated: Boolean(totpSecret) }, '账号凭据已加密更新');
 });
 
 router.patch('/:id/status', (req, res) => {
