@@ -29,15 +29,21 @@ async function firstVisibleText(page, texts) {
 }
 
 async function fillAndVerify(locator, value) {
-  await locator.fill(value);
-  if ((await locator.inputValue().catch(() => '')) === value) return true;
-  // Some TikTok builds replace the controlled input during the first fill.
-  // Re-focus the current element and type into the replacement instead of
-  // silently continuing with only the password field populated.
-  await locator.click().catch(() => {});
-  await locator.press('ControlOrMeta+A').catch(() => {});
-  await locator.pressSequentially(value, { delay: 15 });
-  return (await locator.inputValue().catch(() => '')) === value;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await locator.fill(value).catch(() => {});
+    if ((await locator.inputValue().catch(() => '')) !== value) {
+      // Some TikTok builds replace the controlled input during the first fill.
+      await locator.click().catch(() => {});
+      await locator.press('ControlOrMeta+A').catch(() => {});
+      await locator.pressSequentially(value, { delay: 15 }).catch(() => {});
+    }
+    if ((await locator.inputValue().catch(() => '')) === value) {
+      // Allow the page's controlled-input handler to settle before returning.
+      await locator.page().waitForTimeout(350);
+      if ((await locator.inputValue().catch(() => '')) === value) return true;
+    }
+  }
+  return false;
 }
 
 async function clickSafeLoginMethod(page, pattern) {
@@ -124,6 +130,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     || openPages.find(item => /tiktok\.com/i.test(item.url()))
     || session.page;
   session.page = page;
+  await page.bringToFront().catch(() => {});
   // Cookies are stored in the BitBrowser profile, not in TkSwarm memory. Check
   // them before starting a new login so a later click does not log in again.
   const existingSession = await inspectTikTokSession(session.ws);
@@ -209,6 +216,10 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     usernameFilled = usernameInput ? await fillAndVerify(usernameInput, account.username) : false;
   }
   const passwordFilled = await fillAndVerify(passwordInput, password);
+  // Capture the actual prepared form for diagnosis without including secret
+  // values in API responses or logs.
+  const preparedScreenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-prepared.png`);
+  await page.screenshot({ path: preparedScreenshot, fullPage: false }).catch(() => {});
   if (!usernameFilled || !passwordFilled) {
     db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: !usernameFilled ? 'TikTok 用户名输入框未接受填写，请检查页面后重试' : 'TikTok 密码输入框未接受填写，请检查页面后重试' };
@@ -264,7 +275,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
-  const result = { accountId, username: account.username, filled: true, submitted, twoFactorRequired, totpFilled, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
+  const result = { accountId, username: account.username, filled: true, usernameFilled, passwordFilled, submitted, twoFactorRequired, totpFilled, captcha, screenshot: preparedScreenshot || screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
   if (!submitted) db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   return result;
   } finally {
