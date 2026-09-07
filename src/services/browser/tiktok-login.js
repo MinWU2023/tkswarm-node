@@ -194,7 +194,10 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // login page, page.goto would refresh the form and erase a click that is still
   // being processed (or erase credentials already entered by the user).
   const currentUrl = page.url();
-  if (!/tiktok\.com\/login/i.test(currentUrl)) {
+  // Once a TikTok login page is open, never navigate it from login-assist.
+  // TikTok submits the form through its SPA/router; a second goto here can
+  // race the user's manual Log in click and look like an unexpected refresh.
+  if (!/https?:\/\/([^/]+\.)?tiktok\.com\/login(?:\/|\?|$)/i.test(currentUrl)) {
     await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
   }
   const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
@@ -239,8 +242,6 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   const passwordFilled = await fillAndVerify(passwordInput, password);
   // Capture the actual prepared form for diagnosis without including secret
   // values in API responses or logs.
-  const preparedScreenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-prepared.png`);
-  await page.screenshot({ path: preparedScreenshot, fullPage: false }).catch(() => {});
   if (!usernameFilled || !passwordFilled) {
     db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: !usernameFilled ? 'TikTok 用户名输入框未接受填写，请检查页面后重试' : 'TikTok 密码输入框未接受填写，请检查页面后重试' };
@@ -300,7 +301,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
-  const result = { accountId, username: account.username, filled: true, usernameFilled, passwordFilled, submitted, twoFactorRequired, totpFilled, captcha, screenshot: preparedScreenshot || screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
+  const result = { accountId, username: account.username, filled: true, usernameFilled, passwordFilled, submitted, twoFactorRequired, totpFilled, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
   if (!submitted) db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   return result;
   } finally {
