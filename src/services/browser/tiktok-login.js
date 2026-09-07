@@ -49,15 +49,23 @@ async function clickSafeLoginMethod(page, pattern) {
 async function selectUsernameLogin(page) {
   // Only select TikTok's ordinary credential flow. Never select Google,
   // Facebook, Apple, QR code, or another external authentication provider.
-  const credentialReady = await firstVisible(page, ['input[name="username"]', 'input[autocomplete="username"]']);
+  const credentialReady = await firstVisible(page, [
+    'input[name="username"]', 'input[autocomplete="username"]',
+    'input[placeholder*="Email"]', 'input[placeholder*="email"]',
+    'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
+  ]);
   if (credentialReady) return true;
-  const selectedPrimary = await clickSafeLoginMethod(page,
-    /(?:Use|Continue with)\s*(?:phone|email|username)|phone\s*\/\s*email\s*\/\s*username|使用.*(?:手机号|邮箱|用户名)/i);
-  if (selectedPrimary) await page.waitForTimeout(1200);
-  const selectedEmail = await clickSafeLoginMethod(page,
-    /Log in with (?:email|username)|email\s*(?:or|\/)\s*username|使用.*(?:邮箱|用户名).*登录/i);
-  if (selectedEmail) await page.waitForTimeout(1200);
-  return selectedPrimary || selectedEmail;
+  const url = page.url();
+  let selected = false;
+  if (/tiktok\.com\/login\/?(?:\?|$)/i.test(url)) {
+    selected = await clickSafeLoginMethod(page,
+      /(?:Use|Continue with)\s*(?:phone|email|username)|phone\s*\/\s*email\s*\/\s*username|使用.*(?:手机号|邮箱|用户名)/i);
+  } else if (/\/login\/phone-or-email\/?(?:\?|$)/i.test(url)) {
+    selected = await clickSafeLoginMethod(page,
+      /Log in with (?:email|username)|email\s*(?:or|\/)\s*username|使用.*(?:邮箱|用户名).*登录/i);
+  }
+  if (selected) await page.waitForTimeout(1000);
+  return selected;
 }
 
 async function getSession(profileId, provider) {
@@ -142,21 +150,28 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     };
   }
 
-  await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // Do not navigate on every assist call. If the user is already on TikTok's
+  // login page, page.goto would refresh the form and erase a click that is still
+  // being processed (or erase credentials already entered by the user).
+  const currentUrl = page.url();
+  if (!/tiktok\.com\/login/i.test(currentUrl)) {
+    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  }
   const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
   let captcha = await hasCaptcha();
-  // The direct email URL can redirect to /login and render the method chooser
-  // asynchronously. Keep selecting the ordinary username path until the real
-  // credential form is present, instead of failing after one short delay.
-  for (let i = 0; !captcha && i < 40; i += 1) {
-    const usernameReady = await firstVisible(page, [
-      'input[name="username"]', 'input[autocomplete="username"]', 'input[placeholder*="Email"]',
-      'input[placeholder*="email"]', 'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
-    ]);
-    const passwordReady = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
+  // Select the ordinary credential path at most once per page state, then wait
+  // for TikTok's SPA navigation/form rendering instead of clicking repeatedly.
+  const usernameSelectors = [
+    'input[name="username"]', 'input[autocomplete="username"]', 'input[placeholder*="Email"]',
+    'input[placeholder*="email"]', 'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
+  ];
+  const passwordSelectors = ['input[type="password"]', 'input[autocomplete="current-password"]'];
+  for (let i = 0; !captcha && i < 30; i += 1) {
+    const usernameReady = await firstVisible(page, usernameSelectors);
+    const passwordReady = await firstVisible(page, passwordSelectors);
     if (usernameReady && passwordReady) break;
-    await selectUsernameLogin(page);
-    await page.waitForTimeout(500);
+    const selected = await selectUsernameLogin(page);
+    await page.waitForTimeout(selected ? 1000 : 500);
     captcha = await hasCaptcha();
   }
   let screenshot = '';
