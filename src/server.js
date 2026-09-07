@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const { dbPath } = require('./db');
 const { ok } = require('./http');
 const { startTaskRunner } = require('./services/task-runner');
+const { attach } = require('./services/live-log');
 const { notFound, errorHandler } = require('./middleware/error-handler');
 
 const app = express();
@@ -49,6 +50,7 @@ app.use(errorHandler);
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', socket => {
+  attach(socket);
   socket.send(JSON.stringify({ type: 'connected', data: { time: new Date().toISOString() } }));
   socket.on('message', raw => {
     let message;

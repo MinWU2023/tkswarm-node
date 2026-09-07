@@ -6,6 +6,7 @@ const { generateTotp } = require('../totp');
 const { BitBrowserProvider } = require('./bit-browser-provider');
 const { inspectTikTokSession } = require('./cdp-client');
 const { db } = require('../../db');
+const { publish: liveLog } = require('../live-log');
 
 const sessions = new Map();
 const activeLogins = new Set();
@@ -130,6 +131,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   const lockKey = String(accountId);
   if (activeLogins.has(lockKey)) throw new Error('该账号正在执行登录流程，请勿重复点击');
   activeLogins.add(lockKey);
+  liveLog(`账号 #${accountId}：开始登录辅助`,'info',{accountId});
   try {
   const account = db.prepare(`SELECT id, username, browser_profile_id, login_status FROM accounts WHERE id=?`).get(accountId);
   if (!account) throw new Error('账号不存在');
@@ -141,7 +143,9 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   const totpSecret = secret.totp_secret_encrypted ? decrypt(secret.totp_secret_encrypted) : '';
   const provider = new BitBrowserProvider();
   db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+  liveLog(`账号 #${accountId}：打开绑定浏览器环境`,'info',{accountId});
   const session = await getSession(account.browser_profile_id, provider);
+  liveLog(`账号 #${accountId}：当前页面 ${session.page.url()}`,'info',{accountId});
   // BitBrowser may add its own workbench tab after the TikTok tab. Always target
   // the active TikTok 2FA/login page rather than relying on the first cached tab.
   const openPages = session.context.pages().filter(item => !item.isClosed());
@@ -198,6 +202,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // TikTok submits the form through its SPA/router; a second goto here can
   // race the user's manual Log in click and look like an unexpected refresh.
   if (!/https?:\/\/([^/]+\.)?tiktok\.com\/login(?:\/|\?|$)/i.test(currentUrl)) {
+    liveLog(`账号 #${accountId}：打开 TikTok 登录页`,'info',{accountId});
     await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 60000 });
   }
   const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await page.locator('body').innerText().catch(() => ''));
@@ -240,6 +245,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     usernameFilled = usernameInput ? await fillAndVerify(usernameInput, account.username) : false;
   }
   const passwordFilled = await fillAndVerify(passwordInput, password);
+  liveLog(`账号 #${accountId}：用户名${usernameFilled?'已':'未'}填写，密码${passwordFilled?'已':'未'}填写` , usernameFilled && passwordFilled ? 'info' : 'error', { accountId });
   // Capture the actual prepared form for diagnosis without including secret
   // values in API responses or logs.
   if (!usernameFilled || !passwordFilled) {
@@ -305,6 +311,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   if (!submitted) db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
   return result;
   } finally {
+    liveLog(`账号 #${accountId}：登录辅助结束`,'info',{accountId});
     activeLogins.delete(lockKey);
   }
 }
