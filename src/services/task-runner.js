@@ -1,11 +1,12 @@
 const { db } = require('../db');
 const { syncProfile, syncVideos } = require('./browser/tiktok-data');
 const { preparePublish, prepareMessage } = require('./browser/tiktok-actions');
+const { publish: liveLog } = require('./live-log');
 
 let busy = false;
 let timer;
 function setting(key, fallback) { const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key); if (!row) return fallback; try { return JSON.parse(row.value); } catch { return fallback; } }
-function event(taskId, message, level = 'info') { db.prepare('INSERT INTO task_events(task_id,level,message) VALUES (?,?,?)').run(taskId, level, message); }
+function event(taskId, message, level = 'info') { db.prepare('INSERT INTO task_events(task_id,level,message) VALUES (?,?,?)').run(taskId, level, message); liveLog(message, level, { taskId }); }
 function accountsFor(task) {
   const params = { limit: task.total_count > 0 ? task.total_count : 200, taskId: task.id };
   let payload = {}; try { payload = JSON.parse(task.payload || '{}'); } catch {}
@@ -26,9 +27,9 @@ async function processAccount(task, account, timeoutSeconds) {
     const work = task.type === 'profile' ? syncProfile(account.id) : task.type === 'sync' ? syncProfile(account.id).then(() => syncVideos(account.id)) : task.type === 'publish' ? preparePublish(account.id, Number(payload.materialIds?.[0]), payload.publishTitle||'', payload.publishCaption||'') : task.type === 'message' ? prepareMessage(account.id, payload.publishCaption||payload.content||'', payload.recipient||'') : Promise.reject(new Error(`任务类型“${task.type}”的执行器尚未启用`));
     const result=await Promise.race([work, timeout(timeoutSeconds)]);
     if (result?.status === 'security_paused' || result?.status === 'manual_required') {
-      const message=result.status==='security_paused'?'检测到安全验证，任务已暂停':'执行方案已准备，等待人工确认';
+      const message=result.status==='security_paused'?'检测到安全验证，任务已暂停，请在浏览器中人工处理':'视频已上传并准备完成，任务已暂停，等待人工检查；不会自动点击发布';
       db.prepare("UPDATE task_runs SET status='skipped',error_message=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").run(message,run.lastInsertRowid);
-      db.prepare("INSERT INTO task_action_results(task_id,account_id,action_type,status,result_json,error_message) VALUES (?,?,?,?,?,?)").run(task.id,account.id,task.type,'skipped',JSON.stringify({status:result.status,screenshot:result.screenshot||''}),message);
+      db.prepare("INSERT INTO task_action_results(task_id,account_id,action_type,status,result_json,error_message) VALUES (?,?,?,?,?,?)").run(task.id,account.id,task.type,'skipped',JSON.stringify({status:result.status,manualRequired:true,screenshot:result.screenshot||'',nextStep:'人工检查 TikTok 页面并点击最终按钮'}),message);
       db.prepare("UPDATE tasks SET status='paused',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(task.id); event(task.id,`账号 #${account.id}：${message}`,'warn'); return;
     }
     db.prepare("UPDATE task_runs SET status='success',finished_at=CURRENT_TIMESTAMP WHERE id=?").run(run.lastInsertRowid);
