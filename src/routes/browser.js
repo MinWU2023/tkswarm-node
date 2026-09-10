@@ -87,6 +87,7 @@ router.get('/profiles', async (req, res) => {
 
 router.post('/profiles/:id/open', async (req, res) => {
   const provider = new BitBrowserProvider();
+  try {
   const data = await provider.open(req.params.id);
   const safe = data && typeof data === 'object' ? {
     ws: data.ws,
@@ -97,6 +98,10 @@ router.post('/profiles/:id/open', async (req, res) => {
     coreVersion: data.coreVersion,
   } : data;
   return ok(res, safe, '浏览器环境已打开');
+  } catch (error) {
+    req.log?.error?.({ profileId: req.params.id, error: error.message }, 'browser profile open failed');
+    return fail(res, error.message, 422);
+  }
 });
 
 router.post('/profiles/:id/close', async (req, res) => {

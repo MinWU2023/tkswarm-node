@@ -20,7 +20,15 @@ class BitBrowserProvider {
       if (this.apiToken) headers.Authorization = `Bearer ${this.apiToken}`;
       const response = await fetch(`${this.baseUrl}/${endpoint.replace(/^\//, '')}`, {
         method: 'POST', headers, body: JSON.stringify(payload), signal: controller.signal,
+        // A local BitBrowser API must not silently redirect to a cloud host.
+        // Following such a redirect caused confusing ENOTFOUND errors when the
+        // machine could not resolve serviceapi.bitbrowser.cn.
+        redirect: 'manual',
       });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location') || '';
+        throw new Error(`比特浏览器本地 API 返回重定向（${response.status}${location ? ` → ${location}` : ''}），请检查 BitBrowser 本地服务和环境 ID`);
+      }
       const text = await response.text();
       let result;
       try { result = JSON.parse(text); } catch { throw new Error(`比特浏览器返回了非 JSON 数据（HTTP ${response.status}）`); }
@@ -29,6 +37,7 @@ class BitBrowserProvider {
     } catch (error) {
       if (error.name === 'AbortError') throw new Error(`比特浏览器请求超时：${endpoint}`);
       if (error.cause?.code === 'ECONNREFUSED') throw new Error('无法连接比特浏览器，请先启动比特浏览器并启用本地 API');
+      if (error.cause?.code === 'ENOTFOUND' || error.code === 'ENOTFOUND') throw new Error('比特浏览器本地 API 试图访问无法解析的云端地址，请重启 BitBrowser 本地服务并确认 API 地址为 http://127.0.0.1:54345');
       throw error;
     } finally {
       clearTimeout(timer);
