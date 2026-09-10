@@ -86,11 +86,16 @@ router.post('/:id/preflight', (req, res) => {
   if (!task) return fail(res, '任务不存在', 404);
   let payload = {}; try { payload = JSON.parse(task.payload || '{}'); } catch { payload = {}; }
   const issues = [];
-  const accountCount = task.group_id ? db.prepare('SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND group_id=?').get(task.group_id).count : db.prepare('SELECT COUNT(*) count FROM accounts WHERE enabled=1').get().count;
+  const selectedIds = Array.isArray(payload.accountIds) ? [...new Set(payload.accountIds.map(Number).filter(Number.isInteger))] : [];
+  const accountCount = selectedIds.length ? db.prepare(`SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND id IN (${selectedIds.map(() => '?').join(',')})`).get(...selectedIds).count : task.group_id ? db.prepare('SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND group_id=?').get(task.group_id).count : db.prepare('SELECT COUNT(*) count FROM accounts WHERE enabled=1').get().count;
   if (!accountCount) issues.push('没有符合条件的启用账号');
   if (task.total_count > 0 && accountCount < task.total_count) issues.push(`目标账号不足：需要 ${task.total_count} 个，当前只有 ${accountCount} 个`);
-  if (task.group_id) { const group=db.prepare('SELECT type FROM groups WHERE id=?').get(task.group_id); if (!group) issues.push('账号分组不存在'); else if (group.type !== 'account') issues.push('任务目标分组不是账号分组'); }
-  const boundCount = task.group_id ? db.prepare('SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND group_id=? AND browser_profile_id IS NOT NULL AND browser_profile_id<>\'\'').get(task.group_id).count : db.prepare("SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND browser_profile_id IS NOT NULL AND browser_profile_id<>''").get().count;
+  if (selectedIds.length) {
+    const existing = db.prepare(`SELECT id FROM accounts WHERE enabled=1 AND id IN (${selectedIds.map(() => '?').join(',')})`).all(...selectedIds).map(x => x.id);
+    if (existing.length !== selectedIds.length) issues.push('部分指定账号不存在或未启用');
+  }
+  if (task.group_id && !selectedIds.length) { const group=db.prepare('SELECT type FROM groups WHERE id=?').get(task.group_id); if (!group) issues.push('账号分组不存在'); else if (group.type !== 'account') issues.push('任务目标分组不是账号分组'); }
+  const boundCount = selectedIds.length ? db.prepare(`SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND id IN (${selectedIds.map(() => '?').join(',')}) AND browser_profile_id IS NOT NULL AND browser_profile_id<>''`).get(...selectedIds).count : task.group_id ? db.prepare('SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND group_id=? AND browser_profile_id IS NOT NULL AND browser_profile_id<>\'\'').get(task.group_id).count : db.prepare("SELECT COUNT(*) count FROM accounts WHERE enabled=1 AND browser_profile_id IS NOT NULL AND browser_profile_id<>''").get().count;
   if (['sync','profile','publish','message'].includes(task.type) && boundCount < Math.min(accountCount, task.total_count > 0 ? task.total_count : accountCount)) issues.push(`有 ${accountCount-boundCount} 个启用账号未绑定浏览器环境`);
   const materialIds = Array.isArray(payload.materialIds) ? payload.materialIds.map(Number).filter(Number.isInteger) : [];
   if (task.type === 'publish' && !materialIds.length) issues.push('视频发布任务未关联素材');

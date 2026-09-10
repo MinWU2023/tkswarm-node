@@ -8,9 +8,11 @@ function setting(key, fallback) { const row = db.prepare('SELECT value FROM sett
 function event(taskId, message, level = 'info') { db.prepare('INSERT INTO task_events(task_id,level,message) VALUES (?,?,?)').run(taskId, level, message); }
 function accountsFor(task) {
   const params = { limit: task.total_count > 0 ? task.total_count : 200, taskId: task.id };
-  let where = task.group_id ? 'WHERE a.enabled=1 AND a.group_id=@groupId' : 'WHERE a.enabled=1';
-  if (task.group_id) params.groupId = task.group_id;
   let payload = {}; try { payload = JSON.parse(task.payload || '{}'); } catch {}
+  const selectedIds = Array.isArray(payload.accountIds) ? [...new Set(payload.accountIds.map(Number).filter(Number.isInteger))] : [];
+  let where = selectedIds.length ? `WHERE a.enabled=1 AND a.id IN (${selectedIds.map((_, i) => `@accountId${i}`).join(',')})` : task.group_id ? 'WHERE a.enabled=1 AND a.group_id=@groupId' : 'WHERE a.enabled=1';
+  if (selectedIds.length) selectedIds.forEach((id, i) => { params[`accountId${i}`] = id; });
+  if (task.group_id && !selectedIds.length) params.groupId = task.group_id;
   if (payload.onlyFailed) where += " AND EXISTS (SELECT 1 FROM task_runs fr WHERE fr.task_id=@taskId AND fr.account_id=a.id AND fr.status='failed')";
   return db.prepare(`SELECT a.id FROM accounts a ${where} ORDER BY a.id ASC LIMIT @limit`).all(params);
 }
