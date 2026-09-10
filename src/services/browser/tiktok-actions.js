@@ -13,10 +13,45 @@ async function connectAccount(accountId, url) {
   if(!opened?.ws) throw new Error('比特浏览器未返回 CDP 地址');
   const browser=await chromium.connectOverCDP(opened.ws,{timeout:30000});
   const context=browser.contexts()[0]; const page=context.pages().find(p=>/tiktok\.com/i.test(p.url()))||context.pages()[0]||await context.newPage();
-  await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000}); await page.waitForTimeout(2500);
+  await page.bringToFront().catch(()=>{});
+  await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
+  // TikTok Studio hydrates its upload surface asynchronously. Do not inspect
+  // once after 2.5s and declare failure; manual clicking may work later.
+  await page.waitForTimeout(5000);
   return {account,provider,browser,page,ws:opened.ws};
 }
 async function closeConnection(connection){if(!connection)return;await connection.browser.close().catch(()=>{});await connection.provider.close(connection.account.browser_profile_id).catch(()=>{});}
+
+async function findFileInput(page, waitMs = 15000) {
+  const end = Date.now() + waitMs;
+  while (Date.now() < end) {
+    const pages = [page, ...page.frames().filter(frame => frame !== page.mainFrame())];
+    for (const target of pages) {
+      const input = target.locator('input[type="file"]').first();
+      if (await input.count().catch(() => 0)) return input;
+    }
+    await page.waitForTimeout(500);
+  }
+  return null;
+}
+
+async function activateUploadSurface(page) {
+  const labels = /^(?:Upload|Select video|Select video to upload|上传视频|选择视频)$/i;
+  const candidates = [
+    page.getByRole('button', { name: labels }).first(),
+    page.getByRole('link', { name: labels }).first(),
+    page.getByText(labels).first(),
+  ];
+  for (const candidate of candidates) {
+    if (await candidate.count().catch(() => 0) && await candidate.isVisible().catch(() => false)) {
+      await candidate.scrollIntoViewIfNeeded().catch(() => {});
+      await candidate.click().catch(() => {});
+      await page.waitForTimeout(1000);
+      return true;
+    }
+  }
+  return false;
+}
 async function prepareMessage(accountId, content, recipient='') {
   const wait=waitForSlot(`message:${accountId}`,3000); if(wait) await new Promise(resolve=>setTimeout(resolve,wait));
   const connection=await connectAccount(accountId,'https://www.tiktok.com/messages'); let keepOpen=false; try {
@@ -39,39 +74,34 @@ async function preparePublish(accountId, materialId, title='', caption='') {
     const session=await inspectTikTokSession(connection.ws); if(!session.loggedIn) throw new Error('当前浏览器没有有效 TikTok 登录状态');
     const before=await capture(connection.page,accountId,'publish','before'); const security=await inspectPage(connection.page);
     if(security.blocked){keepOpen=true;return {status:'security_paused',reason:security.reason,screenshot:before,manualRequired:true};}
-    let fileSelected=false; let input=connection.page.locator('input[type=file]').first();
-    if(await input.count()===0){
-      const triggers=connection.page.getByText(/上传视频|Upload video|Select video|选择视频/i).first();
-      if(await triggers.count()) { await triggers.click().catch(()=>{}); await connection.page.waitForTimeout(2500); }
-      input=connection.page.locator('input[type=file]').first();
+    let fileSelected=false; let input=await findFileInput(connection.page, 1000);
+    if(!input){
+      await activateUploadSurface(connection.page);
+      input=await findFileInput(connection.page, 10000);
     }
-    if(await input.count()===0){
+    if(!input){
       const uploadLink=connection.page.getByRole('link',{name:/^Upload$/i}).first();
       if(await uploadLink.count()){ await uploadLink.click().catch(()=>{}); await connection.page.waitForTimeout(3500); }
-      input=connection.page.locator('input[type=file]').first();
+      input=await findFileInput(connection.page, 5000);
     }
-    if(await input.count()===0){
+    if(!input){
       const uploadButton=connection.page.getByRole('button',{name:/^Upload$/i}).first();
       if(await uploadButton.count()){
         const chooserPromise=connection.page.waitForEvent('filechooser',{timeout:7000}).catch(()=>null);
         await uploadButton.click().catch(()=>{}); const chooser=await chooserPromise;
         if(chooser){await chooser.setFiles(material.file_path);fileSelected=true;await connection.page.waitForTimeout(2000);}
       }
-      input=connection.page.locator('input[type=file]').first();
+      input=await findFileInput(connection.page, 5000);
     }
-    if(await input.count()===0){
-      for(const frame of connection.page.frames()) { const candidate=frame.locator('input[type=file]').first(); if(await candidate.count()){input=candidate;break;} }
-    }
-    if(await input.count()===0 && !fileSelected){
+    if(!input && !fileSelected){
       await connection.page.goto('https://www.tiktok.com/tiktokstudio/upload',{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{}); await connection.page.waitForTimeout(4000);
-      input=connection.page.locator('input[type=file]').first();
-      for(const frame of connection.page.frames()) { const candidate=frame.locator('input[type=file]').first(); if(await candidate.count()){input=candidate;break;} }
+      input=await findFileInput(connection.page, 10000);
     }
-    if(await input.count()===0){
+    if(!input){
       const info=await inspectPage(connection.page); const dom=await connection.page.evaluate(()=>({title:document.title,inputs:[...document.querySelectorAll('input')].map(x=>({type:x.type,accept:x.accept,placeholder:x.placeholder})).slice(0,20),buttons:[...document.querySelectorAll('button,[role=button]')].map(x=>(x.innerText||x.getAttribute('aria-label')||'').trim()).filter(Boolean).slice(0,30),text:(document.body?.innerText||'').replace(/\\s+/g,' ').slice(0,500)})).catch(()=>({}));
       throw new Error(`未找到视频上传控件（当前页面：${info.url||connection.page.url()}；标题：${dom.title||'-'}；输入框：${dom.inputs?.length||0}；按钮：${(dom.buttons||[]).join('|').slice(0,240)}；文本：${dom.text||'-'})`);
     }
-    if(!fileSelected){await input.setInputFiles(material.file_path);} await connection.page.waitForTimeout(2000);
+    if(!fileSelected){await input.setInputFiles(material.file_path);} await connection.page.waitForTimeout(4000);
     const textareas=connection.page.locator('textarea'); if(title||caption) await textareas.first().fill(`${title}${title&&caption?'\n':''}${caption}`).catch(()=>{});
     const prepared=await capture(connection.page,accountId,'publish','prepared'); const after=await inspectPage(connection.page);
     if(after.blocked){keepOpen=true;return {status:'security_paused',reason:after.reason,screenshot:prepared,manualRequired:true};}
