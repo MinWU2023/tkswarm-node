@@ -113,18 +113,42 @@ async function clearTikTokCookiesOnly(context) {
 }
 
 async function fillAndVerify(locator, value) {
+  const expected = String(value ?? '');
+  if (!expected) return false;
   // Skip rewrite when already correct — repeated fills can trip TikTok's attempt limit.
-  if ((await locator.inputValue().catch(() => '')) === value) return true;
-  await locator.click().catch(() => {});
-  await locator.fill(value).catch(() => {});
-  if ((await locator.inputValue().catch(() => '')) === value) return true;
-  // One gentle fallback only. Never press Enter (that submits the login form).
+  if ((await locator.inputValue().catch(() => '')) === expected) return true;
+  await locator.scrollIntoViewIfNeeded().catch(() => {});
+  await locator.click({ timeout: 5000 }).catch(() => {});
+  await locator.fill('').catch(() => {});
+  await locator.fill(expected).catch(() => {});
+  if ((await locator.inputValue().catch(() => '')) === expected) return true;
+
+  // TikTok uses React controlled inputs; Playwright fill() alone often does not stick.
+  const viaNative = await locator.evaluate((el, v) => {
+    const proto = el instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(el, v);
+    else el.value = v;
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: v, inputType: 'insertText' }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return el.value === v;
+  }, expected).catch(() => false);
+  if (viaNative || (await locator.inputValue().catch(() => '')) === expected) return true;
+
+  // Last resort: type characters. Never press Enter (that submits the login form).
   await locator.press('ControlOrMeta+A').catch(() => {});
-  await locator.pressSequentially(value, { delay: 20 }).catch(() => {});
-  return (await locator.inputValue().catch(() => '')) === value;
+  await locator.pressSequentially(expected, { delay: 25 }).catch(() => {});
+  return (await locator.inputValue().catch(() => '')) === expected;
 }
 
 async function fillTotpCode(page, selectors, code) {
+  // Prefer the labeled 6-digit field TikTok shows on 2-step verification.
+  const preferred = page.getByPlaceholder(/Enter 6-digit code|6-digit code|验证码/i).first();
+  if (await preferred.count() && await preferred.isVisible().catch(() => false)) {
+    if (await fillAndVerify(preferred, code)) return true;
+  }
   const candidates = page.locator(selectors.join(', '));
   const visible = [];
   for (let i = 0; i < await candidates.count(); i += 1) {
@@ -141,7 +165,62 @@ async function fillTotpCode(page, selectors, code) {
     const values = await Promise.all(boxes.map(item => item.inputValue().catch(() => '')));
     return values.join('') === code;
   }
-  return false;
+  return fillAndVerify(visible[0], code);
+}
+
+const TOTP_INPUT_SELECTORS = [
+  'input[autocomplete="one-time-code"]',
+  'input[placeholder="Enter 6-digit code"]',
+  'input[placeholder*="6-digit"]',
+  'input[placeholder*="6 digit"]',
+  'input[placeholder*="code"]',
+  'input[placeholder*="Code"]',
+  'input[placeholder*="验证码"]',
+  'input[name*="code"]',
+  'input[inputmode="numeric"]',
+  'input[type="tel"]',
+];
+
+async function isTwoStepVerificationPage(page) {
+  if (/\/login\/2sv\//i.test(page.url())) return true;
+  const codeInput = await firstVisible(page, TOTP_INPUT_SELECTORS);
+  if (!codeInput) return false;
+  // Password page must not be mistaken for 2SV.
+  if (await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]'])) return false;
+  const text = await pageBodyText(page);
+  return /2-step verification|authenticator app|Enter 6-digit code|两步验证|身份验证器|验证器应用/i.test(text);
+}
+
+async function fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run) {
+  if (!totpSecret) throw new Error('账号没有已保存的 2FA 密钥，请在「密码/2FA」里补填或重新导入带 2FA 的账号');
+  const totpInputSelectors = [...TOTP_INPUT_SELECTORS, 'input[type="text"]', 'input:not([type])'];
+  let hasTotpInput = await firstVisible(page, totpInputSelectors);
+  for (let i = 0; !hasTotpInput && i < 10; i += 1) {
+    assertNotCancelled(run);
+    await page.waitForTimeout(400);
+    hasTotpInput = await firstVisible(page, totpInputSelectors);
+  }
+  if (!hasTotpInput) throw new Error('当前处于 TikTok 2-step 页面，但未找到 2FA 输入框');
+  let token = generateTotp(totpSecret);
+  if (token.validForSeconds <= 8) {
+    await page.waitForTimeout((token.validForSeconds + 1) * 1000);
+    token = generateTotp(totpSecret);
+  }
+  assertNotCancelled(run);
+  liveLog(`账号 #${account.id}：正在填入 2FA 验证码`,'info',{accountId: account.id});
+  const codeVisible = await fillTotpCode(page, totpInputSelectors, token.code);
+  if (!codeVisible) throw new Error('已生成 2FA 验证码，但 TikTok 输入框未保持填写状态');
+  const preparedScreenshot = path.join(screenshotDir, `login-${account.id}-${Date.now()}-2sv-prepared.png`);
+  await page.screenshot({ path: preparedScreenshot, fullPage: false }).catch(() => {});
+  const next = submitAfterTotp
+    ? await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']) : null;
+  if (next) { await next.click(); await page.waitForTimeout(2500); }
+  return {
+    accountId: account.id, username: account.username, filled: true, submitted: Boolean(next),
+    twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: preparedScreenshot,
+    currentUrl: page.url(), pageTitle: await page.title(),
+    message: next ? '已在 2-step 页面填入并提交 TOTP 验证码' : '已自动填入 2FA 6 位验证码，请手动点击 Next（不会自动点）',
+  };
 }
 
 async function clickSafeLoginMethod(page, pattern) {
@@ -258,10 +337,11 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   }
   const account = {
     id: bundle.id,
-    username: bundle.username,
+    username: String(bundle.username || '').replace(/^@+/, '').trim(),
     browser_profile_id: bundle.browser_profile_id,
     login_status: bundle.login_status,
   };
+  if (!account.username) throw new Error('账号用户名为空，无法填写登录表');
 
   const provider = new BitBrowserProvider();
   await dataStore.updateLoginStatus(accountId, 'checking');
@@ -286,6 +366,12 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha: false, alreadyLoggedIn: true, screenshot: '', currentUrl: page.url(), pageTitle: await page.title(), message: '检测到已有有效 TikTok 登录状态，无需重复登录' };
   }
 
+  // Handle 2-step FIRST. Never clear cookies / navigate away while the user is
+  // already on the authenticator page — that would kill the login session.
+  if (await isTwoStepVerificationPage(page)) {
+    return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+  }
+
   // If a previous failed attempt left the rate-limit banner on this profile,
   // clear TikTok site data once and open a fresh login page. Do not refuse to
   // navigate — that used to trap every retry on the same error screen.
@@ -295,6 +381,9 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     await clearTikTokCookiesOnly(session.context);
     await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(1000);
+    if (await isTwoStepVerificationPage(page)) {
+      return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+    }
     limitedMsg = await findAttemptLimitMessage(page);
     if (limitedMsg) {
       await dataStore.updateLoginStatus(accountId, 'offline');
@@ -304,42 +393,6 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
       result.pageTitle = await page.title().catch(() => '');
       return result;
     }
-  }
-
-  const totpSelectors = [
-    'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]',
-    'input[name*="code"]', 'input[placeholder*="code"]', 'input[placeholder*="Code"]',
-    'input[placeholder*="验证码"]',
-  ];
-
-  // If the user is already looking at TikTok's 2-step page, continue that step
-  // instead of navigating back to the username/password page.
-  if (/\/login\/2sv\//i.test(page.url())) {
-    if (!totpSecret) throw new Error('账号没有已保存的 2FA 密钥，请重新导入账号凭据');
-    const totpInputSelectors = [...totpSelectors, 'input[inputmode="numeric"]', 'input[type="tel"]', 'input[type="text"]', 'input:not([type])'];
-    const hasTotpInput = await firstVisible(page, totpInputSelectors);
-    if (!hasTotpInput) throw new Error('当前处于 TikTok 2-step 页面，但未找到 2FA 输入框');
-    let token = generateTotp(totpSecret);
-    if (token.validForSeconds <= 8) {
-      await page.waitForTimeout((token.validForSeconds + 1) * 1000);
-      token = generateTotp(totpSecret);
-    }
-    assertNotCancelled(run);
-    const codeVisible = await fillTotpCode(page, totpInputSelectors, token.code);
-    if (!codeVisible) throw new Error('已生成 2FA 验证码，但 TikTok 输入框未保持填写状态');
-    const preparedScreenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-2sv-prepared.png`);
-    await page.screenshot({ path: preparedScreenshot, fullPage: false }).catch(() => {});
-    // Never auto-click Next on 2SV unless explicitly requested — clicking when
-    // rate-limited or with a stale code burns another attempt.
-    const next = submitAfterTotp
-      ? await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']) : null;
-    if (next) { await next.click(); await page.waitForTimeout(2500); }
-    return {
-      accountId, username: account.username, filled: true, submitted: Boolean(next),
-      twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: preparedScreenshot,
-      currentUrl: page.url(), pageTitle: await page.title(),
-      message: next ? '已在 2-step 页面填入并提交 TOTP 验证码' : '已在 2-step 页面填入 TOTP 验证码，请确认后点击 Next',
-    };
   }
 
   // Do not navigate on every assist call. If the user is already on TikTok's
@@ -357,6 +410,9 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     liveLog(`账号 #${accountId}：已在登录页，禁止重新导航或刷新`,'info',{accountId});
   }
   assertNotCancelled(run);
+  if (await isTwoStepVerificationPage(page)) {
+    return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+  }
   limitedMsg = await findAttemptLimitMessage(page);
   if (limitedMsg) {
     liveLog(`账号 #${accountId}：登录页仍有限流文案，清理后重开一次`,'warn',{accountId});
@@ -378,14 +434,20 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   // Select the ordinary credential path at most once, then wait for the form.
   // Repeated clicks on method tiles (or a mis-matched "Log in") burn attempts.
   const usernameSelectors = [
-    'input[name="username"]', 'input[autocomplete="username"]', 'input[placeholder*="Email"]',
-    'input[placeholder*="email"]', 'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
+    'input[name="username"]', 'input[autocomplete="username"]',
+    'input[placeholder*="Email or username"]', 'input[placeholder*="email or username"]',
+    'input[placeholder*="Email"]', 'input[placeholder*="email"]',
+    'input[placeholder*="Username"]', 'input[placeholder*="username"]',
+    'input[placeholder*="用户名"]', 'input[placeholder*="邮箱"]',
   ];
   const passwordSelectors = ['input[type="password"]', 'input[autocomplete="current-password"]'];
   let methodClicked = false;
   for (let i = 0; !captcha && i < 15; i += 1) {
     assertNotCancelled(run);
     if (await findAttemptLimitMessage(page)) break;
+    if (await isTwoStepVerificationPage(page)) {
+      return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+    }
     const usernameReady = await firstVisible(page, usernameSelectors);
     const passwordReady = await firstVisible(page, passwordSelectors);
     if (usernameReady && passwordReady) break;
@@ -408,21 +470,24 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
 
-  let usernameInput = await firstVisible(page, [
-    'input[name="username"]', 'input[autocomplete="username"]', 'input[placeholder*="Email"]',
-    'input[placeholder*="email"]', 'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
-    'input[type="text"]', 'input:not([type])', 'input:not([type="password"])',
-  ]);
-  const passwordInput = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
+  // Prefer inputs inside the password form so we do not fill a header search box.
+  const loginForm = page.locator('form').filter({ has: page.locator('input[type="password"]') }).first();
+  const inputScope = (await loginForm.count()) ? loginForm : page;
+  let usernameInput = await firstVisible(inputScope, usernameSelectors);
+  if (!usernameInput) {
+    usernameInput = await firstVisible(inputScope, ['input[type="text"]', 'input:not([type])', 'input:not([type="password"])']);
+  }
+  const passwordInput = await firstVisible(inputScope, passwordSelectors);
   if (!usernameInput || !passwordInput) {
     await dataStore.updateLoginStatus(accountId, 'offline');
     return { accountId, username: account.username, filled: false, submitted: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: '未找到登录表单，请在浏览器中人工确认页面状态' };
   }
   assertNotCancelled(run);
+  liveLog(`账号 #${accountId}：准备填写用户名 ${account.username}`,'info',{accountId});
   let usernameFilled = await fillAndVerify(usernameInput, account.username);
   if (!usernameFilled) {
     // Re-query after a possible React/Vue DOM replacement.
-    usernameInput = await firstVisible(page, ['input[name="username"]', 'input[autocomplete="username"]', 'input[type="text"]', 'input:not([type="password"])']);
+    usernameInput = await firstVisible(inputScope, [...usernameSelectors, 'input[type="text"]', 'input:not([type="password"])']);
     usernameFilled = usernameInput ? await fillAndVerify(usernameInput, account.username) : false;
   }
   assertNotCancelled(run);
@@ -442,55 +507,26 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: !usernameFilled ? 'TikTok 用户名输入框未接受填写，请检查页面后重试' : 'TikTok 密码输入框未接受填写，请检查页面后重试' };
   }
   let totpFilled = false;
-  if (totpSecret) {
-    const totpInputSelectors = [
-      'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
-      'input[placeholder*="Code"]', 'input[placeholder*="验证码"]', 'input[inputmode="numeric"]', 'input[type="tel"]',
-    ];
-    if (await firstVisible(page, totpInputSelectors)) {
-      let token = generateTotp(totpSecret);
-      if (token.validForSeconds <= 8) {
-        await page.waitForTimeout((token.validForSeconds + 1) * 1000);
-        token = generateTotp(totpSecret);
-      }
-      totpFilled = await fillTotpCode(page, totpInputSelectors, token.code);
-    }
-  }
   let submitted = false;
-  let twoFactorRequired = Boolean(totpFilled);
-  // Default path never auto-clicks "Log in". Auto-submit is opt-in only and
-  // skipped when TikTok already rate-limited this profile.
+  let twoFactorRequired = false;
+  // Default path never auto-clicks "Log in". After you click Log in and land on
+  // 2-step verification, click「登录辅助」again — that pass auto-fills the 6-digit code.
   if (autoSubmit && !captcha && !(await findAttemptLimitMessage(page))) {
     assertNotCancelled(run);
     const button = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")']);
     if (button) {
       await button.click();
       submitted = true;
-      // TikTok may reveal the 2FA field only after the password step is submitted.
-      // Wait for the actual 2SV page/input; never generate TOTP on the password page.
       for (let i = 0; i < 80; i += 1) {
         assertNotCancelled(run);
         await page.waitForTimeout(500);
         if (await findAttemptLimitMessage(page)) break;
         if (await hasCaptcha()) { captcha = true; break; }
-        const nextTotp = await firstVisible(page, [
-          'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
-          'input[placeholder*="Code"]', 'input[placeholder*="验证码"]',
-        ]);
-        if (nextTotp) {
+        if (await isTwoStepVerificationPage(page)) {
           twoFactorRequired = true;
-          if (!totpFilled && totpSecret) {
-            let token = generateTotp(totpSecret);
-            if (token.validForSeconds <= 8) {
-              await page.waitForTimeout((token.validForSeconds + 1) * 1000);
-              token = generateTotp(totpSecret);
-            }
-            await nextTotp.fill(token.code);
-            totpFilled = (await nextTotp.inputValue().catch(() => '')).length === 6;
-          }
-          if (totpFilled && submitAfterTotp && !captcha) {
-            const nextButton = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")', 'button:has-text("Verify")', 'button:has-text("验证")']);
-            if (nextButton) { await nextButton.click(); await page.waitForTimeout(2500); }
+          if (totpSecret) {
+            const step = await fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+            return { ...step, submitted: true, usernameFilled, passwordFilled };
           }
           break;
         }
@@ -508,9 +544,8 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     message: limitedNow
       ? 'TikTok 页面显示登录次数已达上限。请关闭该比特环境后换新代理，或新建浏览器环境再试'
       : (captcha ? '检测到安全验证，已暂停自动提交，请人工处理'
-        : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充，请手动点击 Next'
-          : (submitted ? '已提交登录表单，请稍后检测登录状态'
-            : '账号和密码已填充（未自动点击 Log in），请在浏览器中确认后手动点击 Log in'))),
+        : (submitted ? '已提交登录表单，请稍后检测登录状态'
+          : '账号和密码已填充（未自动点 Log in）。请手动点 Log in；进入 2-step 后再点一次「登录辅助」自动填 6 位验证码')),
   };
   if (!submitted) await dataStore.updateLoginStatus(accountId, 'checking');
   return result;
