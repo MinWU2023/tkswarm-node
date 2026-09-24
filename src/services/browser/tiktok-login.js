@@ -140,7 +140,12 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   if (!bundle.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
   const password = String(bundle.password || '');
   const totpSecret = String(bundle.totp_secret || '');
-  if (!password) throw new Error('账号没有已保存的加密密码，请重新导入账号凭据');
+  if (!password) {
+    if (bundle.password_decrypt_failed) {
+      throw new Error('账号密码密文无法解密（密钥可能已更换）。请在操作里点「密码/2FA」重新填写 TikTok 密码');
+    }
+    throw new Error('账号没有可用登录密码。请在操作里点「密码/2FA」补填 TikTok 密码（及 2FA），或重新导入带密码的账号');
+  }
   const account = {
     id: bundle.id,
     username: bundle.username,
