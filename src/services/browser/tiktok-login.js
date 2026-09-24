@@ -228,7 +228,7 @@ async function clickSafeLoginMethod(page, pattern) {
   // ("Log in" / "登录") — that counts as a real login attempt on TikTok.
   const candidates = [
     page.getByRole('link', { name: pattern }).first(),
-    page.locator('a, div[role="link"], div[tabindex="0"]').filter({ hasText: pattern }).first(),
+    page.locator('a, div[role="link"], div[tabindex="0"], div[role="button"]').filter({ hasText: pattern }).first(),
     page.getByRole('button', { name: pattern }).first(),
     page.getByText(pattern).first(),
   ];
@@ -237,11 +237,13 @@ async function clickSafeLoginMethod(page, pattern) {
     const label = String(await locator.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
     if (/^(Log in|登录|Sign in|Next|下一步|Verify|验证)$/i.test(label)) continue;
     if (/^(Continue|继续)$/i.test(label)) continue;
+    // Never pick social / QR providers.
+    if (/Google|Facebook|Apple|QR|二维码/i.test(label) && !/phone|email|username|手机|邮箱|用户名/i.test(label)) continue;
     const type = await locator.getAttribute('type').catch(() => '');
     if (String(type).toLowerCase() === 'submit') continue;
     await locator.scrollIntoViewIfNeeded().catch(() => {});
     await locator.click({ timeout: 5000 }).catch(async () => {
-      const clickable = locator.locator('xpath=ancestor-or-self::*[self::a or self::button or @role="button" or @role="link"][1]');
+      const clickable = locator.locator('xpath=ancestor-or-self::*[self::a or self::button or @role="button" or @role="link" or self::div][1]');
       if (await clickable.count()) {
         const ancestorLabel = String(await clickable.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
         if (/^(Log in|登录|Sign in|Next|下一步)$/i.test(ancestorLabel)) throw new Error('跳过提交按钮');
@@ -253,27 +255,99 @@ async function clickSafeLoginMethod(page, pattern) {
   return false;
 }
 
+async function clickPhoneEmailUsernameEntry(page) {
+  const exactTexts = [
+    'Use phone / email / username',
+    'Use phone/email/username',
+    '使用手机号 / 邮箱 / 用户名',
+    '使用手机号/邮箱/用户名',
+    '使用电话 / 邮箱 / 用户名',
+  ];
+  for (const text of exactTexts) {
+    const loc = page.getByText(text, { exact: true }).first();
+    if (!await loc.count() || !await loc.isVisible().catch(() => false)) continue;
+    await loc.scrollIntoViewIfNeeded().catch(() => {});
+    await loc.click({ timeout: 5000 }).catch(async () => {
+      const clickable = loc.locator('xpath=ancestor-or-self::*[self::a or self::button or @role="button" or @role="link" or self::div][1]');
+      if (await clickable.count()) await clickable.click({ timeout: 5000 });
+      else throw new Error('无法点击手机/邮箱/用户名入口');
+    });
+    return true;
+  }
+  return clickSafeLoginMethod(page,
+    /Use phone\s*\/\s*email\s*\/\s*username|phone\s*\/\s*email\s*\/\s*username|使用.*(?:手机号|电话).*邮箱.*用户名/i);
+}
+
+async function hasCredentialForm(page) {
+  const passwordReady = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
+  if (!passwordReady) return false;
+  const usernameReady = await firstVisible(page, [
+    'input[name="username"]', 'input[autocomplete="username"]',
+    'input[placeholder*="Email or username"]', 'input[placeholder*="email or username"]',
+    'input[placeholder*="Email"]', 'input[placeholder*="email"]',
+    'input[placeholder*="Username"]', 'input[placeholder*="username"]',
+    'input[placeholder*="用户名"]', 'input[placeholder*="邮箱"]',
+  ]);
+  return Boolean(usernameReady);
+}
+
+async function isLoginMethodHub(page) {
+  if (await hasCredentialForm(page)) return false;
+  if (await isTwoStepVerificationPage(page)) return false;
+  const text = await pageBodyText(page);
+  return /Use phone\s*\/\s*email\s*\/\s*username|使用手机号.*邮箱.*用户名|Continue with Google|Continue with Facebook|Use QR code|使用二维码/i.test(text);
+}
+
+async function openEmailCredentialForm(page, accountId) {
+  if (await hasCredentialForm(page)) return true;
+
+  // Hub page (QR / Google / Apple / phone-email-username). Prefer a direct
+  // deep-link; TikTok often redirects back to the hub, so also click the tile.
+  if (await isLoginMethodHub(page) || !/\/login\/phone-or-email\/email/i.test(page.url())) {
+    liveLog(`账号 #${accountId}：打开邮箱/用户名登录表单`,'info',{accountId});
+    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForTimeout(900);
+  }
+  if (await hasCredentialForm(page)) return true;
+
+  if (await isLoginMethodHub(page) || /tiktok\.com\/login\/?(?:\?|$)/i.test(page.url())) {
+    liveLog(`账号 #${accountId}：点击 Use phone / email / username`,'info',{accountId});
+    const clicked = await clickPhoneEmailUsernameEntry(page);
+    if (clicked) await page.waitForTimeout(1200);
+  }
+  if (await hasCredentialForm(page)) return true;
+
+  // Intermediate "phone or email" chooser — pick email/username.
+  if (/\/login\/phone-or-email\/?(?:\?|$)/i.test(page.url()) || /Log in with (?:email|username)|email\s*(?:or|\/)\s*username/i.test(await pageBodyText(page))) {
+    liveLog(`账号 #${accountId}：点击 Log in with email/username`,'info',{accountId});
+    const clicked = await clickSafeLoginMethod(page,
+      /Log in with (?:email|username)|email\s*(?:or|\/)\s*username|使用.*(?:邮箱|用户名).*登录/i);
+    if (clicked) await page.waitForTimeout(1200);
+  }
+  if (await hasCredentialForm(page)) return true;
+
+  // Last attempt: deep-link again after the hub click path.
+  await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+  await page.waitForTimeout(900);
+  return hasCredentialForm(page);
+}
+
 async function selectUsernameLogin(page) {
   // Only select TikTok's ordinary credential flow. Never select Google,
   // Facebook, Apple, QR code, or another external authentication provider.
-  const credentialReady = await firstVisible(page, [
-    'input[name="username"]', 'input[autocomplete="username"]',
-    'input[placeholder*="Email"]', 'input[placeholder*="email"]',
-    'input[placeholder*="Username"]', 'input[placeholder*="用户名"]',
-    'input[type="password"]',
-  ]);
-  if (credentialReady) return true;
-  const url = page.url();
-  let selected = false;
-  if (/tiktok\.com\/login\/?(?:\?|$)/i.test(url)) {
-    selected = await clickSafeLoginMethod(page,
-      /(?:Use|Continue with)\s*(?:phone|email|username)|phone\s*\/\s*email\s*\/\s*username|使用.*(?:手机号|邮箱|用户名)/i);
-  } else if (/\/login\/phone-or-email\/?(?:\?|$)/i.test(url)) {
-    selected = await clickSafeLoginMethod(page,
-      /Log in with (?:email|username)|email\s*(?:or|\/)\s*username|使用.*(?:邮箱|用户名).*登录/i);
+  if (await hasCredentialForm(page)) return true;
+  if (await isLoginMethodHub(page) || /tiktok\.com\/login\/?(?:\?|$)/i.test(page.url())) {
+    const selected = await clickPhoneEmailUsernameEntry(page);
+    if (selected) await page.waitForTimeout(1000);
+    return selected;
   }
-  if (selected) await page.waitForTimeout(1000);
-  return selected;
+  if (/\/login\/phone-or-email\/?(?:\?|$)/i.test(page.url())) {
+    const selected = await clickSafeLoginMethod(page,
+      /Log in with (?:email|username)|email\s*(?:or|\/)\s*username|使用.*(?:邮箱|用户名).*登录/i);
+    if (selected) await page.waitForTimeout(1000);
+    return selected;
+  }
+  return false;
 }
 
 function assertNotCancelled(run) {
@@ -395,19 +469,20 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     }
   }
 
-  // Do not navigate on every assist call. If the user is already on TikTok's
-  // login page, page.goto would refresh the form and erase a click that is still
-  // being processed (or erase credentials already entered by the user).
+  // Reach the email/username + password form. The generic /login hub
+  // (QR / Google / Apple / phone-email-username) is NOT the credential form —
+  // staying there was why users only saw "Log in to TikTok" method tiles.
   const currentUrl = page.url();
   liveLog(`账号 #${accountId}：登录辅助选定页面 ${currentUrl}`,'info',{accountId});
-  // Once a TikTok login page is open, never navigate it from login-assist.
-  // TikTok submits the form through its SPA/router; a second goto here can
-  // race the user's manual Log in click and look like an unexpected refresh.
-  if (!/https?:\/\/([^/]+\.)?tiktok\.com\/login(?:\/|\?|$)/i.test(currentUrl)) {
-    liveLog(`账号 #${accountId}：当前不是登录页，首次打开 TikTok 登录页`,'info',{accountId});
-    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
-  } else {
-    liveLog(`账号 #${accountId}：已在登录页，禁止重新导航或刷新`,'info',{accountId});
+  assertNotCancelled(run);
+  const openedForm = await openEmailCredentialForm(page, accountId);
+  if (!openedForm) {
+    await dataStore.updateLoginStatus(accountId, 'offline');
+    return {
+      accountId, username: account.username, filled: false, submitted: false, captcha: false,
+      screenshot: '', currentUrl: page.url(), pageTitle: await page.title().catch(() => ''),
+      message: '仍停留在登录方式选择页（QR/Google/Apple）。请手动点「Use phone / email / username」，进入邮箱登录表后再点登录辅助',
+    };
   }
   assertNotCancelled(run);
   if (await isTwoStepVerificationPage(page)) {
@@ -417,8 +492,7 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   if (limitedMsg) {
     liveLog(`账号 #${accountId}：登录页仍有限流文案，清理后重开一次`,'warn',{accountId});
     await clearTikTokCookiesOnly(session.context);
-    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForTimeout(1000);
+    await openEmailCredentialForm(page, accountId);
     limitedMsg = await findAttemptLimitMessage(page);
     if (limitedMsg) {
       await dataStore.updateLoginStatus(accountId, 'offline');
@@ -431,8 +505,7 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   }
   const hasCaptcha = async () => /(captcha|verify you are human|人机验证|滑块|security check)/i.test(await pageBodyText(page));
   let captcha = await hasCaptcha();
-  // Select the ordinary credential path at most once, then wait for the form.
-  // Repeated clicks on method tiles (or a mis-matched "Log in") burn attempts.
+  // Form should already be open; wait briefly if TikTok is still rendering inputs.
   const usernameSelectors = [
     'input[name="username"]', 'input[autocomplete="username"]',
     'input[placeholder*="Email or username"]', 'input[placeholder*="email or username"]',
@@ -441,20 +514,19 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     'input[placeholder*="用户名"]', 'input[placeholder*="邮箱"]',
   ];
   const passwordSelectors = ['input[type="password"]', 'input[autocomplete="current-password"]'];
-  let methodClicked = false;
-  for (let i = 0; !captcha && i < 15; i += 1) {
+  for (let i = 0; !captcha && i < 10; i += 1) {
     assertNotCancelled(run);
     if (await findAttemptLimitMessage(page)) break;
     if (await isTwoStepVerificationPage(page)) {
       return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
     }
-    const usernameReady = await firstVisible(page, usernameSelectors);
-    const passwordReady = await firstVisible(page, passwordSelectors);
-    if (usernameReady && passwordReady) break;
-    if (!methodClicked) {
-      methodClicked = await selectUsernameLogin(page);
+    if (await hasCredentialForm(page)) break;
+    if (await isLoginMethodHub(page)) {
+      await openEmailCredentialForm(page, accountId);
+    } else {
+      await selectUsernameLogin(page);
     }
-    await page.waitForTimeout(methodClicked ? 700 : 400);
+    await page.waitForTimeout(500);
     captcha = await hasCaptcha();
   }
   limitedMsg = await findAttemptLimitMessage(page);
