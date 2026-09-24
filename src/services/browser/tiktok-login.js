@@ -61,8 +61,55 @@ async function pageBodyText(page) {
   return page.locator('body').innerText().catch(() => '');
 }
 
-function isAttemptLimited(text) {
-  return /Maximum number of attempts reached|Try again later|尝试次数过多|次数已达上限|稍后再试/i.test(String(text || ''));
+/**
+ * TikTok's real rate-limit banner is very specific.
+ * Do NOT match bare "Try again later" / "稍后再试" — those appear on many
+ * unrelated TikTok strings and caused false "Maximum attempts" reports across all accounts.
+ */
+async function findAttemptLimitMessage(page) {
+  const exact = page.getByText(/Maximum number of attempts reached/i).first();
+  if (await exact.count() && await exact.isVisible().catch(() => false)) {
+    return 'Maximum number of attempts reached';
+  }
+  const zh = page.getByText(/尝试次数过多|登录尝试次数已达上限|尝试次数已达上限/i).first();
+  if (await zh.count() && await zh.isVisible().catch(() => false)) {
+    return String(await zh.innerText().catch(() => '尝试次数过多')).trim() || '尝试次数过多';
+  }
+  const body = await pageBodyText(page);
+  if (/Maximum number of attempts reached/i.test(body)) return 'Maximum number of attempts reached';
+  if (/尝试次数过多|登录尝试次数已达上限|尝试次数已达上限/i.test(body)) return '尝试次数过多';
+  return '';
+}
+
+function attemptLimitedResult(account, page, screenshot = '') {
+  return {
+    accountId: account.id,
+    username: account.username,
+    filled: false,
+    submitted: false,
+    captcha: false,
+    attemptLimited: true,
+    screenshot,
+    currentUrl: page.url(),
+    pageTitle: '',
+    message: 'TikTok 页面显示登录次数已达上限。请关闭该比特环境后换新代理，或新建浏览器环境再试（不要在同一环境内连点）',
+  };
+}
+
+async function clearTikTokCookiesOnly(context) {
+  const cookies = await context.cookies().catch(() => []);
+  const keep = (cookies || []).filter((c) => {
+    const domain = String(c.domain || '').toLowerCase().replace(/^\./, '');
+    return !domain.includes('tiktok');
+  });
+  await context.clearCookies().catch(() => {});
+  if (keep.length) await context.addCookies(keep).catch(() => {});
+  for (const p of context.pages().filter((item) => !item.isClosed() && /tiktok\.com/i.test(item.url()))) {
+    await p.evaluate(() => {
+      try { localStorage.clear(); } catch { /* ignore */ }
+      try { sessionStorage.clear(); } catch { /* ignore */ }
+    }).catch(() => {});
+  }
 }
 
 async function fillAndVerify(locator, value) {
@@ -239,14 +286,24 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha: false, alreadyLoggedIn: true, screenshot: '', currentUrl: page.url(), pageTitle: await page.title(), message: '检测到已有有效 TikTok 登录状态，无需重复登录' };
   }
 
-  let bodyText = await pageBodyText(page);
-  if (isAttemptLimited(bodyText)) {
-    await dataStore.updateLoginStatus(accountId, 'offline');
-    return {
-      accountId, username: account.username, filled: false, submitted: false, captcha: false, attemptLimited: true,
-      screenshot: '', currentUrl: page.url(), pageTitle: await page.title(),
-      message: 'TikTok 已限制登录尝试（Maximum number of attempts）。请更换代理或等待数小时后再试，期间不要重复点击登录',
-    };
+  // If a previous failed attempt left the rate-limit banner on this profile,
+  // clear TikTok site data once and open a fresh login page. Do not refuse to
+  // navigate — that used to trap every retry on the same error screen.
+  let limitedMsg = await findAttemptLimitMessage(page);
+  if (limitedMsg) {
+    liveLog(`账号 #${accountId}：检测到限流文案，清理 TikTok Cookie 并重新打开登录页`,'warn',{accountId});
+    await clearTikTokCookiesOnly(session.context);
+    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForTimeout(1000);
+    limitedMsg = await findAttemptLimitMessage(page);
+    if (limitedMsg) {
+      await dataStore.updateLoginStatus(accountId, 'offline');
+      const shot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-limited.png`);
+      await page.screenshot({ path: shot, fullPage: false }).catch(() => {});
+      const result = attemptLimitedResult(account, page, shot);
+      result.pageTitle = await page.title().catch(() => '');
+      return result;
+    }
   }
 
   const totpSelectors = [
@@ -300,16 +357,23 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     liveLog(`账号 #${accountId}：已在登录页，禁止重新导航或刷新`,'info',{accountId});
   }
   assertNotCancelled(run);
-  bodyText = await pageBodyText(page);
-  if (isAttemptLimited(bodyText)) {
-    await dataStore.updateLoginStatus(accountId, 'offline');
-    return {
-      accountId, username: account.username, filled: false, submitted: false, captcha: false, attemptLimited: true,
-      screenshot: '', currentUrl: page.url(), pageTitle: await page.title(),
-      message: 'TikTok 已限制登录尝试（Maximum number of attempts）。请更换代理或等待数小时后再试，期间不要重复点击登录',
-    };
+  limitedMsg = await findAttemptLimitMessage(page);
+  if (limitedMsg) {
+    liveLog(`账号 #${accountId}：登录页仍有限流文案，清理后重开一次`,'warn',{accountId});
+    await clearTikTokCookiesOnly(session.context);
+    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForTimeout(1000);
+    limitedMsg = await findAttemptLimitMessage(page);
+    if (limitedMsg) {
+      await dataStore.updateLoginStatus(accountId, 'offline');
+      const shot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-limited.png`);
+      await page.screenshot({ path: shot, fullPage: false }).catch(() => {});
+      const result = attemptLimitedResult(account, page, shot);
+      result.pageTitle = await page.title().catch(() => '');
+      return result;
+    }
   }
-  const hasCaptcha = async () => /(captcha|验证码|verify you are human|人机验证|滑块|security check)/i.test(await pageBodyText(page));
+  const hasCaptcha = async () => /(captcha|verify you are human|人机验证|滑块|security check)/i.test(await pageBodyText(page));
   let captcha = await hasCaptcha();
   // Select the ordinary credential path at most once, then wait for the form.
   // Repeated clicks on method tiles (or a mis-matched "Log in") burn attempts.
@@ -321,7 +385,7 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   let methodClicked = false;
   for (let i = 0; !captcha && i < 15; i += 1) {
     assertNotCancelled(run);
-    if (isAttemptLimited(await pageBodyText(page))) break;
+    if (await findAttemptLimitMessage(page)) break;
     const usernameReady = await firstVisible(page, usernameSelectors);
     const passwordReady = await firstVisible(page, passwordSelectors);
     if (usernameReady && passwordReady) break;
@@ -331,14 +395,12 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     await page.waitForTimeout(methodClicked ? 700 : 400);
     captcha = await hasCaptcha();
   }
-  bodyText = await pageBodyText(page);
-  if (isAttemptLimited(bodyText)) {
+  limitedMsg = await findAttemptLimitMessage(page);
+  if (limitedMsg) {
     await dataStore.updateLoginStatus(accountId, 'offline');
-    return {
-      accountId, username: account.username, filled: false, submitted: false, captcha: false, attemptLimited: true,
-      screenshot: '', currentUrl: page.url(), pageTitle: await page.title(),
-      message: 'TikTok 已限制登录尝试（Maximum number of attempts）。请更换代理或等待数小时后再试，期间不要重复点击登录',
-    };
+    const result = attemptLimitedResult(account, page);
+    result.pageTitle = await page.title().catch(() => '');
+    return result;
   }
   let screenshot = '';
   if (captcha) {
@@ -366,14 +428,12 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   assertNotCancelled(run);
   const passwordFilled = await fillAndVerify(passwordInput, password);
   liveLog(`账号 #${accountId}：用户名${usernameFilled?'已':'未'}填写，密码${passwordFilled?'已':'未'}填写` , usernameFilled && passwordFilled ? 'info' : 'error', { accountId });
-  bodyText = await pageBodyText(page);
-  if (isAttemptLimited(bodyText)) {
+  limitedMsg = await findAttemptLimitMessage(page);
+  if (limitedMsg) {
     await dataStore.updateLoginStatus(accountId, 'offline');
-    return {
-      accountId, username: account.username, filled: false, submitted: false, captcha: false, attemptLimited: true,
-      screenshot, currentUrl: page.url(), pageTitle: await page.title(),
-      message: 'TikTok 已限制登录尝试（Maximum number of attempts）。请更换代理或等待数小时后再试，期间不要重复点击登录',
-    };
+    const result = attemptLimitedResult(account, page, screenshot);
+    result.pageTitle = await page.title().catch(() => '');
+    return result;
   }
   // Capture the actual prepared form for diagnosis without including secret
   // values in API responses or logs.
@@ -400,7 +460,7 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   let twoFactorRequired = Boolean(totpFilled);
   // Default path never auto-clicks "Log in". Auto-submit is opt-in only and
   // skipped when TikTok already rate-limited this profile.
-  if (autoSubmit && !captcha && !isAttemptLimited(bodyText)) {
+  if (autoSubmit && !captcha && !(await findAttemptLimitMessage(page))) {
     assertNotCancelled(run);
     const button = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")']);
     if (button) {
@@ -411,8 +471,7 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
       for (let i = 0; i < 80; i += 1) {
         assertNotCancelled(run);
         await page.waitForTimeout(500);
-        const latest = await pageBodyText(page);
-        if (isAttemptLimited(latest)) break;
+        if (await findAttemptLimitMessage(page)) break;
         if (await hasCaptcha()) { captcha = true; break; }
         const nextTotp = await firstVisible(page, [
           'input[autocomplete="one-time-code"]', 'input[placeholder="Enter 6-digit code"]', 'input[name*="code"]', 'input[placeholder*="code"]',
@@ -442,12 +501,12 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
-  const limitedNow = isAttemptLimited(await pageBodyText(page));
+  const limitedNow = Boolean(await findAttemptLimitMessage(page));
   const result = {
     accountId, username: account.username, filled: true, usernameFilled, passwordFilled, submitted, twoFactorRequired, totpFilled, captcha,
     attemptLimited: limitedNow, screenshot, currentUrl: page.url(), pageTitle: await page.title(),
     message: limitedNow
-      ? 'TikTok 已限制登录尝试（Maximum number of attempts）。请更换代理或等待数小时后再试'
+      ? 'TikTok 页面显示登录次数已达上限。请关闭该比特环境后换新代理，或新建浏览器环境再试'
       : (captcha ? '检测到安全验证，已暂停自动提交，请人工处理'
         : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充，请手动点击 Next'
           : (submitted ? '已提交登录表单，请稍后检测登录状态'
