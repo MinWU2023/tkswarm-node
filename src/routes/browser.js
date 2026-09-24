@@ -431,7 +431,13 @@ router.post('/accounts/batch-login', async (req, res) => {
     }
     try {
       const result = await loginAssist(id, { autoSubmit: false, submitAfterTotp: false });
-      items.push({ accountId: id, username: account.username, ok: true, status: result?.status || 'prepared' });
+      if (result?.attemptLimited) {
+        items.push({ accountId: id, username: account.username, ok: false, reason: result.message || 'TikTok 限制登录尝试' });
+      } else if (result?.filled || result?.alreadyLoggedIn) {
+        items.push({ accountId: id, username: account.username, ok: true, status: result?.alreadyLoggedIn ? 'online' : 'prepared', message: result?.message });
+      } else {
+        items.push({ accountId: id, username: account.username, ok: false, reason: result?.message || '未完成填写' });
+      }
     } catch (error) {
       items.push({ accountId: id, username: account.username, ok: false, reason: error.message });
     }
