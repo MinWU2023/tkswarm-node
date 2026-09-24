@@ -1,0 +1,528 @@
+=== TITLE ===
+系统设置 - TKSwarm
+
+=== APIS (22) ===
+/api/database/config
+/api/database/config/save
+/api/database/switch
+/api/database/test
+/api/tk-setting/activateAiToken
+/api/tk-setting/activateIpChangeCard
+/api/tk-setting/activateProxy
+/api/tk-setting/checkBt
+/api/tk-setting/deletedBt
+/api/tk-setting/doc
+/api/tk-setting/downloadBrowser
+/api/tk-setting/getBrowserSettings
+/api/tk-setting/getCodeKey
+/api/tk-setting/getMessageSettings
+/api/tk-setting/getTkTranslation/
+/api/tk-setting/openUrl
+/api/tk-setting/reqCodeKey/
+/api/tk-setting/saveBrowserSettings
+/api/tk-setting/saveMessageSettings
+/api/tk-setting/saveTranslationLanguage
+/api/user/logout
+/api/user/setLanguage
+
+=== EL-DIALOGS ===
+添加时钟
+
+=== TABS ===
+
+=== DIALOG/TITLE ATTRS ===
+刷新余额
+添加时钟
+
+=== DROPDOWN ITEMS ===
+简体中文
+English
+日本語
+한국어
+繁體中文
+个人中心
+个人设置
+退出登录
+
+=== BUTTON TEXTS (sample) ===
+下载{{ currentBrowserLabel }}
+测试连接
+远程配置
+选择文件夹
+保存设置
+删除浏览器
+保存配置
+重置
+立即切换
+查看使用教程
+刷新状态
+立即续费
+充值
+刷新余额
+代理使用说明
+AI使用说明
+使用说明
+试听
++ 添加时钟
+取消
+确定
+
+=== FORM/STATE KEYS ===
+activationForm
+addClockDialog
+aiTokenForm
+allLanguageOptions
+browserDownloadMap
+browserForm
+clockForm
+countryOptions
+dbSwitchForm
+filteredLanguageOptions
+getBrowserSettings
+getMessageSettings
+handlePersonalSettings
+ipChangeCardForm
+languageOptions
+loadBrowserSettings
+loadDatabaseConfig
+loadMessageSettings
+messageSettings
+openRemoteConfigDialog
+proxyForm
+resetDatabaseConfig
+resetMessageSettings
+saveBrowserSettings
+saveConfig
+saveDatabaseConfig
+saveMessageSettings
+soundMap
+timezoneOptions
+translationForm
+
+=== SWITCH CASES ===
+logout
+profile
+settings
+
+=== ZH (376) ===
+上海(UTC
+下载
+下载链接已准备，请检查网络
+不限制端口数）
+东京(UTC
+个人中心
+个人中心功能开发中
+个人设置
+个人设置功能开发中
+中国
+中文
+主布局 
+主机地址
+主要内容区 --
+从不保存
+代理IP
+代理IP使用说明: 支持SOCKS5，动态切换节点，流量按GB计费
+代理IP激活
+代理IP激活 --
+代理使用说明
+代理商
+代理激活成功
+代理相关
+                proxyForm: 
+代理设置 
+伦敦(UTC
+余额不足
+余额不足，是否切换到普通翻译模式
+余额不足，翻译可能失败
+余额已刷新
+使用统计
+使用说明
+例如: useSSL
+保存失败
+保存成功
+保存数据库配置
+             
+保存消息设置失败
+保存设置
+保存语言成功
+保存配置
+保存配置
+                            
+保存配置失败
+保存配置失败，请检查网络
+信息加载成功:
+修改资料
+充值
+充值
+                                    
+关闭浏览器时自动清除缓存
+内存节省
+分钟
+切换到普通模式
+切换后需要重启应用才能生效
+切换后需要重启应用才能生效
+                            
+切换失败
+切换已触发，请重启应用生效
+切换数据库
+切换请求失败
+删除失败
+删除成功
+删除浏览器
+到期时间
+到期时间状态样式
+            expiryStatusClass() 
+到期：
+刷新余额
+刷新余额
+                    
+刷新成功
+刷新状态
+刷新页面应用新语言
+剩余Token: 
+剩余天数
+剩余天数
+            remainingDays() 
+剩余次数: 
+剩余流量: 
+功能开发中
+加载中...
+加载数据库配置
+             
+加载数据库配置失败
+加载浏览器设置失败
+加载消息设置失败
+加载激活信息失败
+加载软件到期时间
+            loadSoftwareExpiry() 
+即将到期，请及时续费
+            
+发布视频
+取消
+右侧内容 
+右侧内容区 --
+各国时钟
+各国时钟卡片 --
+响应式 
+国家
+在 settingsMenuItems 中添加
+                settingsMe
+多国时钟
+套餐状态
+如果是 MySQL，先保存配置再测试
+                const testData 
+字符
+        
+字符
+                                    
+客服聊天
+密码
+密钥
+导航栏样式 
+工具方法 
+左侧菜单 
+左侧设置菜单 --
+已关闭私信同步
+已关闭通知同步
+已切换到AI翻译模式，当前剩余Token: 
+已切换到普通接口翻译模式
+已开启私信同步
+已开启通知同步
+已过期
+已过期，请续费以继续使用
+            
+已连接
+已退出登录
+已选择 
+已重置
+已重置为默认配置
+巴黎(UTC
+建议3)
+建议: 10-20
+建议: 50-100
+开启后减少内存占用
+开启后同步系统通知
+开启后自动同步私信，防止最新消息丢失
+当前数据库
+当前数据库类型 
+德国
+悉尼(UTC
+我的语言
+或 IP地址
+打开失败
+打开教程
+打开链接响应:
+打开链接失败:
+打开链接成功:
+扫码登录
+授权
+提示
+提示音
+操作按钮 
+数据库
+数据库切换 
+数据库切换已触发，请重启应用
+数据库名
+数据库名称
+数据库吗
+数据库密码
+数据库用户名
+数据库类型切换
+             
+数据库连接测试成功
+数据库配置
+数据库配置
+                currentDbType: 
+数据库配置保存成功
+数据库配置卡片 --
+数据库配置管理
+新加坡高速节点
+新增
+                
+新增
+                    
+无头模式
+无法播放提示音
+无限端口
+日本
+日本語
+日语
+时区
+时钟
+                clocks: 
+时钟容器 
+时钟设置 
+普通接口翻译
+普通用户
+智能翻译（更智能精准）
+暂不切换
+更换次卡
+更换次卡
+                ipChangeCard: 
+更换次卡余额刷新成功
+更换次卡激活 --
+更换次卡激活成功
+更换次卡设置 
+更换次卡：用于账号更换代理IP时消耗，每次更换消耗1次额度
+最大连接数
+最小空闲连接
+有效
+服务支持文案生成、视频脚本、智能回复等，消耗Token计费
+服务激活
+服务激活 
+服务激活与管理
+服务激活与管理卡片 --
+未知错误
+未获取到
+未连接
+未选择提示音
+本地静态资源 --
+机器人
+柏林(UTC
+查看使用教程
+模型: 
+模式
+次
+                
+次
+                                    
+正在下载 
+正在开发中...
+正在测试连接...
+每次保存
+比特浏览器
+法国
+洛杉矶(UTC-8)
+流量信息加载成功:
+流量信息已刷新
+流量统计
+测试数据库连接
+             
+测试连接
+测试连接
+                            
+测试连接失败:
+浏览器
+浏览器服务器
+浏览器模式
+浏览器私信
+浏览器类型
+浏览器设置
+浏览器设置
+                browserForm: 
+浏览器设置 
+浏览器设置卡片 --
+消息
+消息设置
+消息设置
+                messageSettings: 
+消息设置 
+消息设置保存成功
+消息设置卡片 --
+添加成功
+添加时钟
+添加时钟对话框 --
+清除缓存
+澳大利亚
+激活
+激活失败
+激活失败，请检查网络
+激活成功
+激活相关
+                activationForm: 
+激活码
+激活（新风格） --
+状态信息 
+状态标签 
+生产环境推荐
+用户信息
+                userName: 
+用户名
+用户相关方法 
+登录
+百分比
+            aiTokenPercent() 
+相关（新风格）
+                aiTokenForm: 
+矩阵
+确定
+确定切换
+确定删除浏览器
+确定要切换到 
+确定要退出登录吗
+确定要重置数据库配置吗
+确定退出
+私信同步
+私信同步间隔
+私信模式
+立即切换
+                            
+立即切换数据库（带重启提示）
+             
+立即续费
+端口
+端口数量
+简体中文
+管理员
+系统设置
+系统设置 - TKSwarm
+紧急
+繁體中文
+纽约(UTC-5)
+统计
+缓存路径
+美国
+美国(纽约)
+翻译余额 
+翻译模式
+翻译模式切换 
+翻译激活
+翻译激活 --
+翻译相关
+                translationForm: 
+翻译设置 
+自动
+自定义
+英国
+英文
+获取AI Token信息失败:
+获取IP更换次卡余额失败
+获取余额失败
+获取失败
+获取流量信息失败:
+表单样式 
+解析用户缓存失败:
+设置分类
+设置卡片 
+设置语言失败
+设置（新风格） 
+试听
+语言已更新
+语言设置
+语言设置 
+语言选项
+                allLanguageOptions: 
+语言选项
+    const languageOptions 
+请先登录
+请先配置MySQL连接信息
+请完善信息
+请求失败:
+请确保目标数据库已创建且配置正确
+请稍后...
+请输入AI Token激活码
+请输入API密钥
+请输入MySQL主机地址
+请输入代理激活码
+请输入数据库名称
+请输入数据库用户名
+请输入激活码
+请输入远程地址
+请选择缓存路径
+账号管理
+超级管理员
+软件到期时间
+                softwareExpiry: 
+软件到期时间 --
+软件到期时间样式 
+软件套餐信息
+软件激活 --
+软件版本
+软件续费
+            handleSoftwareRecharge() 
+轻柔
+轻量
+进度条 
+远程地址
+远程配置
+远程配置功能开发中
+连接参数
+连接失败
+连接成功
+连接成功，数据库运行正常
+连接池配置
+                            
+连接池配置 
+连接测试失败
+连接测试失败，请检查配置
+连接测试失败：
+连接超时(ms)
+连接配置
+                            
+退出接口调用失败:
+退出时保存
+退出登录
+选择国家
+选择文件夹
+选择无头模式
+选择时区
+选择目标语言
+选择需要运行无头模式的功能
+通知同步
+通知间隔
+配置已保存，重启后生效
+配置（仅当选择 MySQL 时显示） 
+重置
+重置
+                            
+重置数据库配置
+             
+铃声
+降级显示
+                        this.aiToken 
+隐藏文件输入 
+韩国
+韩语
+页面导航 
+顶部导航栏 --
+额外连接参数
+首尔(UTC
+验证 MySQL 配置
+                if (this.dbSwitchForm.
+高性能
+默认: 30000ms
+默认: 3306
+默认: localhost
+默认: root
+默认: tkswarm
+默认轻量数据库

@@ -1,0 +1,1961 @@
+=== TITLE ===
+账号管理 - TKSwarm
+
+=== APIS (32) ===
+/api/account-monitor/config/get-by-group
+/api/account-monitor/execute
+/api/account-monitor/task/start
+/api/account-monitor/task/status
+/api/account-monitor/task/stop
+/api/tk-account/accountsVideo
+/api/tk-account/batch-cancel-sync
+/api/tk-account/batch-check-ip
+/api/tk-account/batch-delete/${idsString}
+/api/tk-account/batch-extract-fingerprint
+/api/tk-account/batch-group-delete-videos
+/api/tk-account/batch-group-modify-profile
+/api/tk-account/batch-login
+/api/tk-account/batch-sync-messages
+/api/tk-account/bitOpen/
+/api/tk-account/cancel-auth
+/api/tk-account/check-qrcode-status/
+/api/tk-account/checkIp
+/api/tk-account/close-qrcode-session
+/api/tk-account/delete-video
+/api/tk-account/generate-qrcode
+/api/tk-account/gotoTk/
+/api/tk-account/import/batch
+/api/tk-account/list-all
+/api/tk-account/monitorStart
+/api/tk-account/stats
+/api/tk-account/update
+/api/tk-group/ipGroup
+/api/tk-setting/openUrl
+/api/websocket/connections/batch-close
+/api/websocket/connections/batch-create/${syncMessages
+/api/websocket/connections/batch-create/${syncMsg}
+
+=== EL-DIALOGS ===
+批量登录客服聊天
+添加自定义SOCKS5 IP
+批量提取账号指纹
+添加分组
+批量添加账号
+导入账号
+导出账号
+监控账号设置
+视频列表
+视频播放
+批量分组分配代理IP
+批量分组登录账号
+批量分组修改资料
+批量登录
+批量转移分组
+批量修改资料
+批量分组删除视频
+扫码登录
+
+=== TABS ===
+
+=== DIALOG/TITLE ATTRS ===
+scope.row.nickname
+scope.row.signature
+stat.tooltip
+statsHidden ? '显示统计' : '隐藏统计'
+video.desc
+删除分组
+刷新统计
+复制CK
+头像预览
+导入账号
+导出账号
+扫码登录
+批量修改资料
+批量分组修改资料
+批量分组分配代理IP
+批量分组删除视频
+批量分组登录账号
+批量删除所有封号账号
+批量提取账号指纹
+批量添加账号
+批量登录
+批量登录客服聊天
+批量转移分组
+添加分组
+添加自定义SOCKS5 IP
+监控账号设置
+编辑分组
+视频列表
+视频播放
+
+=== DROPDOWN ITEMS ===
+个人中心
+个人设置
+退出登录
+批量分组分配代理IP
+批量分组登录账号
+批量分组修改资料
+批量分组删除视频
+批量提取账号指纹
+浏览器查看
+视频列表 (需要指纹)
+日志
+删除视频
+修改CK
+比特浏览器查看 (需要CK)
+添加自定义IP
+取消授权
+
+=== BUTTON TEXTS (sample) ===
+添加
+批量登录
+批量转移分组
+批量修改资料
+批量检测IP
+批量校准国家/IP
+批量同步消息
+批量登录客服聊天
+批量取消同步消息
+批量退出客服聊天
+批量删除视频
+批量删除账号
+导入账号
+批量添加账号
+扫码登录
+AI更新账号
+导出账号
+批量分组操作
+查询
+重置
+操作
+取消
+开始登录
+确定添加
+开始提取
+确定
+点击上传
+下载模板
+确定导入
+确定导出
+立即运行
+播放
+删除
+关闭
+{{ isPlaying ? '暂停' : '播放' }}
+{{ isMuted ? '取消静音' : '静音' }}
+删除此视频
+下载视频
+查询登录成功的账号
+开始修改
+确定转移
+确定修改
+查询有视频的账号
+确认删除
+下一步
+重新获取
+完成
+
+=== FORM/STATE KEYS ===
+UrlList
+addCustomIPDialog
+addGroupDialog
+batchAddDialog
+batchAddForm
+batchExtractFingerprintDialog
+batchExtractFingerprintForm
+batchGroupAssignProxyDialog
+batchGroupAssignProxyForm
+batchGroupDeleteVideosDialog
+batchGroupDeleteVideosForm
+batchGroupLoginDialog
+batchGroupLoginForm
+batchGroupModifyProfileDialog
+batchGroupModifyProfileForm
+batchLoginDialog
+batchLoginForm
+batchModifyProfileDialog
+batchModifyProfileForm
+batchTransferDialog
+batchTransferForm
+chatLoginDialogVisible
+classMap
+closeQrLoginDialog
+closeVideoListDialog
+countryCodeMap
+customIPForm
+exportDialog
+exportForm
+getList
+groupList
+iconMap
+importDialog
+importForm
+inputOptions
+itemList
+loadMonitorConfig
+loadVersionSettings
+modifyProfileDialog
+modifyProfileForm
+monitorDialog
+monitorForm
+newGroupForm
+nicknameList
+openAddCustomIPDialog
+openExportDialog
+openMonitorDialog
+openQrLoginDialog
+processVideoList
+qrLoginDialog
+qrLoginForm
+resetBatchAddForm
+resetBatchExtractFingerprintForm
+resetBatchGroupAssignProxyForm
+resetBatchGroupDeleteVideosForm
+resetBatchGroupLoginForm
+resetBatchGroupModifyProfileForm
+resetBatchModifyProfileForm
+resetMonitorForm
+saveMonitorConfig
+saveMonitorSettings
+signatureList
+statusMap
+styleMap
+textMap
+validateModifyForm
+versionDialogVisible
+videoList
+videoListDialog
+videoPlayerDialog
+
+=== SWITCH CASES ===
+ArrowLeft
+ArrowRight
+Escape
+KeyM
+Space
+addCustomIP
+all
+assignProxyIP
+batchGroupDeleteVideos
+batchGroupLogin
+batchGroupModifyProfile
+bitOpen
+cancelAuth
+csv
+currentGroup
+deleteVideos
+excel
+extractFingerprint
+format1
+format10
+format2
+format3
+format4
+format5
+format6
+format7
+format8
+format9
+json
+modifyCK
+selectedAccounts
+selectedGroup
+viewBrowser
+viewLogs
+viewVideos
+
+=== ZH (1193) ===
+下一步
+下载信息
+                        download_info: 
+下载模板
+下载视频
+下载视频
+            downloadVideo(video) 
+不可排序的项（封号数量、未登录）不处理
+                if (
+不可登录
+不同步
+不支持排序
+不需要移除所有特殊字符，只需要确保分号被正确处理
+                        /
+个
+                        
+个人中心
+个人中心功能开发中
+个人设置
+个人设置功能开发中
+个代理IP，已选择 
+个分组
+个封号账号
+个封号账号吗
+个昵称
+                    
+个签名
+                    
+个线程，过多线程可能导致系统资源占用过高，是否继续
+个账号
+个账号
+                
+个账号修改IP
+个账号取消消息同步吗
+个账号同步消息吗
+个账号吗
+个账号进行IP检测吗
+个账号进行国家/IP校准吗
+个账号进行聊天登录吗
+个账号进行聊天退出登录吗
+个账号，失败 
+个，失败: 
+个，异常: 
+中国
+丹麦
+为封号
+                                const isBanned
+为空的账号
+                
+主要内容区 --
+二次验证
+二维码已过期
+二维码已过期或登录失败
+二维码已过期，请重新获取
+二维码过期
+                                this.qrStatu
+从user对象中提取session_key构建cookie
+                    
+从原始数据中提取
+                if (video.raw_item 
+从原始数据中提取（针对新数据结构）
+                if (video.raw_it
+从本地数据计算统计（备用方案）
+            calculateStatsFromLoca
+从视频列表中移除
+                            if (this.vide
+代理IP
+代理IP不可用：
+代理IP分配成功
+代理IP可用，出口IP：
+代理IP检测失败:
+代理IP检测失败，请检查网络连接
+代理商
+代理密码（可选）
+代理账号（可选）
+以色列
+优先级：PlayAddrStruct.UrlList 
+优先级：play_addr 
+使用nextTick确保DOM已渲染
+                this.
+俄罗斯
+保存其他重要字段到 other_param 或其他字段
+                      
+保存完整的JSON数据到other_param用于后续处理
+                    
+保存监控设置
+            saveMonitorSettings() 
+保存监控配置到后端
+            saveMonitorConfig() 
+保存自定义IP
+            saveCustomIP() 
+保留原始数据用于调试
+                        raw_item: item
+修复：找到第一个非
+修改CK
+                                        
+修改Cookie
+修改修改CK的方法
+            modifyCK(row) 
+修改内容
+修改分组
+修改原有的 handleUserCommand 方法
+            handleUserC
+修改失败
+修改失败详情
+修改头像
+修改昵称
+修改签名
+修改资料
+            modifyProfile(row) 
+倒计时: 
+倒计时结束，二维码过期
+                        this.qrStatus 
+值:
+停止监控任务
+            stopMonitorTask() 
+停止监控任务失败:
+停止视频播放
+                if (this.videoPlayer) 
+先获取所有封号账号
+                apiGet(
+全参JSON格式
+                            try 
+全参（JSON格式）
+                            try 
+全选
+                            
+全选：将所有的代理IP ID添加到选中列表
+                    this.bat
+全部账号
+共 
+共选择了 
+关注数
+关闭
+关闭二维码会话失败:
+关闭对话框
+                this.qrLoginDialog 
+关闭扫码登录对话框
+            closeQrLoginDialog() 
+关闭聊天同步
+关闭视频列表对话框
+            closeVideoListDialog() 
+关闭视频播放器
+            closeVideoPlayer() 
+其他参数
+再弹出一个选择框，让用户选择是否同步消息
+                    this.
+再想想
+分享数: 
+分组
+分组修改成功
+分组内的账号会被自动删除
+分组删除成功
+分组名称
+分组名称不能为空
+分组添加成功
+分组，也选中它
+                        this.activeGroup 
+分配中...
+分配代理IP失败
+分配代理IP失败:
+分配策略
+分钟
+                this.qrTimerActive 
+分钟倒计时
+                qrTimerActive: false,
+
+   
+分页 --
+分页数据
+                pagination: 
+分页方法
+            handleSizeChange(val) 
+切换到紧凑视图
+切换到详细视图
+切换排序顺序
+                    if (this.currentSortOrd
+切换播放/暂停
+            togglePlayPause() 
+切换统计视图
+            toggleStatsView() 
+切换静音
+            toggleMute() 
+创建 WebSocket 连接）
+            batchLoginChat() 
+创建时间
+创建隐藏的下载链接
+                    const link 
+初始化密码显示状态
+                            this.account
+初始化视频播放器
+            initVideoPlayer() 
+删除
+                            
+删除分组
+删除失败
+删除所有视频
+删除此视频
+删除类型不能为空
+删除类型必须是 
+删除视频
+删除视频
+                                        
+删除视频失败
+删除视频失败:
+删除视频（通用方法）
+            deleteVideo(video) 
+删除选项
+判断是否可以修改资料
+            canModify() 
+刷新列表
+                        
+刷新列表
+                            
+刷新数据
+                                this.loadAcco
+刷新数据
+                            this.loadAccounts
+刷新统计
+刷新统计
+            refreshStats() 
+刷新账号列表
+                                this.loadAc
+刷新账号列表
+                            this.loadAccoun
+剪映海外版）是TikTok官方视频编辑工具，授权后可使用Capcut发布TikTok视频
+加拿大
+加载IP为空的账号
+            loadAccountsWithoutIP() 
+加载中...
+加载中...
+                
+加载中状态 --
+加载代理IP
+            loadProxyIPs() 
+加载代理IP分组失败:
+加载代理IP列表
+            // 加载代理IP列表（扫码登录用）
+         
+加载代理IP失败
+加载代理IP失败:
+加载代理IP成功，共
+加载分组失败
+加载指纹为空的账号
+            loadAccountsWithoutFingerpri
+加载有视频的账号
+            loadAccountsWithVideos() 
+加载版本设置
+            loadVersionSettings() 
+加载用户信息
+            async loadUserInfo() 
+加载登录成功的账号
+            loadLoginSuccessAccounts() 
+加载的账号数量:
+加载监控配置
+            loadMonitorConfig() 
+加载监控配置失败:
+加载统计数据
+            // 加载统计数据
+            loadStat
+加载统计数据失败:
+加载统计面板隐藏状态（在 created 或 mounted 中调用）
+            lo
+加载视频列表
+            loadVideos() 
+加载视频列表失败
+加载视频失败:
+加载账号分组 
+加载账号分组失败:
+加载账号分组（groupType 
+加载账号列表
+                        this.loadAccounts()
+加载账号列表
+            loadAccounts() 
+加载账号列表失败
+加载账号列表失败: 
+加载账号失败:
+加载需要登录的账号
+            // 加载需要登录的账号
+            lo
+匈牙利
+升序
+单个账号修改资料
+            handleModifyProfile() 
+南非
+印尼
+印度
+原始数据中的地址
+                if (video.play_addr 
+发布时间: 
+发送更新请求
+                    const updateData 
+发送的请求数据:
+取消
+取消全选：清空选中列表
+                    this.batchGroupAss
+取消同步成功
+取消授权
+                                        
+取消授权后，该账号将无法使用TK相关功能，且需要重新登录才能恢复
+取消授权失败
+取消授权失败:
+取消授权成功
+取消授权确认
+取消静音
+受限
+受限 - 灰色
+                
+只在视频播放弹窗打开时响应
+                if (
+只能上传Excel文件，且不超过5MB
+可以添加一些调试信息
+                console.log(
+可以轮询查询任务状态
+                            this.pollBa
+可登录
+可选：保存用户偏好到 localStorage
+                localStora
+可选：高亮显示不可用的代理IP
+                            if (se
+右侧内容区 --
+右箭头 - 快进5秒
+                        event.preventDe
+同步
+同步消息粉丝开关
+                // 添加自定义IP对话框
+          
+后续所有对话框保持不变... --
+否则尝试解析
+                try 
+启动监控任务
+            startMonitorTask() 
+启动监控任务失败:
+启动监控任务失败，请手动启动
+和 
+哥伦比亚
+因为cookie值中可能包含 
+国家
+国家
+                                param.accessUrl
+国家名称到ISO代码的映射
+                const countryCodeMap
+国家校准完成
+国旗图片加载失败处理
+            handleFlagError(e) 
+土耳其
+在 Vue 实例的 data() 中修改 monitorForm
+                m
+在 Vue 组件中修改 batchDeleteVideos 方法
+            batch
+在 Vue 组件中添加一个新的方法来处理删除视频
+            handleDeleteV
+在 created 生命周期中添加
+        created() 
+在 methods 中添加
+            handleAvatarError(e) 
+在前端JS中添加以下方法：
+
+
+// 导出账号
+
+            handleExp
+在对话框关闭前检查
+            beforeDialogClose(done) 
+在导航栏的 navbar-right div 中添加 --
+在账号列后面或合适位置添加 --
+地址
+埃及
+墨西哥
+处理IP为空账号的选择
+            handleAccountWithoutIPSele
+处理代理IP选择变化
+            handleProxyIPSelectionChang
+处理全选代理IP
+            handleSelectAllProxyIPs(value
+处理指纹为空账号的选择
+            handleAccountWithoutFinger
+处理排序变化
+            handleSortChange(field) 
+处理昵称列表
+                let nicknameList 
+处理有视频账号的选择
+            handleAccountWithVideosSele
+处理特殊字符，保留必要的字符如 
+处理登录成功账号的选择
+            handleLoginSuccessAccountS
+处理登录账号的选择
+            handleAccountForLoginSelecti
+处理签名列表
+                let signatureList 
+处理视频列表数据
+            processVideoList(videoItems) 
+处理视频数据 - 新数据结构中视频列表在 itemList 字段中
+                
+备注
+备注: 
+复制CK
+失败账号详情：
+失败账号：
+头像
+头像上传处理
+            handleAvatarChange(file) 
+头像加载失败
+头像加载失败时的处理，可以设置一个默认头像
+                e.target.src
+头像文件夹路径
+头像预览
+奥地利
+好友数
+如果传入的是国家代码，直接返回小写
+                if (countryName.
+如果加载失败，显示默认的联合国旗或隐藏图片
+                e.target.sty
+如果只有
+如果已经是格式化好的字符串，直接返回
+                if (dateStr.inc
+如果当前页没有视频了，重新加载
+                            if (th
+如果有cursor，添加cursor参数（用于分页）
+                if (thi
+如果有sessionId，调用关闭接口
+                if (this.qrSes
+如果有失败详情，显示详细信息
+                                if 
+如果有失败详情，显示详细信息
+                            if (res
+如果有失败详情，显示错误信息
+                             if (re
+如果有失败，显示错误详情
+                                if (r
+如果正在播放这个视频，关闭播放弹窗
+                            if (
+如果点击的是当前排序字段，切换排序顺序
+                    if (this.s
+如果第一页没有数据，显示空状态
+                            if (th
+如果线程数过多，给出警告
+                if (this.batchExtract
+如果线程数过多，给出警告
+                if (this.batchGroupMo
+安卓全参JSON格式
+                            try 
+安卓全参（JSON格式）
+                            try 
+完成
+实时推送
+            
+客服聊天
+密码
+密码
+                                param.country 
+对话框控制
+                addGroupDialog: false,
+    
+导入失败:
+导入失败: 
+导入失败详情
+导入账号
+导入账号
+            handleImport() 
+导入账号对话框 --
+导出字段配置
+                exportFields: 
+导出文件名
+导出格式
+导出类型变化处理
+            handleExportTypeChange(type) 
+导出范围
+导出账号
+导出账号对话框 --
+封号
+封号 - 橙色
+                    1: 
+封号数
+封号状态
+                
+封号账号不可登录
+                                    isBan
+封号账号数量
+封面图片
+                        cover_url: 
+将微软邮箱相关信息拼接到 accessUrl，格式：邮箱----密码----clientId----r
+尝试获取最佳播放地址
+                    const getBestPlayUr
+左侧分组管理 - 现代化样式 --
+左箭头 - 快退5秒
+                        event.preventDe
+已为 
+已使用: 
+已取消删除
+已取消排序
+已扫码
+                                this.qrStatus 
+已授权
+已有指纹
+已登录
+已绑定
+已输入 
+已退出登录
+已选代理IP
+已选择 
+已选账号
+巴基斯坦
+巴西
+希腊
+应用到账号列表
+                this.sortField 
+建议1-5个线程)
+建议设置1-5个线程，过多可能导致资源占用过高
+开启
+开启了但没填内容
+                    
+开启了但没填路径
+                    
+开启同步
+开启同步最新消息和粉丝
+开启后会更新账号的视频播放量统计数据,但更新速度会变慢
+开启后会自动提取账号的私信指纹信息
+开启后会自动进行Capcut授权，需要账号已登录TikTok
+开启聊天同步
+开启自动翻译
+开始下载视频
+开始二维码倒计时
+            startQrTimer() 
+开始修改
+开始倒计时
+                            this.startQrTime
+开始提取
+开始日期
+开始日期不能为空
+开始登录
+开始轮询任务状态:
+开始轮询检查登录状态
+                            this.startQ
+开始轮询检查登录状态（5秒一次）
+            startQrLoginCheck() 
+异常
+异常
+                
+异常 - 蓝色
+                    2: 
+弹出确认对话框，让用户选择是否同步消息
+                this.
+当前IP
+当前分组
+当前排序字段
+                currentSortOrder: 
+当前排序顺序: ascending/descending
+                isSta
+当前版本号
+                versionChecked: false,    //
+德国
+必须在这里
+必须有cookie
+                                if (
+必须有账号或用户名
+                                if (
+必须至少选择了一个账号
+                if (this.selectedAccou
+总关注
+总好友
+总播放量
+总消息
+总点赞
+总粉丝
+总视频
+总评论
+您的浏览器不支持视频播放
+                
+您设置了 
+意大利
+成功: 
+成功删除 
+成功后可以打开新窗口
+                        this.
+成功添加 
+成功转移 
+我已确认要删除视频，操作不可恢复
+或 
+或者只是静默失败
+                console.warn(
+或者设置默认图片
+                // e.target.src 
+截断文本
+            truncateText(text, maxLength) 
+所有分组:
+所有可用分组:
+所有数据
+所有账号关注数总和
+所有账号好友数总和
+所有账号消息数总和
+所有账号点赞数总和
+所有账号相同
+所有账号粉丝数总和
+所有账号视频播放量总和
+所有账号视频数总和
+所有账号评论数总和
+手动执行监控失败:
+打印当前选中的分组信息
+                console.log(
+打开导出对话框
+            openExportDialog() 
+打开扫码登录对话框
+            openQrLoginDialog() 
+打开比特浏览器失败
+打开比特浏览器失败:
+打开浏览器失败
+打开浏览器失败:
+打开添加自定义IP对话框
+            openAddCustomIPDialog(row
+打开监控设置对话框时加载现有配置
+            openMonitorDialog() 
+打开链接失败
+执行删除封号账号
+            executeDeleteFailAccounts() 
+执行失败
+执行批量修改资料
+            executeBatchModifyProfile() 
+执行批量分组修改资料
+            executeBatchGroupModifyProf
+执行批量删除
+                            return apiDelet
+执行批量提取账号指纹
+            executeBatchExtractFingerpr
+执行批量登录客服聊天
+            executeBatchLoginChat(autoT
+执行批量登录客服聊天
+            executeBatchLoginChat(syncM
+扫码成功，登录中...
+扫码登录
+扫码登录
+                        
+扫码登录二维码
+扫码登录对话框 --
+扫码登录成功
+扫码登录状态相关计算属性
+            qrStatusClass() 
+扫码登录相关数据
+                qrLoginDialog: false,
+  
+扫码登录表单
+                qrLoginForm: 
+批量修改IP
+批量修改资料
+批量修改资料
+            handleBatchModifyProfile() 
+批量修改资料任务已启动
+批量修改资料失败
+批量修改资料失败:
+批量修改资料对话框 --
+批量修改资料正在运行
+批量分组修改资料
+批量分组修改资料
+            handleBatchGroupModifyProfile
+批量分组修改资料对话框 --
+批量分组修改资料表单数据
+                batchGroupModifyProfi
+批量分组分配代理IP
+批量分组分配代理IP
+            handleBatchGroupAssignProxy
+批量分组分配代理IP对话框 --
+批量分组分配代理IP表单
+                batchGroupAssignProxy
+批量分组删除视频
+批量分组删除视频
+            handleBatchGroupDeleteVideos(
+批量分组删除视频对话框 --
+批量分组删除视频表单
+                batchGroupDeleteVideosF
+批量分组操作
+批量分组操作下拉菜单处理
+            handleBatchGroupCommand(c
+批量分组操作相关方法 
+批量分组登录对话框 --
+批量分组登录表单
+                batchGroupLoginForm: 
+批量分组登录账号
+批量分组登录账号
+            handleBatchGroupLogin() 
+批量删除失败:
+批量删除封号账号
+批量删除封号账号失败
+批量删除封号账号失败:
+批量删除所有封号账号
+批量删除所有封号账号
+            batchDeleteFailAccounts() 
+批量删除视频
+批量删除视频失败
+批量删除视频失败:
+批量删除视频成功
+批量删除账号
+批量删除账号失败
+批量取消同步
+            // 批量取消同步
+            batchCan
+批量取消同步失败
+批量取消同步失败:
+批量取消同步消息
+批量同步消息
+批量同步消息
+            // 批量同步消息
+            batchSyn
+批量同步消息失败
+批量同步消息失败:
+批量提取指纹失败
+批量提取指纹失败:
+批量提取账号指纹
+批量提取账号指纹
+            handleBatchExtractFingerprint
+批量提取账号指纹对话框 --
+批量提取账号指纹相关
+                batchExtractFingerprint
+批量操作面板 --
+批量校准国家/IP
+批量校准国家/IP
+            batchCalibrateCountry() 
+批量校准国家失败
+批量校准国家失败:
+批量检测IP
+批量检测IP
+            // 批量检测IP
+            batchChe
+批量检测IP失败
+批量检测IP失败:
+批量添加失败:
+批量添加失败，请检查激活码或者端口足够
+批量添加账号
+批量添加账号失败
+批量添加账号对话框 --
+批量添加账号相关方法
+            formatChange() 
+批量登录
+批量登录任务已启动，共 
+批量登录失败
+批量登录失败:
+批量登录客服聊天
+批量登录客服聊天设置弹窗 --
+批量登录客服聊天（创建 WebSocket 连接）
+            // 批量登录客服聊天（
+批量登录客服聊天（创建 WebSocket 连接）
+            batchLoginCh
+批量登录对话框 --
+批量登录聊天失败
+批量登录聊天失败:
+批量登录聊天失败: 
+批量转移分组
+批量转移分组
+            handleBatchTransfer() 
+批量转移分组失败:
+批量转移分组失败: 
+批量转移分组对话框 --
+批量退出客服聊天
+批量退出客服聊天（关闭 WebSocket 连接）
+            batchLogoutC
+批量退出聊天失败:
+批量退出聊天失败: 
+指定分组
+指纹为空的账号
+                
+指纹提取任务已启动
+指纹状态
+按时间范围删除
+挪威
+捷克
+授权
+授权状态筛选
+                filterChatLogin: 
+排序
+排序字段
+                sortOrder: 
+排序字段:
+排序相关
+                sortField: 
+排序顺序:
+排序顺序: ascending/descending
+                exportD
+提取其他信息
+                                if (jsonDat
+提取指纹
+提取用户信息
+                                if (jsonDat
+提取设备信息存储到 remark
+                                c
+提示
+提示：SOCKS5格式为 ip:端口 或 ip:端口:账号:密码
+                
+搜索账号
+播放
+播放
+                            
+播放地址
+                        play_addr: 
+播放视频（打开弹窗）
+            playVideo(video) 
+播放量
+播放量: 
+操作
+操作栏 --
+新加坡
+新增
+                        this.batchExtractFinger
+新增
+                        this.openAddCustomIPDia
+新增全选相关数据
+                selectAllProxyIPs: false,
+新增数据
+                accountsWithoutIP: 
+新增筛选条件
+                filterStatus: 
+新增：将cookies对象转换为cookie字符串
+            convertCooki
+新增：提取私信指纹
+                    headless: this.batch
+新增：提取私信指纹开关 --
+新增：是否更新播放量，默认开启
+                
+新增：登录状态下拉筛选 --
+新增：视频播放对话框
+
+                // 新增的批量分组操作对话框
+    
+新增：账号状态列 --
+新格式：rows 是数据列表，total 是总数
+                         
+新版本 
+新西兰
+无值
+无密码
+                                
+无指纹
+无描述
+无效的分组ID:
+无数据时显示提示 --
+无标题
+无法获取账号信息
+无论成功还是失败，都要解除加载状态
+                    this.batchGr
+无论成功还是失败，都解除加载状态
+                        this.impo
+日志
+                                        
+日期格式不正确
+日本
+时长: 
+时间戳通常是秒，需要乘以1000转换为毫秒
+                    const da
+是否可以导入
+            canImport() 
+是否可以导出
+            canExport() 
+是否可以进入下一步
+            canGoToStep2() 
+是否启动时检查版本
+
+                // 版本对话框
+            
+是否已检查过版本
+                checkVersionOnStartup: tr
+是否开启消息同步
+是否显示版本提示
+               // latestVersion: 
+是否紧凑模式
+                statsLoading: false,
+     
+昵称
+昵称列表不能为空
+显示
+显示弹窗
+                this.chatLoginDialogVisible 
+显示统计
+显示统计面板
+普通用户
+智利
+暂停
+暂无分组，点击上方添加
+暂无视频数据
+更新CK失败
+更新CK失败:
+更新全选状态
+                if (selectedCount 
+更新成功
+更新排序状态
+                this.sortField 
+更新播放量
+更新时间
+更新现有的handleFileChange方法
+            handleFileChan
+更新统计数据
+            updateStatsData(stats) 
+更新账号
+最新版本号
+                //currentVersion: 
+有效
+有数据时显示表格 --
+有视频的账号
+                
+未授权
+未检测
+未检测
+                    1: 
+未登录
+未登录 - 灰色
+                    1: 
+未登录账号数量
+未知
+未知地区
+未知时间
+未知状态
+未绑定
+未选择任何账号
+                    
+未选择分组
+机器人
+权限检查
+                if (command 
+构建代理检测参数（注意：后端参数名是 proxyInfo，类型是 String）
+         
+构建完整的IP字符串
+                let fullIP 
+构建请求URL: /tiktok/account/targetTkGroup/
+构建请求参数：URL 中包含 syncMsg 和 autoTranslate
+           
+构建请求数据 - 使用字符串类型
+                const requestData
+查看 
+查看头像
+查看监控日志
+            viewMonitorLogs() 
+查看监控日志功能开发中
+查看视频列表
+            viewVideos(row) 
+查询
+查询有视频的账号
+查询登录成功的账号
+根据你的接口: POST /connections/batch-create/
+根据分组ID获取代理IP列表
+                apiGet(window.API_B
+根据选择的格式进行验证
+                const format 
+格式10：安卓全参（JSON格式）
+格式1：账号----密码
+格式2：账号----密码----2fa
+格式3：账号----密码----CK
+格式4：账号----CK
+格式5：CK
+格式6：邮箱----密码----用户名----国家----注册时间----看验证码链接
+格式7：账号----密码----邮箱验证api
+格式8：账号----密码----微软邮箱----微软邮箱密码----clientId----refre
+格式9：IOS全参（JSON格式）
+格式: ip:端口 或 ip:端口:账号:密码
+格式化数字显示（千分位）
+            formatNumber(num) 
+格式化日期显示
+            formatDate(dateStr) 
+格式化视频日期
+            formatVideoDate(timestamp) 
+格式化视频时长
+            formatDuration(seconds) 
+格式：/api/websocket/connections/batch-create/
+检查二维码登录状态
+            checkQrLoginStatus() 
+检查头像
+                if (this.batchModifyProfileFo
+检查昵称
+                if (this.batchModifyProfileFo
+检查登录状态失败:
+检查监控任务状态失败:
+检查签名
+                if (this.batchModifyProfileFo
+检测失败
+检测完成
+模拟上传处理
+                const reader 
+模拟修改操作
+                this.
+正在下载更新，无法关闭
+正在下载更新，请稍后再试
+正在同步好友列表和消息...
+正在打开下载模板
+正在打开比特浏览器
+正在打开浏览器
+正在打跳转导出下载页面，请稍候...
+正在检测代理IP可用性...
+正在获取二维码...
+正在获取登录二维码...
+正常
+正常
+                    
+正常 - 绿色
+                    
+正常: 
+此操作不可恢复
+步骤1：选择导入账号分组代理IP
+步骤1：选择账号
+步骤2：扫码登录
+步骤2：选择代理IP
+每5秒检查一次登录状态
+                this.qrCheckInterval 
+比利时
+比特浏览器
+比特浏览器查看
+                                          
+沙特阿拉伯
+没有封号账号需要删除
+没有找到封号账号
+法国
+波兰
+注册时间:
+注意：二维码有效期为5分钟，请尽快扫描
+                            
+泰国
+浏览器ID
+浏览器查看
+                                        
+浏览器类型：
+消息同步任务已启动，共 
+消息同步设置
+消息数
+添加
+                    
+添加事件监听
+                    this.videoPlayer.addEve
+添加分组
+添加分组失败
+添加分组失败:
+添加分组对话框 --
+添加失败
+添加对话框关闭前的检查
+        mounted() 
+添加封号标识
+                                    statusT
+添加已选账号展示区域 --
+添加状态文本
+                                
+添加筛选条件
+                if (this.searchQuery) param
+添加线程数参数
+                
+添加线程数配置 --
+添加线程数，默认3
+                    modifyAvatar: false,
+添加自定义IP
+                                        
+添加自定义IP失败
+添加自定义IP失败:
+添加自定义IP对话框 --
+添加自定义SOCKS5 IP
+添加调试日志
+                            console.log(
+添加账号状态判断：status 
+添加这一行
+                accountData: 
+添加这一行
+                searchQuery: 
+清理定时器
+            if (this.downloadInterval) 
+清空之前的验证错误
+                this.validationError 
+清空选中状态
+                            this.batchExtra
+清空选中状态
+                            this.selectedAc
+清除之前的定时器
+                this.clearQrCheckInterval
+清除二维码检查定时器
+            clearQrCheckInterval() 
+清除倒计时定时器
+            clearQrTimerInterval() 
+清除所有定时器
+                                this.clear
+清除所有定时器
+                this.clearAllIntervals()
+清除所有定时器
+            clearAllIntervals() 
+清除统计排序
+            clearStatSort() 
+澳大利亚
+灰色
+                    1: 
+点击上传
+点击分组时重置排序
+            selectGroup(groupId) 
+点击新字段，默认升序
+                    order 
+点击版本提示
+            handleVersionClick() 
+点赞数
+点赞数: 
+爱尔兰
+版本下载相关数据
+                isDownloading: false,
+  
+版本相关数据
+                showVersionAlert: true,  //
+状态
+状态相关方法
+            getIpStatusText(status) 
+状态筛选
+                selectedAccounts: 
+现在这是 methods 中的方法
+            this.loadGroup()
+瑞典
+瑞士
+生成cron表达式（6位Spring格式）
+            generateCronExpr
+生成二维码
+            generateQRCode() 
+生成二维码失败
+生成二维码失败:
+生成导出文件名
+            generateExportFileName() 
+用户ID
+用户取消
+                
+用户取消删除操作
+                
+用户取消日期输入
+                        
+用户取消日期输入
+                            
+用户取消，不执行
+                    
+用户名作为账号
+                                param.tkPw
+用户点击取消
+                
+用户点击取消（不同步），传 syncMsg 
+登录中
+登录中 - 蓝色
+                    2: 
+登录失败
+登录失败 - 橙色
+                
+登录失败或二维码已过期
+登录失败详情
+登录客服聊天
+登录已过期，请重新登录
+登录成功
+登录成功
+                                this.qrStatus
+登录成功 - 绿色
+                    3: 
+登录条件
+登录状态
+登录聊天
+登录聊天状态筛选
+                filterChatSync: 
+登录设置
+的分组（id 
+的分组，清空选中状态
+                            if (this.ac
+的授权吗
+的日志
+的比特浏览器
+的浏览器
+监听代理IP列表变化，重置全选状态
+            proxyIPs(newVal) 
+监听对话框关闭事件
+            this.
+监听导入表单变化，实时更新按钮状态
+            
+监控任务已停止
+监控任务已启动
+监控任务未运行
+监控任务状态
+            checkMonitorTaskStatus() 
+监控任务运行中，下次执行: 
+监控线程数
+监控设置对话框 --
+监控账号设置
+目标分组
+看验证码链接
+                                // 邮箱信息存储到r
+矩阵
+确保 selectedFields 是一个数组
+                const sele
+确保创建新数组以触发响应式更新
+                            const 
+确保转为字符串
+                    format: this.batchAddF
+确定
+确定修改
+确定分配
+确定删除
+确定取消
+确定导入
+确定导出
+确定手动执行监控吗
+确定排序顺序
+                let newOrder 
+确定校准
+确定添加
+确定要删除全部 
+确定要删除分组
+确定要删除已选 
+确定要删除视频 
+确定要取消 
+确定要对 
+确定要对选中的账号进行视频删除操作吗
+确定要添加 
+确定要退出登录吗
+确定转移
+        
+确定退出
+确认
+确认删除
+确认删除正在播放的视频
+            confirmDeletePlayingVideo(
+确认操作
+确认聊天登录
+            confirmChatLogin() 
+示例：
+秒后自动关闭对话框
+                                setTimeo
+移除事件监听器
+                    this.videoPlayer.remov
+空格键 - 播放/暂停
+                        event.preventD
+窗口即将自动关闭...
+立即运行
+端口
+端口号必须在1-65535之间
+第 
+第三次点击取消排序
+                        newField 
+第三次点击取消排序
+                        this.clearStatSo
+等
+                        let safeValue 
+等字符
+                        cookiePairs.push(
+等待扫描...
+签名
+签名列表不能为空
+简单的日期格式验证
+                                    cons
+简单的日期格式验证
+                                const da
+管理员
+类型:
+粉丝数
+系统设置
+红色
+                
+线程数
+线程数必须在1-10之间
+线程数警告
+线程数过多时给出警告
+                if (threads 
+线程数配置
+线程数，默认3个
+                    updatePlayCount: fals
+线程数：
+结束日期
+结束日期不能为空
+统计信息
+                        play_count: parseInt(
+统计数据已刷新
+统计相关数据
+                statsData: 
+统计面板 - 支持排序和删除封号账号 --
+统计面板已显示
+统计面板已隐藏
+统计面板是否隐藏
+                token: localStorage.getIt
+统计面板样式类
+            statsPanelClass() 
+统计面板隐藏时显示的占位按钮 --
+统计项排序点击处理
+            handleStatSort(stat) 
+继续执行
+绿色
+                    
+编辑分组
+网络异常
+美国
+聊天同步
+聊天同步状态筛选
+                filterIpStatus: 
+聊天登录完成
+聊天登录设置弹窗
+                chatLoginAutoTranslate: f
+联合国旗作为默认）
+                return countryCodeMap
+自动同步好友列表、未读消息和粉丝数据
+自动将接收到的消息翻译为中文
+自动翻译开关
+                chatLoginSyncMessages: fals
+自定义IP添加成功
+至少有一项修改内容
+                return hasModifyContent
+芬兰
+英国
+荷兰
+获取国家代码（用于国旗显示）
+            getCountryCode(countryN
+获取封号数量
+                const failCount 
+获取封号账号失败
+获取封号账号数量
+            getFailAccountCount() 
+获取当前分组下的所有封号账号ID
+                const params 
+获取当前分组名称
+            getCurrentGroupName() 
+获取当前分组账号数量
+            getCurrentGroupCount() 
+获取当前排序状态
+                let order 
+获取所有选中的账号ID
+                const accountIds 
+获取文件扩展名
+            getFileExtension() 
+获取昵称列表
+            nicknameList() 
+获取登录状态CSS类
+            getLoginStatusClass(loginSt
+获取登录状态文本
+            getLoginStatusText(loginStatu
+获取签名列表
+            signatureList() 
+获取统计数据失败
+获取视频下载URL
+            getVideoDownloadUrl(video) 
+获取视频播放URL
+            getVideoPlayUrl(video) 
+获取视频播放地址（按优先级）
+                this.videoSrc 
+获取角色名称
+            getUserRoleName(roles) 
+获取账号状态CSS类
+            getStatusClass(status) 
+获取账号状态文本
+            getAccountStatusText(status) 
+获取选中的代理IP信息
+                const selectedProxy 
+菲律宾
+葡萄牙
+行: 
+行JSON格式不正确: 
+行微软邮箱格式不正确
+行格式不正确，请检查
+行缺少 account、username 或 user.username 字段
+行缺少 cookie 或 cookies 字段
+行缺少 cookies 或 ck 字段
+行缺少 username、uid 或 unique_id 字段
+行邮箱验证API格式不正确，需要以http://或https://开头
+表单数据
+                newGroupForm: 
+表单是否有效
+            isFormValid() 
+表格容器 - 修复滚动问题 --
+表格操作下拉菜单处理
+            handleTableAction(command, 
+西班牙
+视频下载地址不可用
+视频信息
+                        duration: video.durat
+视频信息加载中...
+视频分页大小改变
+            handleVideoSizeChange(val) 
+视频分页当前页改变
+            handleVideoCurrentChange(val
+视频列表
+视频列表
+                                            
+视频列表对话框 --
+视频列表相关数据
+                videoList: 
+视频删除成功
+视频加载完成，时长:
+视频封面
+视频播放
+视频播放地址不可用
+视频播放失败，请检查视频地址
+视频播放对话框 --
+视频播放相关数据
+                currentPlayingVideo: null
+视频播放结束
+视频播放结束
+            handleVideoEnded() 
+视频播放错误:
+视频数
+视频数量
+角标数字
+                showPulse: true,// 是否显示脉冲动画
+
+解析Cookie - 支持多种格式
+                                
+解析IOS全参JSON失败:
+解析安卓全参JSON失败:
+解析安卓全参成功:
+解析用户缓存失败:
+解析账号
+                                param.tkUser 
+解析账号参数
+                const accountParams 
+解析错误: 
+触发 computed 重新计算
+                this.
+计算昵称数量
+            nicknameCount() 
+计算签名数量
+            signatureCount() 
+设备ID
+设置为第一个有效分组的ID
+                        console.log(
+设置加载状态，防止重复提交
+                this.importLoading 
+设置加载状态，防止重复点击
+                this.batchGroupAssig
+设置排序状态
+                this.currentSortField 
+设置默认选中字段
+                    const defaultFields 
+评论数: 
+评论数需要从其他字段获取
+                    stats.totalMessag
+该分组下没有可用代理IP
+该分组下没有需要登录的账号
+该视频
+该账号暂无视频数据
+该账号没有CK，无法打开比特浏览器
+该账号没有指纹，无法查看视频列表
+请使用TikTok手机App扫描上方二维码登录
+请先保存监控配置
+请先选择IP分组
+请先选择代理IP分组
+请先选择代理IP和账号分组
+请先选择分组，或该分组下没有IP为空的账号
+请先选择分组，或该分组下没有指纹为空的账号
+请先选择账号分组
+请先选择账号分组并查询有视频的账号
+请先选择账号分组并查询登录成功的账号
+请先选择账号格式
+请填写头像文件夹路径
+请填写昵称列表
+请填写签名列表
+请检查表单填写是否正确
+请求失败
+请求账号列表参数:
+请确认删除操作
+请至少修改一项资料
+请设置有效的线程数
+请输入IP地址
+请输入IP地址，如：192.168.1.100
+请输入个性签名列表，每行一个签名
+请输入分组名称
+请输入删除类型（all 或 dateRange）
+请输入头像图片文件夹路径
+请输入导出文件名
+请输入开始日期（YYYY-MM-DD）
+请输入新的CK
+请输入新的代理IP
+请输入昵称列表，每行一个
+请输入昵称列表，每行一个昵称
+请输入端口
+请输入端口号，如：1080
+请输入签名列表，每行一个
+请输入结束日期（YYYY-MM-DD）
+请输入账号参数，每行一个账号
+请选择IP分组
+请选择一个有效的分组
+请选择代理IP
+请选择代理IP分组
+请选择分组
+请选择删除类型
+请选择文件
+请选择浏览器
+请选择目标分组
+请选择要修改的账号
+请选择要修改资料的账号
+请选择要分配IP的账号
+请选择要删除视频的账号
+请选择要取消同步的账号
+请选择要同步消息的账号
+请选择要提取指纹的账号
+请选择要校准的账号
+请选择要检测IP的账号
+请选择要登录的账号
+请选择要登录聊天的账号
+请选择要监控的账号分组
+请选择要转移的账号
+请选择要退出登录的账号
+请选择账号分组
+请选择账号格式
+请重新获取二维码
+调用IP检测接口
+                apiGet(
+调用后端接口取消授权
+                    apiPost(
+调用接口更新账号的IP
+                const requestData 
+账号
+账号 
+账号----CK
+                            if (parts.len
+账号----CK
+                            isValid 
+账号----密码
+                            if (parts.len
+账号----密码
+                            isValid 
+账号----密码----2fa
+                            if (pa
+账号----密码----2fa
+                            isVali
+账号----密码----CK
+                            if (par
+账号----密码----CK
+                            isValid
+账号----密码----微软邮箱----微软邮箱密码----clientId----refresh_t
+账号----密码----邮箱验证api
+                            if
+账号----密码----邮箱验证api
+                            is
+账号: 
+账号ID 
+账号分组
+账号分组
+                        
+账号分组ID
+                    threads: 3,
+          
+账号分组ID
+                    threads: 3,           /
+账号分组加载成功，数量:
+账号分组类型为5
+                
+账号分组类型为5
+                    
+账号列表API响应:
+账号删除成功
+账号加载成功，共
+账号参数
+账号已封禁
+账号已成功通过扫码登录
+账号数据:
+账号格式
+账号池
+账号状态
+账号状态筛选
+                filterCapcutAuth: 
+账号管理
+账号管理 - TKSwarm
+资料修改成功
+超级管理员
+越南
+转移分组失败
+轮询分配
+轮询同步状态
+            pollSyncStatus(taskId) 
+轮询查询任务状态
+            pollBatchLoginStatus() 
+运行失败
+运行成功
+返回映射的代码，如果没有则返回 
+这里可以存储任务ID，然后定时查询任务状态
+                // 实际项目中可能需要
+这里可以实现轮询逻辑来检查同步状态
+                // 可以是定时请求或使用 We
+这里应该调用后端接口获取代理IP列表
+                const proxyGrou
+进入步骤2：生成二维码
+            // 进入步骤2：生成二维码
+          
+退出失败详情
+退出登录
+退出登录
+            async handleLogout() 
+退出聊天完成
+选中的分组信息:
+选中的目标分组:
+选中的目标分组类型:
+选择IP, 2: 显示二维码
+                qrStatus: 
+选择代理IP
+            selectProxyIP(proxy) 
+选择分组
+选择文件
+选择浏览器
+选择账号
+选择账号分组
+邮箱----密码----用户名----国家----注册时间----看验证码链接
+          
+邮箱:
+邮箱验证码API
+                            
+重新加载分组列表
+                            // 如果删除的是当前选中
+重新加载分组列表
+                        this.newGroupForm
+重新加载数据
+                this.loadAccounts()
+重新加载账号列表
+                            
+重新加载账号列表
+                                this.load
+重新获取
+重新获取二维码
+            resetQrLoginAndRetry() 
+重新设置
+重新赋值，确保触发视图更新
+                            this.acc
+重新验证
+                this.validateAccountParams()
+重置
+重置为默认值
+                    selectedAccountIds: 
+重置全选状态
+                this.selectAllProxyIPs 
+重置到第一页，因为排序后数据顺序变了
+                this.pagination
+重置开关状态
+                this.chatLoginAutoTranslate
+重置扫码登录状态
+            resetQrLogin() 
+重置批量修改资料表单
+            resetBatchModifyProfileForm
+重置批量分组修改资料表单
+            resetBatchGroupModifyProf
+重置批量分组分配代理IP表单
+            resetBatchGroupAssignPr
+重置批量分组分配代理IP表单时，同时重置全选状态
+            resetBatchGro
+重置批量分组删除视频表单
+            resetBatchGroupDeleteVide
+重置批量分组登录表单
+            resetBatchGroupLoginForm() 
+重置批量提取指纹表单
+            resetBatchExtractFingerprin
+重置时也要重置
+                    headless: false,
+    
+重置时也要重置
+                    useProxy: true,
+     
+重置状态
+                this.currentPlayingVideo 
+重置监控表单
+            resetMonitorForm() 
+重置线程数
+                    modifyAvatar: false,
+  
+重置表单
+                            this.importForm 
+重置表单并关闭弹窗
+            resetBatchModifyProfileFormA
+重置表单的方法
+            resetBatchAddForm() 
+重置表单（但保留一些默认值）
+                this.
+错误: 
+键 - 关闭弹窗
+                        event.preventDefa
+键 - 静音/取消静音
+                        event.preventD
+键盘事件处理
+            handleKeyDown(event) 
+阿根廷
+阿联酋
+降序
+随机分配
+隐藏
+隐藏统计
+需要CK)
+需要CK才能使用的功能 --
+需要指纹)
+需要指纹才能使用的功能 --
+需要满足：CK或CapCut授权为空，且已设置代理IP
+静音
+韩国
+顶部导航栏 --
+顺序分配
+预览视频封面（大图）
+            previewVideoCover(video) 
+马来西亚
+验证socks5IP格式：IP:端口 或 IP:端口:账号:密码
+                c
+验证相关
+                validationError: 
+验证端口范围
+                const portNum 
+验证线程数
+                if (
+验证线程数
+               /
+验证表单（供开关和输入框调用）
+            validateModifyForm() 
+验证选中的分组是否存在
+                const selectedGroup 
+默认3个线程
+                    selectedAccountIds: 
+默认选中分组:

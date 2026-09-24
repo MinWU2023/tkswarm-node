@@ -1,12 +1,12 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { chromium } = require('playwright-core');
-const { decrypt } = require('../secret-store');
 const { generateTotp } = require('../totp');
 const { BitBrowserProvider } = require('./bit-browser-provider');
 const { inspectTikTokSession } = require('./cdp-client');
-const { db } = require('../../db');
+const dataStore = require('../data-store');
 const { publish: liveLog } = require('../live-log');
+const { isHeadless } = require('./headless');
 
 const sessions = new Map();
 const activeLogins = new Set();
@@ -112,7 +112,7 @@ async function getSession(profileId, provider) {
   if (existing) { await existing.browser.close().catch(() => {}); sessions.delete(profileId); }
   // Reuse an already connected CDP session. Calling BitBrowser open again can
   // reactivate/reload the profile and races the user's manual Log in click.
-  const opened = await provider.open(profileId);
+  const opened = await provider.open(profileId, { headless: isHeadless('login') });
   if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
   const browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
   const context = browser.contexts()[0] || await browser.newContext();
@@ -135,16 +135,21 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   activeLogins.add(lockKey);
   liveLog(`账号 #${accountId}：开始登录辅助`,'info',{accountId});
   try {
-  const account = db.prepare(`SELECT id, username, browser_profile_id, login_status FROM accounts WHERE id=?`).get(accountId);
-  if (!account) throw new Error('账号不存在');
-  if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
-  const secret = db.prepare('SELECT password_encrypted, totp_secret_encrypted FROM account_secrets WHERE account_id=?').get(accountId);
-  if (!secret?.password_encrypted) throw new Error('账号没有已保存的加密密码，请重新导入账号凭据');
+  const bundle = await dataStore.getAccountBundle(accountId);
+  if (!bundle) throw new Error('账号不存在');
+  if (!bundle.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
+  const password = String(bundle.password || '');
+  const totpSecret = String(bundle.totp_secret || '');
+  if (!password) throw new Error('账号没有已保存的加密密码，请重新导入账号凭据');
+  const account = {
+    id: bundle.id,
+    username: bundle.username,
+    browser_profile_id: bundle.browser_profile_id,
+    login_status: bundle.login_status,
+  };
 
-  const password = decrypt(secret.password_encrypted);
-  const totpSecret = secret.totp_secret_encrypted ? decrypt(secret.totp_secret_encrypted) : '';
   const provider = new BitBrowserProvider();
-  db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+  await dataStore.updateLoginStatus(accountId, 'checking');
   liveLog(`账号 #${accountId}：打开绑定浏览器环境`,'info',{accountId});
   const session = await getSession(account.browser_profile_id, provider);
   liveLog(`账号 #${accountId}：当前页面 ${session.page.url()}`,'info',{accountId});
@@ -160,7 +165,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // them before starting a new login so a later click does not log in again.
   const existingSession = await inspectTikTokSession(session.ws);
   if (existingSession.loggedIn) {
-    db.prepare("UPDATE accounts SET login_status='online', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+    await dataStore.updateLoginStatus(accountId, 'online');
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha: false, alreadyLoggedIn: true, screenshot: '', currentUrl: page.url(), pageTitle: await page.title(), message: '检测到已有有效 TikTok 登录状态，无需重复登录' };
   }
   const totpSelectors = [
@@ -240,7 +245,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   ]);
   const passwordInput = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
   if (!usernameInput || !passwordInput) {
-    db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+    await dataStore.updateLoginStatus(accountId, 'offline');
     return { accountId, username: account.username, filled: false, submitted: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: '未找到登录表单，请在浏览器中人工确认页面状态' };
   }
   let usernameFilled = await fillAndVerify(usernameInput, account.username);
@@ -254,7 +259,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
   // Capture the actual prepared form for diagnosis without including secret
   // values in API responses or logs.
   if (!usernameFilled || !passwordFilled) {
-    db.prepare("UPDATE accounts SET login_status='offline', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+    await dataStore.updateLoginStatus(accountId, 'offline');
     return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: !usernameFilled ? 'TikTok 用户名输入框未接受填写，请检查页面后重试' : 'TikTok 密码输入框未接受填写，请检查页面后重试' };
   }
   let totpFilled = false;
@@ -313,7 +318,7 @@ async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = tr
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
   const result = { accountId, username: account.username, filled: true, usernameFilled, passwordFilled, submitted, twoFactorRequired, totpFilled, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: captcha ? '检测到安全验证，已暂停自动提交，请人工处理' : (totpFilled ? '账号、密码和下一步 TOTP 验证码已填充' : (submitted ? '已提交登录表单，请稍后检测登录状态' : '账号和密码已填充，请在浏览器中确认并提交')) };
-  if (!submitted) db.prepare("UPDATE accounts SET login_status='checking', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(accountId);
+  if (!submitted) await dataStore.updateLoginStatus(accountId, 'checking');
   return result;
   } finally {
     liveLog(`账号 #${accountId}：登录辅助结束`,'info',{accountId});

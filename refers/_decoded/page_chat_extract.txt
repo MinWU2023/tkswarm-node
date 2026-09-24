@@ -1,0 +1,982 @@
+=== TITLE ===
+TKSwarm - 客服聊天
+
+=== APIS (35) ===
+/api/audio/playMessage
+/api/tk-chat/autoCheckLang
+/api/tk-chat/batch-save-friend-translate
+/api/tk-chat/block/
+/api/tk-chat/custom-tag
+/api/tk-chat/custom-tag/
+/api/tk-chat/custom-tags
+/api/tk-chat/friend-tag
+/api/tk-chat/friend-tags
+/api/tk-chat/friend-tags/
+/api/tk-chat/getFriendAccountStats
+/api/tk-chat/getFriendsByAccountPage
+/api/tk-chat/getFriendsCountByStatus
+/api/tk-chat/getMessagesPage
+/api/tk-chat/mark-all-as-read
+/api/tk-chat/markAsRead
+/api/tk-chat/other-friends
+/api/tk-chat/refreshFans
+/api/tk-chat/saveFriendTranslateLang
+/api/tk-chat/search-user
+/api/tk-chat/send-greeting
+/api/tk-chat/toggleTopFriend
+/api/tk-chat/unblock/
+/api/tk-chat/unlimit/
+/api/tk-chat/updateTranslationSetting
+/api/tk-msgModel/delete/
+/api/tk-msgModel/listByCategory/
+/api/tk-msgModel/update
+/api/tk-setting/getTranslationInfo
+/api/tk-setting/openUrl
+/api/translate
+/api/user/logout
+/api/user/setLanguage
+/api/websocket/connections/
+/api/websocket/send
+
+=== EL-DIALOGS ===
+phraseDialogTitle
+标签管理
+categoryDialogTitle
+发起新聊天
+选择表情包
+phraseFormDialogTitle
+登录客服聊天
+应用到其他好友
+
+=== TABS ===
+category.name
+
+=== DIALOG/TITLE ATTRS ===
+account.name
+categoryDialogTitle
+friend.name
+phraseDialogTitle
+phraseFormDialogTitle
+发起新聊天
+应用到其他好友
+标签管理
+登录客服聊天
+选择表情包
+
+=== DROPDOWN ITEMS ===
+{{ tag.icon || '🏷️' }} {{ tag.name }}
+管理标签
+
+=== BUTTON TEXTS (sample) ===
+AI托管
+退出
+🌍 全局模式
+👤 账号模式
+添加
+发起新聊天
+0 ? 'success' : 'default'"> 打标签
+拉黑
+解除拉黑
+自动检测语言
+保存翻译设置
+应用到其他好友
+取消翻译
+进入直播间
+删除
+管理话术
+表情包
+发送
+添加分类
+添加话术
+刷新
+使用
+编辑
+关闭
+新建标签
+取消
+你好，很高兴认识你！
+Hi，可以认识一下吗？
+你好，我对你的内容很感兴趣～
+下一步
+开始登录
+刷新列表
+
+=== FORM/STATE KEYS ===
+addTagDialogVisible
+allFriendsList
+applyToOtherFriendsDialogVisible
+applyTranslationSettings
+categoryDialogVisible
+categoryForm
+childList
+classMap
+closeApplyToOtherFriendsDialog
+countryCodeMap
+detailMap
+editTagDialogVisible
+friendList
+friendTagsMap
+friendsList
+getList
+handlePersonalSettings
+iconMap
+langMap
+languageOptions
+loadOtherFriendsList
+loadTranslationSettings
+loginDialogVisible
+messageSettings
+newChatDialogVisible
+openAddCategoryDialog
+openAddPhraseDialog
+openAddTagDialog
+openApplyToOtherFriendsDialog
+openEditCategoryDialog
+openEditPhraseDialog
+openEmojiPickerDialog
+openQuickPhraseDialog
+openTagManagementDialog
+otherFriendsList
+phraseForm
+phraseFormDialogVisible
+reasonMap
+refreshFriendList
+resetNewChatDialog
+showEmojiPickerDialog
+showQuickPhraseDialog
+showTagFriendDialog
+showTranslationSettings
+statusMap
+tagFriendDialogVisible
+tagManagementDialogVisible
+tipMap
+translationSettings
+typeMap
+updateOtherFriendsTranslationSettings
+
+=== SWITCH CASES ===
+account_status
+blocked
+failed
+fans
+friend_msg_read_status
+friend_status
+heartbeat
+logout
+message_status
+newFriend
+new_message
+profile
+refollow
+settings
+stranger
+system
+unread
+unreplied
+
+=== ZH (724) ===
+下一步
+        
+不是我的粉丝
+个人中心功能开发中
+个人设置功能开发中
+个好友
+中国
+中文
+中文（简体）
+中间好友列表 --
+丹麦
+互关)
+人物与身体
+从后往前找最后一条用户消息
+                var lastUserMessage 
+代理IP
+代理商
+以色列
+会话ID:
+你好，很高兴认识你
+你好，我对你的内容很感兴趣
+使用
+                                        
+使用: 
+俄罗斯
+俄语
+保存
+保存失败
+保存失败: 
+保存失败: 网络请求失败
+保存好友标签失败:
+保存当前翻译设置
+                self.applyTranslationSett
+保存最近表情包失败:
+保存翻译设置
+                        
+保存翻译设置中...
+保存翻译设置失败:
+保留原有的朋友列表
+                    var existingFriends 
+兔脸
+全局模式
+                        
+全局模式 - 查看所有账号的好友
+全局模式正在开发中，敬请期待...
+全选 (
+全部
+全部已读
+全部已读
+                        
+关注状态：
+关注的人
+关闭
+分享
+分享了直播间
+分类删除成功
+分类名称
+分类描述
+分类更新成功
+分类添加成功
+分钟前
+切换好友筛选类型
+            switchOtherFriendsFilter: fun
+刚刚
+创建
+创建
+                
+创建: 
+初始化 WebSocket 失败:
+删除
+删除
+                        
+删除
+                                        
+删除分类
+删除分类后，该分类下的所有话术也将被删除
+删除分类失败
+删除分类失败:
+删除后将无法恢复
+删除失败
+删除标签
+删除标签失败
+删除标签失败:
+删除话术
+删除话术失败
+删除话术失败:
+刷新
+                            
+刷新列表
+                    
+刷新好友列表前检查账号是否存在
+                var accountExists 
+刷新好友列表失败:
+刷新统计失败:
+刷新统计数据
+                            self.loadFriend
+刷新翻译设置面板
+                                self.load
+刷新聊天记录失败:
+刷新页面应用新语言
+前端未读数量已清零:
+办公楼
+功能开发中
+功能正在开发中...
+加拿大
+加载中...
+加载中...
+                    
+加载了 
+加载其他好友列表失败:
+加载其他好友列表（独立接口查询）
+            loadOtherFriendsList:
+加载分类中...
+                    
+加载分类失败
+加载历史记录
+加载好友列表失败
+加载好友标签失败:
+加载更多好友...
+                    
+加载最近表情包失败:
+加载翻译信息失败
+加载自定义标签失败:
+加载话术中...
+                    
+加载话术分类失败
+加载话术分类失败:
+加载话术失败
+加载话术失败:
+加载语言列表失败:
+动物与自然
+匈牙利
+医院
+南非
+印尼
+印度
+原始数据:
+反对
+发给你
+发起新聊天
+发起新聊天
+                    
+发起新聊天弹窗 --
+发送
+        
+发送
+                            
+发送 WebSocket 消息:
+发送 WebSocket 消息失败:
+发送:
+发送中
+发送了
+发送了1张照片
+发送了贴纸
+发送了贴纸
+                                        
+发送失败
+发送失败
+                                        
+发送失败: 
+发送失败: 网络异常
+发送失败，请稍后重试
+发送已读确认:
+发送心跳:
+发送成功
+发送打招呼消息
+            
+发送消息失败
+发送消息失败:
+发送消息异常:
+发送翻译：
+取消
+取消失败
+取消当前好友的翻译设置
+            cancelTranslate: function 
+取消置顶
+取消翻译
+                        
+取消翻译失败
+取消翻译失败:
+可以认识一下吗
+右侧聊天区域 --
+同步中在线数量
+名片
+名片消息
+名片消息
+                                        
+后尝试第 
+哥伦比亚
+喜欢
+回复
+图片
+图片消息
+图片消息
+                                        
+图片预览关闭
+土耳其
+土耳其语
+在应用程序通知中查看详细信息
+在此用户接受你的消息请求之前，你最多只能发送 1 条消息
+在线账号数量
+埃及
+墨西哥
+处理 WebSocket 消息出错:
+处理中...
+天前
+失败
+失败 
+头像
+奥地利
+好友
+好友信息不完整，无法发送消息
+好友列表
+好友未回复
+如果 friends 是对象但不是数组，尝试转换
+                         
+如果您删除，此聊天将从您的消息请求中移除
+如果您接受，您可以立即与该用户聊天
+如果您收到可疑消息，请举报此用户
+如果您认为这是一个错误，请告知我们，以便我们对此消息以及最近的消息进行审核
+如果您认为这是个错误，请填写 
+如果是对象但不是数组，转换为数组
+                        self.acco
+如果是对象，尝试转换为数组
+                                    
+实时连接已断开
+客服聊天
+客服聊天页面 --
+富士山
+对方已接受你的消息，开始你们的对话吧
+对话框部分已省略，保持原有不变 --
+封禁)
+将在 
+小时前
+左侧TikTok账号列表 --
+已下线
+已关注
+已关注)
+已删除消息请求
+已加载所有历史消息
+已取消置顶
+已回复)
+已将所有未读消息标记为已读，共 
+已开启消息同步
+已开启自动翻译
+已成功应用到 
+已成功拉黑该用户
+已成功接受陌生人的消息请求
+已拉黑)
+已添加标签
+已登录
+已移除标签
+已置顶
+已翻译
+已被拉黑)
+已解除拉黑
+已认证
+已读:
+已退出登录
+已配置, false: 未配置
+                
+已配置翻译
+巴基斯坦
+巴西
+希腊
+带花园房屋
+广播账号在线状态:
+应用到其他好友
+应用到其他好友
+                        
+应用到其他好友失败:
+应用到其他好友弹窗 --
+应用到其他好友弹窗样式 
+应用失败: 
+应用失败: 网络请求失败
+延迟刷新，避免频繁请求
+                    setTimeout(functio
+开启
+开启 
+开启同步最新消息和粉丝
+开启好友消息翻译
+开启我发送消息翻译
+开启提示音
+开启自动翻译
+开始刷新聊天框记录
+开始登录
+张开手
+张照片
+当前分类没有话术，请添加话术
+当前筛选：
+当前筛选：发送失败
+当前筛选：好友未回复（我发了消息，对方未回复）
+当前筛选：我未回复（对方发了消息，我未回复）
+当前筛选：拉黑
+当前筛选：新好友
+当前筛选：未读消息
+当前筛选：重粉
+当前筛选：陌生人
+当前翻译设置：
+当前选择好友:
+微笑
+德国
+德语
+快捷招呼语：
+快捷话术管理
+快捷话术管理 - 
+快捷话术管理对话框 --
+思考
+总账号数量
+您将无法发送更多消息
+您目前无法与此用户聊天
+您试图联系的账户已被停止，可能无法接收消息
+想给您发消息
+                    
+意大利
+意大利语
+成功
+我已接受对方的消息，开始你们的对话吧
+我未回复
+房屋
+房间号: 
+才能发送消息给 
+打开应用到其他好友的弹窗
+            openApplyToOtherFriendsDi
+打开链接响应:
+打开链接失败:
+打开链接成功:
+打招呼文本域 --
+打标签 
+托管
+                        
+托管功能正在开发中，敬请期待...
+拉取中...
+拉取最新粉丝
+拉取粉丝
+拉取粉丝失败
+拉取粉丝失败:
+拉取粉丝失败: 
+拉黑
+拉黑
+                        
+拉黑后你们将无法互相收发消息
+拉黑失败
+拉黑失败:
+拉黑确认
+拥抱
+挪威
+捷克
+接受
+接受请求失败
+接受陌生人请求失败:
+接收:
+接收方权限关闭
+接收翻译：
+提示
+搜索中...
+搜索失败，请稍后重试
+搜索好友...
+搜索用户失败:
+搜索结果 --
+搜索话术...
+搜索账号...
+播放提示音失败:
+操作失败
+操作失败，请稍后重试
+操作标签失败:
+收到 WebSocket 消息:
+收到好友已读消息新消息通知:
+收到好友状态更新:
+收到新消息提醒：
+收到消息状态更新:
+收到系统消息:
+收到账号在线状态:
+文本
+文本消息
+新加坡
+新好友
+新好友)
+新建标签
+新消息
+新西兰
+旅行与地点
+旗帜
+无法识别好友消息的语言
+日文
+日本
+昨天 
+是我的粉丝
+显示已配置的翻译状态 --
+显示请求框
+                return lastUserMessage.sende
+普通用户
+智利
+暂无分类，请添加分类
+暂无好友
+暂无已配置翻译的好友
+暂无未配置翻译的好友
+暂无标签，点击
+暂无自定义标签，点击
+暂无话术
+更新分类失败
+更新分类失败:
+更新失败
+更新本地数据
+                                self.select
+更新标签失败
+更新标签失败:
+更新翻译设置失败:
+更新话术失败
+更新话术失败:
+更新账号数据:
+更新账号的总未读数
+                                    if (
+最后一条消息是对方发的 
+最后活跃：
+最近使用
+有失败消息)
+未关注
+未命名话术
+未命名账号
+未找到匹配的话术
+未登录
+未知
+未知失败原因
+未知好友
+未知消息类型
+未知的 WebSocket 消息类型:
+未读
+未连接，无法发送消息
+未配置, configured: 已配置
+                self.selected
+未配置, configured: 已配置
+                websocket: nu
+未配置翻译
+机器人
+条历史消息
+条话术
+                        
+柠檬
+查询
+查询结果
+标签
+标签保存成功
+标签删除成功
+标签更新成功
+标签添加成功
+标签管理
+标签管理对话框 --
+标记全部已读失败:
+标记已读接口调用失败:
+标记已读接口调用成功
+标记已读接口返回异常:
+根据筛选条件决定查询类型
+                var configured 
+格式化时间出错:
+格式化最后活跃时间出错:
+检查登录状态并加载用户信息
+            checkLoginAndLoadUserInf
+检测到的语言:
+橘子
+次重连
+正在应用到其他好友...
+正在检测好友消息语言...
+正在连接 WebSocket: 
+正确获取 targetAccount
+                            var
+此消息可能违反了我们的社区准则，并且发送的目的并非为了保护我们的社区
+步骤一：搜索用户 --
+步骤二：发送打招呼消息 --
+比利时
+沙特阿拉伯
+没有找到匹配的好友
+没有更多好友了
+                    
+法国
+法语
+波兰
+泰国
+泰语
+活动
+消息内容
+消息区域 --
+消息发送失败: 
+消息发送得太快了 发送速度过快
+消息发送成功
+消息已达上限
+消息类型
+消息重发成功
+添加
+添加
+                            
+添加/编辑分类对话框 --
+添加/编辑话术对话框 --
+添加分类
+添加分类
+                        
+添加分类失败
+添加分类失败:
+添加失败
+添加新账号:
+添加查询其他已配置好友的按钮 --
+添加标签失败
+添加标签失败:
+添加话术
+添加话术
+                            
+添加话术失败
+添加话术失败:
+清空好友的未读数
+                                    targe
+澳大利亚
+火山
+点击拉取该账号的最新粉丝列表
+点击查看详情 
+点赞
+熊猫
+熊脸
+爱尔兰
+爱心眼
+牛脸
+物品
+狗脸
+猪脸
+猫脸
+猴脸
+瑞典
+瑞士
+甜瓜
+生病
+用户
+用户不存在
+用户不存在提示 --
+用户不存在，请检查输入的UID或账号名是否正确
+用户信息丢失，请重新搜索
+用户取消拉取粉丝
+用户头像
+用户查询成功
+由于多次违反
+由于多次违反Community guidelines，您暂时无法发送和接收消息
+由于该用户的隐私设置，此用户无法接收您的消息
+登录
+登录中
+登录中...
+登录失败
+登录失败:
+登录失败，请检查网络连接
+登录客服聊天
+登录成功
+白眼
+的好友
+的相册消息
+目标用户信息 --
+直播间
+                                            
+直播间封面
+相册消息
+眨眼
+矩阵
+确保 account 存在且 friends 是数组
+                    if 
+确保 accounts 存在
+                if (
+确保 friends 是数组
+                    if (
+确保 friends 是数组，如果不是则初始化为空数组
+                      
+确定
+确定删除
+确定应用 (
+确定拉黑
+确定要删除分类 
+确定要删除标签 
+确定要删除此消息请求吗
+确定要删除话术 
+确定要取消当前好友的翻译设置吗
+确定要将该账号所有未读消息标记为已读吗
+确定要拉取该账号的最新粉丝列表吗
+确定要拉黑该用户吗
+确定要解除拉黑吗
+确定要退出登录吗
+确定要退出账号 
+确定解除
+确定退出
+确认删除
+确认退出
+社区自律公约
+祈祷
+立即登录
+笑哭
+笑眼
+笑脸
+笑脸与情感
+符号
+等待回复)
+筛选好友
+筛选按钮组 --
+筛选栏组件 --
+简介：
+简体中文
+管理员
+管理标签
+                                
+管理话术
+                            
+类型: 
+粉丝
+粉丝)
+粉丝拉取任务已启动，请稍后刷新查看
+粉丝状态：
+系统设置
+系统通知
+繁体中文
+红苹果
+编辑
+                                        
+编辑分类
+编辑话术
+网络请求失败
+网络错误
+置顶
+置顶操作失败:
+美国
+翻译失败:
+翻译已设置
+翻译设置
+翻译设置 - 
+翻译设置保存成功
+翻译设置已取消
+翻译设置已更新
+耳朵
+胜利
+脚印
+自动同步好友列表、未读消息和粉丝数据
+自动将接收到的消息翻译为中文
+自动检测
+自动检测语言
+                            
+自动翻译
+自定义标签
+芬兰
+英国
+英文
+荷兰
+荷兰语
+获取头像背景色（根据名字生成一致的颜色）
+            getAvatarColor: f
+获取好友列表失败
+获取好友列表失败:
+获取好友状态统计失败:
+获取登录状态失败:
+获取聊天记录失败
+获取聊天记录失败:
+获取账号数据失败
+获取账号统计信息失败:
+菠萝
+菲律宾
+葡萄
+葡萄牙
+葡萄牙语
+虎脸
+表情包
+                            
+表情包选择弹窗 --
+西班牙
+西班牙语
+西瓜
+视频
+视频消息
+视频消息
+                                        
+解析 WebSocket 消息失败:
+解析日期失败:
+解析消息内容失败:
+解析用户缓存失败:
+解析直播间分享消息失败:
+解析视频信息失败:
+解除后你们可以正常收发消息
+解除拉黑
+                        
+解除拉黑失败
+解除拉黑失败:
+解除拉黑确认
+设置语言失败
+话术内容为空
+话术分类
+话术分类
+                        
+话术列表
+话术删除成功
+话术名称
+话术已刷新
+话术更新成功
+话术添加成功
+该账号目前无法发送或接收消息
+语言已更新
+语言检测请求失败:
+请先搜索并确认用户信息
+请先登录
+请先登录账号
+请先登录账号到客服系统
+                            
+请先登录账号才能发送消息
+请先选择一个TikTok账号
+请先选择一个分类
+请先选择一个账号
+请先选择分类
+请先选择好友
+请先选择账号
+请先选择账号和好友
+请同时开启两个翻译开关并选择对应的语言
+请求失败:
+请注意，该用户最多可发送 3 条消息
+请输入
+请输入TikTok UID或账号名
+请输入分类名称
+请输入分类描述（可选）
+请输入打招呼消息
+请输入打招呼的消息内容...
+请输入标签名称
+请输入消息内容
+请输入话术名称
+请选择一个好友开始聊天
+            
+请选择分类
+请选择发送翻译的目标语言
+请选择接收翻译的源语言
+请选择消息类型
+请选择要应用设置的好友
+请选择话术分类
+调用接口加载其他好友列表
+                self.loadOtherFriends
+调用独立接口获取其他好友列表
+                apiGet(
+账号 
+账号不存在
+账号信息不存在
+账号信息无效
+账号数据无效
+账号未登录客服系统
+                        
+账号未登录，无需退出
+账号模式
+                        
+账号模式 - 正在查看 
+账号模式 - 请先选择一个账号
+账号管理
+贴纸
+贴纸消息
+                                        
+超级管理员
+越南
+越南语
+输入TikTok UID或账号名
+            
+输入消息...
+达到最大重连次数，停止重连
+还没有消息，开始聊天吧
+进入直播间
+                                            
+进行聊天（将自动翻译发送给好友）
+连接关闭
+连接已断开，请刷新页面重新连接
+连接已断开，请稍后再试
+连接成功建立
+连接超时
+连接错误:
+连接错误，请检查网络
+退出
+                                
+退出接口调用失败:
+退出登录失败
+退出登录失败:
+退出登录成功
+选择好友发过来的语言
+选择我发送的语言
+选择表情包
+选择要应用的好友：
+邮局
+重发
+重粉
+重粉)
+重置筛选状态（默认查询未配置的好友）
+                self.otherFrien
+银行
+错误码: 
+长度在 1 到 20 个字符
+长度在 1 到 50 个字符
+长度在 1 到 500 个字符
+闭嘴
+阿根廷
+阿联酋
+陌生人
+陌生人)
+青苹果
+青蛙
+韩国
+韩文
+页面不可见，暂停部分功能
+页面恢复可见，重新连接 WebSocket
+顶部导航栏 --
+食物与饮料
+香蕉
+马来西亚
+鼓掌
+鼻子

@@ -1,0 +1,1523 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>代理IP - TKSwarm</title>
+    <script src="/static/js/vue.js"></script>
+    <link rel="stylesheet" href="/static/css/index.css">
+    <link rel="stylesheet" href="/static/css/all.css">
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/request.js"></script>
+    <script src="/static/js/index.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+            background: #f0f2f6;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .navbar {
+            background: #001529;
+            color: white;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.08);
+            flex-shrink: 0;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #409EFF 0%, #66b1ff 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin-right: 40px;
+            letter-spacing: 1px;
+        }
+
+        .navbar-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-dropdown {
+            cursor: pointer;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .user-info:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #409EFF;
+            color: white;
+            font-weight: bold;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .user-details {
+            margin-left: 0;
+        }
+
+        .user-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .user-role {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            background: #f5f7fa;
+            gap: 16px;
+            padding: 16px;
+            min-height: 0;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1f2f3d;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-header h3:before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 18px;
+            background: #409EFF;
+            border-radius: 2px;
+        }
+
+        .group-stats {
+            font-size: 12px;
+            color: #909399;
+            font-weight: normal;
+            margin-left: 8px;
+        }
+
+        .group-list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px 20px;
+            min-height: 0;
+        }
+
+        .group-item-modern {
+            background: #ffffff;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            transition: all 0.25s ease;
+            cursor: pointer;
+            border: 1px solid #edf2f7;
+            position: relative;
+        }
+
+        .group-item-modern:hover {
+            background: #f8fafc;
+            border-color: #d9e2ef;
+            transform: translateX(2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+        }
+
+        .group-item-modern.active {
+            background: linear-gradient(135deg, #ecf5ff 0%, #f0f9ff 100%);
+            border-left: 3px solid #409EFF;
+            border-color: #409EFF #e1f0ff #e1f0ff #409EFF;
+            box-shadow: 0 4px 12px rgba(64, 158, 255, 0.12);
+        }
+
+        .group-content {
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .group-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .group-name-line {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .group-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #2c3e50;
+            letter-spacing: -0.2px;
+        }
+
+        .active .group-name {
+            color: #409EFF;
+        }
+
+        .group-badge {
+            background: #f0f2f5;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            color: #606266;
+            font-weight: 500;
+        }
+
+        .group-meta {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 12px;
+            color: #909399;
+        }
+
+        .group-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .proxy-count {
+            background: #f5f7fa;
+            padding: 2px 8px;
+            border-radius: 30px;
+            font-weight: 500;
+            color: #409EFF;
+        }
+
+        .group-actions-modern {
+            display: flex;
+            gap: 6px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .group-item-modern:hover .group-actions-modern {
+            opacity: 1;
+        }
+
+        .group-action-btn {
+            background: transparent;
+            border: none;
+            padding: 6px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #8c8f96;
+            transition: all 0.2s;
+        }
+
+        .group-action-btn:hover {
+            background: #e9ecef;
+            color: #409EFF;
+        }
+
+        .group-action-btn.danger:hover {
+            background: #fee9e6;
+            color: #f56c6c;
+        }
+
+        .empty-groups {
+            text-align: center;
+            padding: 40px 20px;
+            color: #bdc4cc;
+        }
+
+        .content {
+            flex: 1;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
+            min-height: 0;
+            margin-bottom: 16px;
+        }
+
+        .el-table {
+            width: 100%;
+            min-width: 800px;
+        }
+
+        .action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .batch-panel {
+            background: #f8fafc;
+            padding: 12px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            border: 1px solid #e9edf2;
+            flex-shrink: 0;
+        }
+
+        .batch-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .proxy-type-tag {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .socks5 { background: #e6f7ff; color: #1890ff; border: 1px solid #bae7ff; }
+        .http { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+        .https { background: #fff2e8; color: #fa8c16; border: 1px solid #ffd591; }
+
+        .table-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .pagination-container {
+            margin-top: 16px;
+            display: flex;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
+        .group-list-container::-webkit-scrollbar,
+        .table-wrapper::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .group-list-container::-webkit-scrollbar-track,
+        .table-wrapper::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .group-list-container::-webkit-scrollbar-thumb,
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background: #c1c9d2;
+            border-radius: 4px;
+        }
+        .group-list-container::-webkit-scrollbar-thumb:hover,
+        .table-wrapper::-webkit-scrollbar-thumb:hover {
+            background: #a0aab5;
+        }
+
+        .el-table th.el-table__cell {
+            background-color: #fafbfc;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .loading-select {
+            color: #909399;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-container">
+        <!-- 顶部导航栏 -->
+        <el-menu
+                :default-active="activeNav"
+                class="navbar"
+                mode="horizontal"
+                background-color="#001529"
+                text-color="rgba(255,255,255,.8)"
+                active-text-color="#409EFF"
+                @select="handleNavSelect">
+            <div class="logo">TKSwarm</div>
+            <el-menu-item index="account">账号管理</el-menu-item>
+            <el-menu-item index="proxy">代理IP</el-menu-item>
+            <el-menu-item index="agent">AI机器人</el-menu-item>
+            <el-menu-item index="publish">AI矩阵</el-menu-item>
+            <el-menu-item index="chat">客服聊天</el-menu-item>
+            <el-menu-item index="settings">系统设置</el-menu-item>
+            <div class="navbar-right">
+                <el-dropdown @command="handleUserCommand" trigger="click" class="user-dropdown">
+                    <div class="user-info">
+                        <div class="user-avatar" v-if="!userAvatar">
+                            {{ userName ? userName.charAt(0).toUpperCase() : 'U' }}
+                        </div>
+                        <div class="user-avatar" v-else>
+                            <img :src="userAvatar" :alt="userName">
+                        </div>
+                        <div class="user-details">
+                            <div class="user-name">{{ userName }}</div>
+                            <div class="user-role">{{ userRole }}</div>
+                        </div>
+                        <i class="el-icon-arrow-down el-icon--right"></i>
+                    </div>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="profile" icon="el-icon-user">个人中心</el-dropdown-item>
+                        <el-dropdown-item command="settings" icon="el-icon-setting">个人设置</el-dropdown-item>
+                        <el-dropdown-item divided command="logout" icon="el-icon-switch-button">退出登录</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </div>
+        </el-menu>
+
+        <!-- 主要内容区 -->
+        <div class="main-container">
+            <!-- 左侧分组管理 -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>
+                        代理分组
+                        <span class="group-stats">{{ groups.length }}个分组</span>
+                    </h3>
+                    <el-button type="primary" size="small" plain icon="el-icon-plus" @click="openAddGroupDialog">添加</el-button>
+                </div>
+
+                <div class="group-list-container">
+                    <div v-if="groups.length === 0" class="empty-groups">
+                        <i class="el-icon-folder-opened"></i>
+                        <p>暂无分组，点击上方添加</p>
+                    </div>
+                    <div v-for="group in groups"
+                         :key="group.id"
+                         class="group-item-modern"
+                         :class="{active: activeGroup === group.id}"
+                         @click="selectGroup(group.id)">
+                        <div class="group-content">
+                            <div class="group-info">
+                                <div class="group-name-line">
+                                    <span class="group-name">{{ group.groupName }}</span>
+                                    <span class="group-badge" v-if="group.groupType === 1">代理池</span>
+                                    <span class="proxy-count" v-if="group.num !== undefined">{{ group.num || 0 }}个代理</span>
+                                </div>
+                                <div class="group-meta">
+                                    <span><i class="el-icon-time"></i> {{ formatDate(group.createTime) }}</span>
+                                    <span v-if="group.remark && group.remark !== group.groupName"><i class="el-icon-info"></i> {{ group.remark }}</span>
+                                </div>
+                            </div>
+                            <div class="group-actions-modern" @click.stop>
+                                <button class="group-action-btn" @click="editGroupInfo(group)" title="编辑分组">
+                                    <i class="el-icon-edit"></i>
+                                </button>
+                                <button class="group-action-btn danger" @click="deleteGroupConfirm(group)" title="删除分组">
+                                    <i class="el-icon-delete"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧内容区 -->
+            <div class="content">
+                <!-- 批量操作面板 -->
+                <div class="batch-panel" v-if="selectedIPs.length > 0">
+                    <div class="batch-info">
+                        <i class="el-icon-check-circle" style="color: #409EFF;"></i>
+                        <span>已选择 <strong>{{ selectedIPs.length }}</strong> 个代理IP</span>
+                    </div>
+                    <div class="action-buttons">
+                        <el-button type="primary" size="small" icon="el-icon-search" @click="batchTestIP">批量检测</el-button>
+                        <el-button type="danger" size="small" icon="el-icon-delete" @click="batchDeleteIP">批量删除</el-button>
+                        <!--     <el-button type="warning" size="small" plain @click="batchDeleteByCondition">高级删除</el-button>
+                        --> </div>
+                </div>
+
+
+                <!-- 操作栏 -->
+                <div class="action-bar">
+                    <div class="action-buttons">
+                        <!-- 将原来的批量添加IP按钮改为复制代理 -->
+                        <el-button type="primary" icon="el-icon-copy-document" @click="copySelectedIPs">复制代理</el-button>
+                     <el-button type="success" icon="el-icon-location" @click="openFetchIPDialog">添加IP</el-button>
+                        <!-- 新增：添加SOCKS IP按钮 -->
+                     <!--   <el-button type="warning" icon="el-icon-upload2" @click="openAddSocksIPDialog">添加SOCKS IP</el-button>-->
+                    </div>
+                    <div class="action-buttons" style="display: flex; align-items: center; gap: 15px;">
+                        <!-- 流量进度条 -->
+                        <div style="display: flex; align-items: center; gap: 12px; background: #f5f7fa; padding: 6px 15px; border-radius: 30px;">
+                            <i class="el-icon-data-line" style="color: #409EFF; font-size: 16px;"></i>
+                            <div style="width: 180px;">
+                                <el-progress
+                                        :percentage="flowInfo.percent"
+                                        :color="flowInfo.percent > 80 ? '#f56c6c' : '#67c23a'"
+                                        :stroke-width="8"
+                                        :show-text="false">
+                                </el-progress>
+                            </div>
+                            <span style="font-size: 12px; color: #606266;">
+                {{ flowInfo.used.toFixed(2) }} / {{ flowInfo.total.toFixed(2) }} GB
+            </span>
+                            <el-button
+                                    v-if="flowInfo.percent > 80 || flowInfo.total === 0"
+                                    type="danger"
+                                    size="mini"
+                                    plain
+                                    icon="el-icon-shopping-cart-2"
+                                    @click="handleRecharge"
+                                    style="border-radius: 20px;">
+                                充值
+                            </el-button>
+                            <el-button
+                                    v-else
+                                    type="primary"
+                                    size="mini"
+                                    plain
+                                    icon="el-icon-shopping-cart-2"
+                                    @click="handleRecharge"
+                                    style="border-radius: 20px;">
+                                充值
+                            </el-button>
+                        </div>
+                        <el-button icon="el-icon-refresh-right" @click="refreshData">刷新代理</el-button>
+                    </div>
+                </div>
+
+                <!-- 表格滚动容器 -->
+                <div class="table-wrapper">
+                    <el-table
+                            :data="ipData"
+                            style="width: 100%"
+                            @selection-change="handleSelectionChange"
+                            v-loading="loading"
+                            border
+                            stripe>
+                        <el-table-column type="selection" width="55" align="center" fixed="left"></el-table-column>
+                        <el-table-column prop="type" label="代理类型" width="110" align="center">
+                            <template slot-scope="scope">
+                                <span class="proxy-type-tag socks5">SOCKS5</span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="ip" label="IP详情" min-width="260">
+                            <template slot-scope="scope">
+                                <el-tooltip effect="dark" :content="`${scope.row.ipServer}:${scope.row.ipPort}`" placement="top">
+                                    <span style="font-family: monospace; font-weight: 500;">{{ scope.row.ipServer }}:{{ scope.row.ipPort }}</span>
+                                </el-tooltip>
+                                <div v-if="scope.row.ipName" style="font-size: 12px; color: #909399; margin-top: 4px;">
+                                    认证: {{ scope.row.ipName }}:****
+                                </div>
+                            </template>
+                        </el-table-column>
+
+                        <el-table-column prop="usedNum" label="使用次数" width="110" align="center">
+                            <template slot-scope="scope">
+                                <el-tag :type="scope.row.usedNum > 100 ? 'success' : 'info'" size="small" effect="plain">
+                                    {{ scope.row.usedNum }} 次
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="remark" label="检测状态" width="150" align="center">
+                            <template slot-scope="scope">
+                                <el-tag v-if="scope.row.remark && scope.row.remark.includes('可用')" type="success" size="small" effect="dark">可用</el-tag>
+                                <el-tag v-else-if="scope.row.remark && scope.row.remark.includes('不可用')" type="danger" size="small" effect="dark">不可用</el-tag>
+                                <el-tag v-else-if="scope.row.remark && scope.row.remark.includes('检测')" type="warning" size="small" effect="plain">已检测</el-tag>
+                                <el-tag v-else type="info" size="small" effect="plain">未检测</el-tag>
+                                <el-tooltip v-if="scope.row.remark" :content="scope.row.remark" placement="top">
+                                    <i class="el-icon-info" style="margin-left: 6px; color: #909399; cursor: help;"></i>
+                                </el-tooltip>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip></el-table-column>
+                        <el-table-column label="操作" width="140" fixed="right" align="center">
+                            <template slot-scope="scope">
+                                <div class="table-actions">
+                                    <el-button type="text" size="small" icon="el-icon-copy-document" @click="copySingleIP(scope.row)">复制</el-button>
+                                    <el-button type="text" size="small" icon="el-icon-delete" style="color: #f56c6c;" @click="deleteIP(scope.row)">删除</el-button>
+                                </div>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="createTime" label="创建时间" width="160"></el-table-column>
+                    </el-table>
+                </div>
+
+                <!-- 分页 -->
+                <div class="pagination-container">
+                    <el-pagination
+                            @size-change="handleSizeChange"
+                            @current-change="handleCurrentChange"
+                            :current-page="pagination.current"
+                            :page-sizes="[10, 20, 50, 100]"
+                            :page-size="pagination.size"
+                            layout="total, sizes, prev, pager, next, jumper"
+                            :total="pagination.total">
+                    </el-pagination>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量添加IP对话框 -->
+    <el-dialog title="批量添加IP" :visible.sync="addIPDialog" width="600px" append-to-body>
+        <el-form :model="ipForm" label-width="100px">
+            <el-form-item label="代理类型" required>
+                <el-select v-model="ipForm.type" placeholder="请选择代理类型" style="width: 200px">
+                    <el-option label="SOCKS5" value="socks5"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="选择分组" required>
+                <el-select v-model="ipForm.groupId" placeholder="请选择分组" style="width: 200px">
+                    <el-option v-for="group in groups" :key="group.id" :label="group.groupName" :value="group.id"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="IP列表" required>
+                <el-input type="textarea" v-model="ipForm.ipServer" :rows="8" placeholder="请输入IP列表，每行一个IP&#10;格式1: ip:端口&#10;格式2: ip:端口:账号:密码&#10;例如:&#10;192.168.1.1:1080&#10;192.168.1.2:1080:admin:123456"></el-input>
+            </el-form-item>
+        </el-form>
+        <span slot="footer">
+            <el-button @click="addIPDialog = false">取消</el-button>
+            <el-button type="primary" @click="handleAddIP">确定添加</el-button>
+        </span>
+    </el-dialog>
+
+    <!-- 获取IP对话框 -->
+    <el-dialog title="获取代理IP" :visible.sync="fetchIPDialog" width="580px" append-to-body>
+        <el-form :model="fetchIPForm" label-width="110px">
+            <el-form-item label="选择分组" required>
+                <el-select v-model="fetchIPForm.groupId" placeholder="请选择分组" style="width: 100%">
+                    <el-option v-for="group in groups" :key="group.id" :label="group.groupName" :value="group.id"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="选择国家" required>
+                <el-select
+                        v-model="fetchIPForm.countryId"
+                        placeholder="请选择国家"
+                        filterable
+                        style="width: 100%"
+                        @change="onCountryChange">
+                    <el-option
+                            v-for="country in countryList"
+                            :key="country.country_id"
+                            :label="`${country.iso} - ${country.countries_cn} / ${country.countries_en}`"
+                            :value="country.country_id">
+                    </el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="选择州" required>
+                <el-select
+                        v-model="fetchIPForm.areaId"
+                        placeholder="请选择州（可选随机）"
+                        filterable
+                        style="width: 100%"
+                        :disabled="stateListLoading || !fetchIPForm.countryId"
+                        @change="onStateChange">
+                    <el-option
+                            v-for="state in stateList"
+                            :key="state.areaId"
+                            :label="state.areaName + (state.label ? ' (' + state.label + ')' : '')"
+                            :value="state.areaId">
+                    </el-option>
+                </el-select>
+                <div v-if="stateListLoading" style="font-size: 12px; color: #909399; margin-top: 4px;">
+                    <i class="el-icon-loading"></i> 加载州列表中...
+                </div>
+            </el-form-item>
+
+            <el-form-item label="选择城市" v-if="cityList.length > 0">
+                <el-select
+                        v-model="fetchIPForm.cityId"
+                        placeholder="请选择城市（可选随机）"
+                        filterable
+                        clearable
+                        style="width: 100%"
+                        :disabled="cityListLoading">
+                    <el-option
+                            v-for="city in cityList"
+                            :key="city.cityId"
+                            :label="city.cityName + (city.label ? ' (' + city.label + ')' : '')"
+                            :value="city.cityId">
+                    </el-option>
+                </el-select>
+                <div v-if="cityListLoading" style="font-size: 12px; color: #909399; margin-top: 4px;">
+                    <i class="el-icon-loading"></i> 加载城市列表中...
+                </div>
+            </el-form-item>
+            <el-form-item label="IP轮转周期" required>
+                <el-input-number
+                        v-model="fetchIPForm.rotateCycle"
+                        :min="1"
+                        :max="120"
+                        :step="1"
+                        label="轮转周期"
+                        style="width: 200px">
+                </el-input-number>
+                <span style="margin-left: 10px; color: #909399;">分钟</span>
+                <div style="font-size: 12px; color: #c0c4cc; margin-top: 5px;">设置IP自动轮换的时间间隔（1-120分钟）</div>
+            </el-form-item>
+            <el-form-item label="获取数量">
+                <el-input-number
+                        v-model="fetchIPForm.num"
+                        :min="1"
+                        :max="100"
+                        :step="1"
+                        style="width: 200px">
+                </el-input-number>
+                <span style="margin-left: 10px; color: #909399;">条</span>
+            </el-form-item>
+        </el-form>
+        <span slot="footer">
+            <el-button @click="fetchIPDialog = false">取消</el-button>
+            <el-button type="primary" :loading="fetchingIP" @click="handleFetchIP">开始获取</el-button>
+        </span>
+    </el-dialog>
+
+    <!-- 添加SOCKS IP对话框 -->
+    <el-dialog title="添加SOCKS IP" :visible.sync="addSocksIPDialog" width="600px" append-to-body>
+        <el-form :model="socksIPForm" label-width="100px">
+            <el-form-item label="选择分组" required>
+                <el-select v-model="socksIPForm.groupId" placeholder="请选择分组" style="width: 100%">
+                    <el-option v-for="group in groups" :key="group.id" :label="group.groupName" :value="group.id"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="IP列表" required>
+                <el-input
+                        type="textarea"
+                        v-model="socksIPForm.ips"
+                        :rows="10"
+                        placeholder="请输入SOCKS IP列表，每行一个IP&#10;格式: ip:端口&#10;例如:&#10;192.168.1.1:1080&#10;192.168.1.2:1080&#10;192.168.1.3:1080">
+                </el-input>
+                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                    <i class="el-icon-info"></i> 每行一个IP，格式为 ip:端口
+                </div>
+            </el-form-item>
+        </el-form>
+        <span slot="footer">
+            <el-button @click="addSocksIPDialog = false">取消</el-button>
+            <el-button type="primary" :loading="socksIPLoading" @click="handleAddSocksIP">确定添加</el-button>
+        </span>
+    </el-dialog>
+
+    <!-- 修改IP对话框 -->
+    <el-dialog title="修改IP" :visible.sync="editDialog" width="500px" append-to-body>
+        <el-form :model="editForm" label-width="100px">
+            <el-form-item label="代理类型" required>
+                <el-select v-model="editForm.type" placeholder="请选择代理类型" style="width: 100%">
+                    <el-option label="SOCKS5" value="socks5"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="IP地址" required><el-input v-model="editForm.ip" placeholder="IP地址"></el-input></el-form-item>
+            <el-form-item label="端口" required><el-input v-model="editForm.port" placeholder="端口"></el-input></el-form-item>
+            <el-form-item label="账号"><el-input v-model="editForm.username" placeholder="账号（可选）"></el-input></el-form-item>
+            <el-form-item label="密码"><el-input v-model="editForm.password" placeholder="密码（可选）" show-password></el-input></el-form-item>
+            <el-form-item label="备注"><el-input v-model="editForm.remark" placeholder="请输入备注"></el-input></el-form-item>
+        </el-form>
+        <span slot="footer">
+            <el-button @click="editDialog = false">取消</el-button>
+            <el-button type="primary" @click="saveEdit">保存</el-button>
+        </span>
+    </el-dialog>
+
+    <!-- 添加分组对话框 -->
+    <el-dialog title="新建分组" :visible.sync="addGroupDialog" width="420px" append-to-body>
+        <el-form :model="groupForm" label-width="90px">
+            <el-form-item label="分组名称" required>
+                <el-input v-model="groupForm.name" placeholder="请输入分组名称（如：住宅代理）" maxlength="30" show-word-limit></el-input>
+            </el-form-item>
+        </el-form>
+        <span slot="footer">
+            <el-button @click="addGroupDialog = false">取消</el-button>
+            <el-button type="primary" @click="saveGroup">确定创建</el-button>
+        </span>
+    </el-dialog>
+</div>
+
+<script>
+    // 语言选项
+    const languageOptions = [
+        {"code": "zh-CN", "nation": "中国"},
+        {"code": "en-US", "nation": "美国"},
+        {"code": "ja-JP", "nation": "日本"},
+        {"code": "ko-KR", "nation": "韩国"},
+        {"code": "de-DE", "nation": "德国"},
+        {"code": "fr-FR", "nation": "法国"}
+    ];
+
+    new Vue({
+        el: '#app',
+        data() {
+            return {
+                activeNav: 'proxy',
+                activeGroup: '0',
+                groups: [],
+                ipData: [],
+                loading: false,
+                selectedIPs: [],
+                pagination: { current: 1, size: 10, total: 0, pages: 0 },
+                addIPDialog: false,
+                editDialog: false,
+                addGroupDialog: false,
+                fetchIPDialog: false,
+                fetchingIP: false,
+                stateListLoading: false,
+                cityListLoading: false,
+                // 新增SOCKS IP相关数据
+                addSocksIPDialog: false,
+                socksIPLoading: false,
+                socksIPForm: { groupId: '', ips: '' },
+                ipForm: { type: 'socks5', groupId: '', ipServer: '', remark: '' },
+                editForm: { type: 'socks5', ip: '', port: '', username: '', password: '', remark: '' },
+                groupForm: { name: '' },
+                fetchIPForm: { groupId: '', countryId: null, areaId: '', cityId: '', rotateCycle: 30, num: 10 },
+                countryList: [],
+                stateList: [],
+                cityList: [],
+                currentEditId: null,
+                flowInfo: {
+                    used: 0,      // 已使用流量 (flowOverdue)
+                    total: 0,     // 总流量 (flow)
+                    percent: 0    // 使用百分比
+                },
+                flowLoading: false,
+                // 用户信息
+                userName: '加载中...',
+                userRole: '普通用户',
+                userAvatar: '',
+                userId: null,
+                currentLanguage: '简体中文',
+                languageOptions: languageOptions
+            }
+        },
+        computed: {
+            currentBrowserLabel() {
+                return this.browserDownloadMap?.[this.browserForm?.browserType] || '浏览器';
+            }
+        },
+        created() {
+            this.checkLoginAndLoadUserInfo();
+            this.loadGroup();
+            this.fetchFlowInfo();  // 添加这行
+            this.loadCountryList();
+        },
+        mounted() {
+            setTimeout(() => {
+                if (this.groups.length && this.activeGroup === '0') {
+                    this.activeGroup = this.groups[0]?.id;
+                    this.loadIPs();
+                }
+            }, 200);
+        },
+        methods: {
+            // ==================== 用户相关方法 ====================
+
+            checkLoginAndLoadUserInfo() {
+                const token = getToken();
+                if (!token) {
+                    this.$message.warning('请先登录');
+                    setTimeout(() => {
+                        window.location.href = '/page/index';
+                    }, 1000);
+                    return;
+                }
+                this.loadUserInfo();
+            },
+
+            getUserRoleName(roles) {
+                if (!roles || roles.length === 0) return '普通用户';
+                if (Array.isArray(roles)) {
+                    if (typeof roles[0] === 'string') {
+                        if (roles.includes('admin')) return '超级管理员';
+                        if (roles.includes('agent')) return '代理商';
+                        return roles[0] || '普通用户';
+                    }
+                    const adminRole = roles.find(r => r.roleKey === 'admin' || r.roleName === '超级管理员');
+                    if (adminRole) return '超级管理员';
+                    const agentRole = roles.find(r => r.roleKey === 'agent' || r.roleName === '代理商');
+                    if (agentRole) return '代理商';
+                    return roles[0]?.roleName || '普通用户';
+                }
+                return '普通用户';
+            },
+
+            loadUserInfo() {
+                const cachedUserInfo = localStorage.getItem('userInfo');
+                if (cachedUserInfo) {
+                    try {
+                        const userInfo = JSON.parse(cachedUserInfo);
+                        if (userInfo.user) {
+                            this.userName = userInfo.user.nickName || userInfo.user.userName || '管理员';
+                            this.userRole = this.getUserRoleName(userInfo.roles);
+                            this.userAvatar = userInfo.user.avatar || '';
+                            this.userId = userInfo.user.userId;
+                        }
+                    } catch (e) {
+                        console.error('解析用户缓存失败:', e);
+                    }
+                }
+            },
+
+            async handleLogout() {
+                try {
+                    await apiPost('/api/user/logout');
+                } catch (error) {
+                    console.error('退出接口调用失败:', error);
+                } finally {
+                    clearToken();
+                    this.$message.success('已退出登录');
+                    setTimeout(() => {
+                        window.location.href = '/page/index';
+                    }, 1000);
+                }
+            },
+
+            handleProfile() {
+                this.$message.info('个人中心功能开发中');
+            },
+
+            handlePersonalSettings() {
+                this.$message.info('个人设置功能开发中');
+            },
+
+            handleUserCommand(command) {
+                switch (command) {
+                    case 'profile':
+                        this.handleProfile();
+                        break;
+                    case 'settings':
+                        this.handlePersonalSettings();
+                        break;
+                    case 'logout':
+                        this.$confirm('确定要退出登录吗？', '提示', {
+                            type: 'warning',
+                            confirmButtonText: '确定退出',
+                            cancelButtonText: '取消'
+                        }).then(() => {
+                            this.handleLogout();
+                        }).catch(() => {});
+                        break;
+                    default:
+                        this.$message.info('功能开发中');
+                }
+            },
+
+            // ==================== 国家、州、城市联动方法 ====================
+
+            loadCountryList() {
+                // 从静态JSON文件加载国家列表
+                fetch('/static/json/ipcountry.json')
+                    .then(res => res.json())
+                    .then(data => {
+                        this.countryList = data.RECORDS || [];
+                    })
+                    .catch(err => {
+                        console.error('加载国家列表失败:', err);
+                        // 降级：使用内嵌数据
+                        this.countryList = [
+                            {"countries_en": "United States", "countries_cn": "美国", "iso": "US", "country_id": 840},
+                            {"countries_en": "Japan", "countries_cn": "日本", "iso": "JP", "country_id": 392},
+                            {"countries_en": "South Korea", "countries_cn": "韩国", "iso": "KR", "country_id": 410},
+                            {"countries_en": "United Kingdom", "countries_cn": "英国", "iso": "GB", "country_id": 826},
+                            {"countries_en": "Germany", "countries_cn": "德国", "iso": "DE", "country_id": 276},
+                            {"countries_en": "France", "countries_cn": "法国", "iso": "FR", "country_id": 250}
+                        ];
+                    });
+            },
+
+            // 国家变化时加载州列表
+            async onCountryChange(countryId) {
+                if (!countryId) return;
+
+                // 重置州和城市的选择
+                this.fetchIPForm.areaId = '';
+                this.fetchIPForm.cityId = '';
+                this.stateList = [];
+                this.cityList = [];
+
+                this.stateListLoading = true;
+                try {
+                    const response = await apiGet(window.API_BASE_URL + `/tiktok/ip/getStateByCountryId/${countryId}`);
+                    console.log('州接口响应:', response);
+
+                    if (response.data && response.data.code === 200) {
+                        const stateData = response.data.data || [];
+                        // 在前面添加一个随机/不限的选项
+                        this.stateList = [
+                            { areaId: "", areaName: "随机/不限", label: "随机" },
+                            ...stateData
+                        ];
+                        // 可选：默认选中随机选项
+                        // this.fetchIPForm.areaId = "";
+                    } else {
+                        this.$message.warning(response.data?.msg || '获取州列表失败');
+                    }
+                } catch (error) {
+                    console.error('获取州列表失败:', error);
+                    this.$message.error('获取州列表失败，请稍后重试');
+                } finally {
+                    this.stateListLoading = false;
+                }
+            },
+
+// 州变化时加载城市列表
+            async onStateChange(areaId) {
+                if (!this.fetchIPForm.countryId) return;
+
+                // 重置城市选择
+                this.fetchIPForm.cityId = '';
+                this.cityList = [];
+
+                // 如果选择的州是"随机/不限"，直接清空城市列表，不需要请求
+                if (areaId === '') {
+                    this.cityList = [];
+                    return;
+                }
+
+                this.cityListLoading = true;
+                try {
+                    const response = await apiGet(window.API_BASE_URL + `/tiktok/ip/getCityByCountryIdAndAreaId/${this.fetchIPForm.countryId}/${areaId}`);
+                    console.log('城市接口响应:', response);
+
+                    if (response.data && response.data.code === 200) {
+                        const cityData = response.data.data || [];
+                        // 在前面添加一个随机/不限的选项
+                        this.cityList = [
+                            { cityId: "", cityName: "随机/不限", label: "随机" },
+                            ...cityData
+                        ];
+                    } else {
+                        this.$message.warning(response.data?.msg || '获取城市列表失败');
+                    }
+                } catch (error) {
+                    console.error('获取城市列表失败:', error);
+                    this.$message.error('获取城市列表失败，请稍后重试');
+                } finally {
+                    this.cityListLoading = false;
+                }
+            },
+// 复制选中的代理IP信息到剪贴板
+            copySelectedIPs() {
+                if (this.selectedIPs.length === 0) {
+                    this.$message.warning('请先选择要复制的代理IP');
+                    return;
+                }
+
+                // 构建要复制的文本内容
+                let copyText = '';
+                this.selectedIPs.forEach(ip => {
+                    // 格式: ip:端口:账号:密码
+                    let proxyStr = `${ip.ipServer}:${ip.ipPort}`;
+                    if (ip.ipName && ip.ipPwd) {
+                        proxyStr += `:${ip.ipName}:${ip.ipPwd}`;
+                    }
+                    copyText += proxyStr + '\n';
+                });
+
+                // 复制到剪贴板
+                const textarea = document.createElement('textarea');
+                textarea.value = copyText;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+
+                this.$message.success(`已复制 ${this.selectedIPs.length} 个代理IP到剪贴板`);
+            },
+
+
+            // ==================== 原有方法 ====================
+
+            formatDate(timestamp) {
+                if (!timestamp) return '近期';
+                const date = new Date(timestamp);
+                return `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')}`;
+            },
+            loadGroup() {
+                apiGet(window.API_BASE_URL + '/tiktok/group/getList/1').then((res) => {
+                    this.groups = (res.data || []).map(g => ({ ...g, proxyCount: g.proxyCount || 0 }));
+                    if (this.groups.length > 0 && (this.activeGroup === '0' || !this.groups.find(g => g.id === this.activeGroup))) {
+                        this.activeGroup = this.groups[0].id;
+                        this.loadIPs();
+                    } else if (this.activeGroup !== '0') {
+                        this.loadIPs();
+                    }
+                }).catch((error) => {
+                    console.error("加载代理IP分组失败:", error);
+                });
+            },
+
+
+            loadIPs() {
+                if (!this.activeGroup || this.activeGroup === '0') return;
+                this.loading = true;
+                this.selectedIPs = [];
+
+                apiGet(window.API_BASE_URL +"/tiktok/ip/list", {
+                    groupId: this.activeGroup,
+                    pageNum: this.pagination.current,
+                    pageSize: this.pagination.size,
+                    orderByColumn: 'create_time',
+                    isAsc: 'desc'
+                })
+                    .then(res => {
+                        console.log('IP列表响应:', res);
+                        if (res.data && res.data.code === 200) {
+                            const data = res.data;
+                            this.ipData = data.rows || [];
+                            this.pagination.total = data.total || 0;
+                            this.pagination.size = data.pageSize || data.size || this.pagination.size;
+                            this.pagination.current = data.pageNum || data.current || this.pagination.current;
+                        } else {
+                            this.$message.error(res.data?.msg || '加载IP列表失败');
+                        }
+                        this.loading = false;
+                    }).catch(() => {
+                    this.loading = false;
+                    this.$message.error('加载IP列表失败');
+                });
+            },
+
+            refreshData() {
+                this.pagination.current = 1;
+                this.loadIPs();
+                this.fetchFlowInfo();  // 添加这行，刷新时同时刷新流量
+            },
+
+            selectGroup(groupId) {
+                this.activeGroup = groupId;
+                this.pagination.current = 1;
+                this.loadIPs();
+            },
+
+            openAddGroupDialog() {
+                this.groupForm.name = '';
+                this.addGroupDialog = true;
+            },
+
+            editGroupInfo(group) {
+                this.$prompt('修改分组名称', '编辑分组', {
+                    confirmButtonText: '保存',
+                    cancelButtonText: '取消',
+                    inputValue: group.groupName,
+                    inputPattern: /\S+/,
+                    inputErrorMessage: '分组名称不能为空'
+                }).then(({ value }) => {
+                    const updated = {
+                        id: group.id,
+                        groupName: value,
+                        groupType: group.groupType
+                    };
+                    apiPut(window.API_BASE_URL + '/tiktok/group', updated).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('分组修改成功');
+                            this.loadGroup();
+                        } else {
+                            this.$message.error(res.data.msg || '修改失败');
+                        }
+                    }).catch(() => this.$message.error('请求失败'));
+                });
+            },
+
+            deleteGroupConfirm(group) {
+                this.$confirm(`确定要删除分组「${group.groupName}」吗？分组内的代理IP不会自动删除`, '提示', {
+                    type: 'warning',
+                    confirmButtonText: '确定删除'
+                }).then(() => {
+                    apiDelete(window.API_BASE_URL +`/tiktok/group/${group.id}`).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('分组已删除');
+                            this.loadGroup();
+                            if (this.activeGroup === group.id && this.groups.length > 1) {
+                                this.activeGroup = this.groups[0]?.id;
+                                this.loadIPs();
+                            } else if (this.groups.length === 0) {
+                                this.activeGroup = '0';
+                            }
+                        } else {
+                            this.$message.error(res.data.msg);
+                        }
+                    }).catch(() => this.$message.error('删除失败'));
+                });
+            },
+
+            saveGroup() {
+                if (!this.groupForm.name.trim()) return this.$message.warning('请输入分组名称');
+                apiPost(window.API_BASE_URL +"/tiktok/group", {
+                    groupName: this.groupForm.name,
+                    groupType: 1
+                }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('分组添加成功');
+                        this.addGroupDialog = false;
+                        this.loadGroup();
+                        this.groupForm.name = '';
+                    } else {
+                        this.$message.error(res.data.msg);
+                    }
+                }).catch(err => {
+                    console.error('添加分组失败:', err);
+                    this.$message.error('添加分组失败');
+                });
+            },
+
+            handleSelectionChange(selection) { this.selectedIPs = selection; },
+            handleSizeChange(size) { this.pagination.size = size; this.pagination.current = 1; this.loadIPs(); },
+            handleCurrentChange(page) { this.pagination.current = page; this.loadIPs(); },
+
+            handleAddIP() {
+                if (!this.ipForm.groupId) return this.$message.warning('请选择分组');
+                if (!this.ipForm.ipServer.trim()) return this.$message.warning('请输入IP列表');
+                apiPost("/api/tk-ip/batchAdd", this.ipForm).then(res => {
+                    this.$message({ message: res.data.msg, type: res.data.code === 200 ? 'success' : 'error', onClose: () => { if (res.data.code === 200) { this.loadIPs(); this.loadGroup(); } } });
+                    if (res.data.code === 200) this.addIPDialog = false;
+                    this.ipForm.ipServer = '';
+                });
+            },
+
+            editIP(row) {
+                this.editForm = { type: 'socks5', ip: row.ipServer, port: row.ipPort, username: row.ipName || '', password: row.ipPwd || '', remark: row.remark || '' };
+                this.currentEditId = row.id;
+                this.editDialog = true;
+            },
+
+            saveEdit() {
+                if (!this.editForm.ip || !this.editForm.port) return this.$message.warning('请填写完整IP和端口');
+                const updateData = { id: this.currentEditId, ipType: 1, ipServer: this.editForm.ip, ipPort: this.editForm.port, ipName: this.editForm.username, ipPwd: this.editForm.password, remark: this.editForm.remark };
+                apiPut("/api/tk-ip/update", updateData).then(res => {
+                    this.$message({ message: res.data.msg, type: res.data.code === 200 ? 'success' : 'error', onClose: () => { if (res.data.code === 200) { this.editDialog = false; this.loadIPs(); } } });
+                });
+            },
+
+            deleteIP(row) {
+                this.$confirm(`删除代理 ${row.ipServer}:${row.ipPort} ？`, '提示', { type: 'warning' }).then(() => {
+                    apiDelete(window.API_BASE_URL +`/tiktok/ip/${row.id}`).then(res => {
+                        this.$message.success(res.data.msg);
+                        this.loadIPs();
+                    });
+                });
+            },
+
+            batchTestIP() {
+                if (!this.selectedIPs.length) return this.$message.warning('请先选择IP');
+                this.$confirm(`检测选中的 ${this.selectedIPs.length} 个代理IP，可能需要一些时间`, '批量检测', { type: 'info' }).then(() => {
+                    const ids = this.selectedIPs.map(ip => ip.id);
+                    apiPost(window.API_BASE_URL +"/tiktok/ip/batchTest", { ids }).then(res => {
+                        this.$message({ message: res.data.msg, type: res.data.code === 200 ? 'success' : 'error', onClose: () => { if (res.data.code === 200) this.loadIPs(); } });
+                    });
+                });
+            },
+            batchDeleteIP() {
+                if (!this.selectedIPs.length) return this.$message.warning('请选择IP');
+                const ids = this.selectedIPs.map(ip => ip.id);
+                const idsString = ids.join(',');
+                this.$confirm(`永久删除 ${ids.length} 个代理IP，不可恢复`, '批量删除', { type: 'error', confirmButtonText: '确认删除' }).then(() => {
+                    apiDelete(window.API_BASE_URL +`/tiktok/ip/${idsString}`).then(res => {
+                        this.$message({ message: res.data.msg, type: res.data.code === 200 ? 'success' : 'error', onClose: () => { if (res.data.code === 200) { this.selectedIPs = []; this.loadIPs(); } } });
+                    });
+                });
+            },
+            openUrlWithAxios: function (url, callback) {
+                var requestData = {url: url};
+                var headers = {'Content-Type': 'application/json', 'priority': 'u=1, i'};
+                apiPost('/api/tk-setting/openUrl', requestData, headers)
+                    .then(function (response) {
+                        var data = response.data;
+                        console.log('打开链接响应:', data);
+                        if (data.code === 200) {
+                            console.log('打开链接成功:', url);
+                            if (typeof callback === 'function') callback(null, data);
+                        } else {
+                            console.error('打开链接失败:', data.msg);
+                            if (typeof callback === 'function') callback(new Error(data.msg), null);
+                        }
+                    })
+                    .catch(function (error) {
+                        console.error('请求失败:', error);
+                        if (typeof callback === 'function') callback(error, null);
+                    });
+            },
+            // 打开获取IP对话框
+            openFetchIPDialog() {
+                if (this.groups.length === 0) {
+                    this.$message.warning('请先创建代理分组');
+                    return;
+                }
+                // 重置表单
+                this.fetchIPForm = {
+                    groupId: this.activeGroup !== '0' ? this.activeGroup : '',
+                    countryId: null,
+                    areaId: '',
+                    cityId: '',
+                    rotateCycle: 30,
+                    num: 10
+                };
+                this.stateList = [];
+                this.cityList = [];
+                this.fetchIPDialog = true;
+            },
+// 复制单个代理IP
+            copySingleIP(row) {
+                let proxyStr = `${row.ipServer}:${row.ipPort}`;
+                if (row.ipName && row.ipPwd) {
+                    proxyStr += `:${row.ipName}:${row.ipPwd}`;
+                }
+
+                const textarea = document.createElement('textarea');
+                textarea.value = proxyStr;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+
+                this.$message.success('代理IP已复制到剪贴板');
+            },
+            // 获取流量信息
+            async fetchFlowInfo() {
+                this.flowLoading = true;
+                 try {
+                     const response = await apiGet(window.API_BASE_URL + '/tiktok/ip/getUserAgentIp');
+                     if (response.data && response.data.code === 200) {
+                         const data = response.data.data;
+                         const used = parseFloat(data.flowOverdue) || 0;
+                         const total = parseFloat(data.flow) || 0;
+                         let percent = 0;
+                         if (total > 0) {
+                             percent = (used / total) * 100;
+                             percent = Math.min(percent, 100); // 不超过100%
+                         }
+
+                         this.flowInfo = {
+                             used: used,
+                             total: total,
+                             percent: percent
+                         };
+                     } else {
+                         console.error('获取流量信息失败:', response.data?.msg);
+                     }
+                 } catch (error) {
+                     console.error('获取流量信息失败:', error);
+                 } finally {
+                     this.flowLoading = false;
+                 }
+            },
+
+// 充值跳转
+            handleRecharge() {
+                const token = localStorage.getItem('token');
+                this.openUrlWithAxios('http://recharge.tkswarm.com/index.html?activeTab=3&token=' + token);
+            },
+            // 执行获取IP
+            async handleFetchIP() {
+                if (!this.fetchIPForm.groupId) {
+                    this.$message.warning('请选择分组');
+                    return;
+                }
+                if (!this.fetchIPForm.countryId) {
+                    this.$message.warning('请选择国家');
+                    return;
+                }
+                // 州可以选择随机/不限，所以不强制要求
+                if (!this.fetchIPForm.rotateCycle || this.fetchIPForm.rotateCycle < 1 || this.fetchIPForm.rotateCycle > 120) {
+                    this.$message.warning('轮转周期请输入1-120之间的数字');
+                    return;
+                }
+
+                this.fetchingIP = true;
+                try {
+                    // 根据 countryId 查找对应的 iso 码
+                    const selectedCountry = this.countryList.find(c => c.country_id === this.fetchIPForm.countryId);
+                    if (!selectedCountry) {
+                        this.$message.error('未找到对应的国家信息');
+                        this.fetchingIP = false;
+                        return;
+                    }
+
+                    const countryIso = selectedCountry.iso;  // 获取 iso 码，如 "GB"、"US" 等
+
+                    const requestData = {
+                        groupId: this.fetchIPForm.groupId,
+                        countryId: countryIso,
+                        areaId: this.fetchIPForm.areaId || '',  // 如果为空就传空字符串
+                        rotateCycle: this.fetchIPForm.rotateCycle,
+                        num: this.fetchIPForm.num || 10
+                    };
+
+                    // 如果城市ID存在且不为空字符串，则添加cityId参数
+                    if (this.fetchIPForm.cityId && this.fetchIPForm.cityId !== '') {
+                        requestData.cityId = this.fetchIPForm.cityId;
+                    }
+
+                    const response = await apiPost(window.API_BASE_URL + "/tiktok/ip/fetchIP", requestData);
+
+                    if (response.data.code === 200) {
+                        this.$message.success(response.data.msg || 'IP获取成功');
+                        this.fetchIPDialog = false;
+                        this.refreshData();
+                        this.loadGroup();
+                    } else {
+                        this.$message.error(response.data.msg || '获取失败');
+                    }
+                } catch (error) {
+                    console.error('获取IP失败:', error);
+                    this.$message.error('请求失败，请稍后重试');
+                } finally {
+                    this.fetchingIP = false;
+                }
+            },
+
+            // ==================== 新增：添加SOCKS IP相关方法 ====================
+
+            // 打开添加SOCKS IP对话框
+            openAddSocksIPDialog() {
+                if (this.groups.length === 0) {
+                    this.$message.warning('请先创建代理分组');
+                    return;
+                }
+                // 重置表单，默认选中当前激活的分组
+                this.socksIPForm = {
+                    groupId: this.activeGroup !== '0' ? this.activeGroup : '',
+                    ips: ''
+                };
+                this.addSocksIPDialog = true;
+            },
+
+            // 处理添加SOCKS IP
+            async handleAddSocksIP() {
+                // 验证表单
+                if (!this.socksIPForm.groupId) {
+                    this.$message.warning('请选择分组');
+                    return;
+                }
+                if (!this.socksIPForm.ips.trim()) {
+                    this.$message.warning('请输入SOCKS IP列表');
+                    return;
+                }
+
+                this.socksIPLoading = true;
+                try {
+                    const requestData = {
+                        groupId: this.socksIPForm.groupId,
+                        ipType: "1",
+                        ipMode: "1",
+                        ips: this.socksIPForm.ips.trim()
+                    };
+
+                    const response = await apiPost(window.API_BASE_URL + "/tiktok/ip/addn", requestData);
+
+                    if (response.data.code === 200) {
+                        this.$message.success(response.data.msg || 'SOCKS IP添加成功');
+                        this.addSocksIPDialog = false;
+                        this.socksIPForm.ips = '';
+                        // 刷新数据
+                        this.refreshData();
+                        this.loadGroup();
+                    } else {
+                        this.$message.error(response.data.msg || '添加失败');
+                    }
+                } catch (error) {
+                    console.error('添加SOCKS IP失败:', error);
+                    this.$message.error('请求失败，请稍后重试');
+                } finally {
+                    this.socksIPLoading = false;
+                }
+            },
+
+            navigateTo(url) {
+                const baseUrl = window.location.origin;  // 获取当前域名+端口
+                window.location.href = baseUrl + '/page/' + url;
+            },
+
+            handleNavSelect(index) {
+                if (index !== 'proxy') {
+                    const baseUrl = window.location.origin;
+                    window.location.href = baseUrl + '/page/' + index;
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>

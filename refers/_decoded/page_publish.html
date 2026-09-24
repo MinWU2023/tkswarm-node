@@ -1,0 +1,2778 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI矩阵 - TKSwarm</title>
+    <!-- Element UI 样式和组件库 -->
+    <script src="/static/js/vue.js"></script>
+    <link rel="stylesheet" href="/static/css/index.css">
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/request.js"></script>
+    <script src="/static/js/index.js"></script>
+    <link rel="stylesheet" href="/static/css/all.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+            background: #f0f2f5;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .navbar {
+            background: #001529;
+            color: white;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #409EFF 0%, #66b1ff 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin-right: 40px;
+        }
+
+        .navbar-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-dropdown {
+            cursor: pointer;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .user-info:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #409EFF;
+            color: white;
+            font-weight: bold;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .user-details {
+            margin-left: 0;
+        }
+
+        .user-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .user-role {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+        }
+        .status-stat-card:hover {
+            border-color: #409EFF;
+            box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
+        }
+
+        .status-stat-card.active {
+            border-color: #409EFF;
+            background: #ecf5ff;
+        }
+
+        .status-stat-card.active div {
+            color: #409EFF !important;
+        }
+        .main-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .task-table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .1);
+            padding: 20px;
+        }
+
+        .create-task-btn {
+            margin-bottom: 20px;
+            margin-right: 12px;
+        }
+        /* 添加群发入口样式 */
+        .channel-api { background: #e6f7ff; color: #1890ff; }
+        .channel-websocket { background: #f6ffed; color: #52c41a; }
+        .channel-bitbrowser { background: #f9f0ff; color: #722ed1; }
+        .search-filter-bar {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .search-input {
+            width: 300px;
+        }
+
+        .filter-tags {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .pagination-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .status-tag {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            display: inline-block;
+        }
+
+        .status-1 { background: #e6f7ff; color: #1890ff; }
+        .status-2 { background: #f0f9eb; color: #67c23a; }
+        .status-3 { background: #f4f4f5; color: #909399; }
+        .status-4 { background: #fef0f0; color: #f56c6c; }
+        .status-5 { background: #fdf6ec; color: #e6a23c; }
+
+        .channel-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .channel-tiktokstudio { background: #e6f7ff; color: #1890ff; }
+        .channel-capcut { background: #f6ffed; color: #52c41a; }
+        .channel-bitbrowser { background: #f9f0ff; color: #722ed1; }
+
+        .action-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .group-list-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+
+        .group-accounts {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+
+        .group-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .group-action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f7fa;
+            border-radius: 4px;
+        }
+
+        .config-section {
+            margin-bottom: 25px;
+            padding: 15px;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+
+        .config-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .message-textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 10px;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+        }
+
+        .channel-selection {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .channel-card {
+            width: 200px;
+            border: 2px solid #e8e8e8;
+            border-radius: 12px;
+            padding: 20px 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .channel-card.selected {
+            border-color: #409EFF;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e8f4ff 100%);
+            box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+        }
+
+        .channel-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .channel-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .channel-switch {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .friend-import-dialog {
+            display: flex;
+            height: 600px;
+        }
+
+        .friend-group-list {
+            width: 260px;
+            border-right: 1px solid #e8e8e8;
+            padding-right: 12px;
+            overflow-y: auto;
+        }
+
+        .friend-main-content {
+            flex: 1;
+            padding: 0 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .group-item {
+            margin-bottom: 8px;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 1px solid #e8e8e8;
+            background: white;
+        }
+
+        .group-item.active {
+            border-color: #409EFF;
+            background: #f0f9ff;
+        }
+
+        .text-count {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .wizard-steps {
+            margin-bottom: 20px;
+        }
+
+        .detail-progress {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f7fa;
+            border-radius: 4px;
+        }
+
+        .video-preview-link {
+            color: #409EFF;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .batch-edit-bar {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #ecf5ff;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .traffic-tips {
+            max-width: 700px;
+            margin: 20px auto 0;
+            padding: 14px 18px;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e6f4ff 100%);
+            border-radius: 12px;
+            border-left: 4px solid #409EFF;
+            box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-container">
+        <el-menu :default-active="activeNav" class="navbar" mode="horizontal" background-color="#001529"
+                 text-color="rgba(255,255,255,.8)" active-text-color="#409EFF" @select="handleNavSelect">
+            <div class="logo">TKSwarm</div>
+            <el-menu-item index="account">账号管理</el-menu-item>
+            <el-menu-item index="proxy">代理IP</el-menu-item>
+            <el-menu-item index="agent">AI机器人</el-menu-item>
+            <el-menu-item index="publish">AI矩阵</el-menu-item>
+            <el-menu-item index="chat">客服聊天</el-menu-item>
+            <el-menu-item index="settings">系统设置</el-menu-item>
+            <div class="navbar-right">
+                <el-dropdown @command="handleUserCommand" trigger="click" class="user-dropdown">
+                    <div class="user-info">
+                        <div class="user-avatar" v-if="!userAvatar">
+                            {{ userName ? userName.charAt(0).toUpperCase() : 'U' }}
+                        </div>
+                        <div class="user-avatar" v-else>
+                            <img :src="userAvatar" :alt="userName">
+                        </div>
+                        <div class="user-details">
+                            <div class="user-name">{{ userName }}</div>
+                            <div class="user-role">{{ userRole }}</div>
+                        </div>
+                        <i class="el-icon-arrow-down el-icon--right"></i>
+                    </div>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="profile" icon="el-icon-user">个人中心</el-dropdown-item>
+                        <el-dropdown-item command="settings" icon="el-icon-setting">个人设置</el-dropdown-item>
+                        <el-dropdown-item divided command="logout" icon="el-icon-switch-button">退出登录</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </div>
+        </el-menu>
+
+        <div class="main-container">
+            <div>
+                <el-button type="primary" class="create-task-btn" @click="openCreateTaskDialog">📹 创建发布任务</el-button>
+                <el-button type="warning" class="create-task-btn" @click="openCreateMassTaskDialog">💬 创建群发任务</el-button>
+                <el-button type="success" class="create-task-btn" @click="refreshCurrentTab">🔄 刷新任务</el-button>
+                <el-button type="info" class="create-task-btn" @click="openFriendImportDialog">👥 导入好友</el-button>
+            </div>
+
+            <!-- 任务状态统计卡片 -->
+            <!--<div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+                <div v-for="(count, status) in videoStatusStats" :key="status"
+                     class="status-stat-card"
+                     :class="{'active': activeStatus == status}"
+                     @click="activeStatus = status; resetAndReload()"
+                     style="padding: 8px 20px; border-radius: 8px; border: 1px solid #e8e8e8; cursor: pointer; background: white; transition: all 0.3s; min-width: 80px; text-align: center;">
+                    <div style="font-size: 13px; color: #666;">{{ getStatusText(Number(status)) }}</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #333;">{{ count }}</div>
+                </div>
+                <div style="padding: 8px 20px; border-radius: 8px; border: 1px solid #e8e8e8; background: #f5f7fa; min-width: 80px; text-align: center;">
+                    <div style="font-size: 13px; color: #666;">总计</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #333;">{{ videoTotal }}</div>
+                </div>
+            </div>-->
+
+            <div class="search-filter-bar">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <el-input v-model="searchKeyword" placeholder="搜索任务名称" class="search-input" clearable
+                              @clear="handleSearchClear" @keyup.enter.native="handleSearch">
+                        <i slot="prefix" class="el-input__icon el-icon-search"></i>
+                    </el-input>
+                    <div style="display: flex; align-items: center; gap: 6px; background: #fef6e0; padding: 5px 12px; border-radius: 20px; border: 1px solid #ffd666;">
+                        <i class="el-icon-warning-outline" style="color: #e6a23c; font-size: 14px;"></i>
+                        <span style="color: #b88230; font-size: 12px;">
+                            ⚠任务和好友数据不会保留在服务器，请不要频繁更换电脑登录账号导致数据不一致
+                        </span>
+                    </div>
+                </div>
+                <div class="filter-tags">
+                    <el-tag v-for="tag in statusTags" :key="tag.value" :type="tag.type"
+                            :effect="activeStatus === tag.value ? 'dark' : 'plain'" @click="filterByStatus(tag.value)"
+                            style="cursor: pointer;">{{ tag.label }}
+                    </el-tag>
+                    <el-tag v-if="activeStatus || searchKeyword" type="info" effect="plain" @click="clearFilter"
+                            closable @close="clearFilter">清除筛选
+                    </el-tag>
+                </div>
+            </div>
+
+            <el-tabs v-model="activeTab" @tab-click="handleTabChange">
+                <el-tab-pane label="📹 视频任务" name="video">
+                    <div class="task-table-container">
+                        <el-table :data="videoTasks" v-loading="videoLoading" stripe border
+                                  :default-sort="{prop: 'createTime', order: 'descending'}" style="width:100%">
+                            <el-table-column prop="taskName" label="任务名称" min-width="180">
+                                <template slot-scope="scope">
+                                    <div style="font-weight:bold;">{{ scope.row.taskName }}</div>
+                                    <div style="font-size:12px;color:#999;">ID: {{ scope.row.id }}</div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="threads" label="线程数/账号数" width="180" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag size="mini" type="info">{{ scope.row.threads || 3 }}</el-tag>/
+                                    <el-tag size="mini" type="success">{{ scope.row.accountCount || 0 }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="定时任务" width="160">
+                                <template slot-scope="scope">
+                                    <div v-if="scope.row.specificDateTime">
+                                        <el-tag size="mini" type="warning">定时</el-tag>
+                                        <div style="font-size: 12px; color: #999; margin-top: 2px;">{{ formatDate(scope.row.specificDateTime) }}</div>
+                                    </div>
+                                    <span v-else style="color: #999;">-</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="pushChannel" label="发布入口" width="120">
+                                <template slot-scope="scope"><span class="channel-badge"
+                                                                   :class="'channel-'+getChannelClass(scope.row.pushChannel)">{{ getChannelText(scope.row.pushChannel) }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="状态" width="100">
+                                <template slot-scope="scope"><span class="status-tag"
+                                                                   :class="'status-'+scope.row.status">{{ getStatusText(scope.row.status) }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="任务进度" width="140">
+                                <template slot-scope="scope">
+                                    <el-progress :percentage="scope.row.progress || 0"
+                                                 :status="getProgressStatus(scope.row.status)"></el-progress>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="功能配置" min-width="150">
+                                <template slot-scope="scope">
+                                    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                                        <el-tag v-if="scope.row.captionEnabled" size="mini">文案</el-tag>
+                                        <el-tag v-if="scope.row.hashtagEnabled" size="mini">标签</el-tag>
+                                        <el-tag v-if="scope.row.mentionEnabled" size="mini">@用户</el-tag>
+                                        <el-tag v-if="scope.row.specificDateTime" size="mini" type="warning">定时</el-tag>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="createTime" label="创建时间" width="160" sortable>
+                                <template slot-scope="scope">{{ formatDate(scope.row.createTime) }}</template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="200" fixed="right">
+                                <template slot-scope="scope">
+                                    <div class="action-buttons">
+                                        <el-button type="text" size="mini" v-if="scope.row.status === 1"
+                                                   @click="startTask(scope.row)">开始
+                                        </el-button>
+                                        <el-button type="text" size="mini" v-if="scope.row.status === 2"
+                                                   @click="stopTask(scope.row)">停止
+                                        </el-button>
+                                        <el-button type="text" size="mini" @click="viewVideoTaskDetail(scope.row)">详情
+                                        </el-button>
+                                        <el-button type="text" size="mini" style="color:#f56c6c;"
+                                                   @click="deleteTask(scope.row)">删除
+                                        </el-button>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div class="pagination-container">
+                            <el-pagination @size-change="videoSizeChange" @current-change="videoCurrentChange"
+                                           :current-page="videoPage" :page-sizes="[10,20,50,100]" :page-size="videoSize"
+                                           layout="total, sizes, prev, pager, next, jumper"
+                                           :total="videoTotal"></el-pagination>
+                        </div>
+                    </div>
+                </el-tab-pane>
+                <el-tab-pane label="💬 群发任务" name="message">
+                    <div class="task-table-container">
+                        <el-table :data="messageTasks" v-loading="messageLoading" stripe border
+                                  :default-sort="{prop: 'createTime', order: 'descending'}" style="width:100%">
+                            <el-table-column prop="taskName" label="任务名称" min-width="180">
+                                <template slot-scope="scope">
+                                    <div style="font-weight:bold;">{{ scope.row.taskName }}</div>
+                                    <div style="font-size:12px;color:#999;">ID: {{ scope.row.id }}</div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="threads" label="线程数/账号数" width="180" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag size="mini" type="info">{{ scope.row.threads || 5 }}</el-tag>/
+                                    <el-tag size="mini" type="success">{{ scope.row.accountCount || 0 }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="pushChannel" label="群发入口" width="130">
+                                <template slot-scope="scope">
+                                    <span class="channel-badge" :class="'channel-'+getMessageChannelClass(scope.row.pushChannel)">
+                                        {{ getMessageChannelText(scope.row.pushChannel) }}
+                                    </span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="定时任务" width="160">
+                                <template slot-scope="scope">
+                                    <div v-if="scope.row.specificDateTime">
+                                        <el-tag size="mini" type="warning">定时</el-tag>
+                                        <div style="font-size: 12px; color: #999; margin-top: 2px;">{{ formatDate(scope.row.specificDateTime) }}</div>
+                                    </div>
+                                    <span v-else style="color: #999;">-</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="发送对象" width="110">
+                                <template slot-scope="scope">{{ getSendTargetText(scope.row.sendTargetType) }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="状态" width="100">
+                                <template slot-scope="scope"><span class="status-tag"
+                                                                   :class="'status-'+scope.row.status">{{ getStatusText(scope.row.status) }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="任务进度" width="140">
+                                <template slot-scope="scope">
+                                    <el-progress :percentage="scope.row.progress || 0"
+                                                 :status="getProgressStatus(scope.row.status)"></el-progress>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="完成/总数" width="110">
+                                <template slot-scope="scope">{{ scope.row.successCount || 0 }} / {{ scope.row.totalCount || 0 }}</template>
+                            </el-table-column>
+                            <el-table-column prop="intervalSecond" label="间隔(秒)" width="90">
+                                <template slot-scope="scope">{{ scope.row.intervalSecond || 5 }}</template>
+                            </el-table-column>
+                            <el-table-column prop="createTime" label="创建时间" width="160" sortable>
+                                <template slot-scope="scope">{{ formatDate(scope.row.createTime) }}</template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="200" fixed="right">
+                                <template slot-scope="scope">
+                                    <div class="action-buttons">
+                                        <el-button type="text" size="mini" v-if="scope.row.status === 1"
+                                                   @click="startMsgTask(scope.row)">开始
+                                        </el-button>
+                                        <el-button type="text" size="mini" v-if="scope.row.status === 2"
+                                                   @click="stopMsgTask(scope.row)">停止
+                                        </el-button>
+                                        <el-button type="text" size="mini" @click="viewMessageTaskDetail(scope.row)">详情</el-button>
+                                        <el-button type="text" size="mini" style="color:#f56c6c;"
+                                                   @click="deleteTask(scope.row)">删除
+                                        </el-button>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div class="pagination-container">
+                            <el-pagination @size-change="messageSizeChange" @current-change="messageCurrentChange"
+                                           :current-page="messagePage" :page-sizes="[10,20,50,100]"
+                                           :page-size="messageSize" layout="total, sizes, prev, pager, next, jumper"
+                                           :total="messageTotal"></el-pagination>
+                        </div>
+                    </div>
+                </el-tab-pane>
+            </el-tabs>
+        </div>
+    </div>
+
+    <!-- 创建发布任务弹窗 -->
+    <el-dialog title="创建发布任务" :visible.sync="createTaskDialog" width="85%" :close-on-click-modal="false" append-to-body>
+        <el-steps :active="activeStep" finish-status="success" class="wizard-steps">
+            <el-step title="发布入口"></el-step>
+            <el-step title="账号分组"></el-step>
+            <el-step title="选择账号"></el-step>
+            <el-step title="素材配置"></el-step>
+            <el-step title="文案标签"></el-step>
+            <el-step title="任务配置"></el-step>
+        </el-steps>
+        <div v-if="activeStep===0">
+            <div class="channel-selection">
+                <div class="channel-card" :class="{selected: taskForm.pushChannel===1}" @click="taskForm.pushChannel=1">
+                    <div class="channel-icon">🎬</div>
+                    <div class="channel-title">TikTok Studio</div>
+                    <div class="channel-switch" v-if="taskForm.pushChannel===1" @click.stop>
+                        <el-switch v-model="taskForm.saveTraffic[1]" active-text="开启省流" inactive-text="关闭省流" size="small"></el-switch>
+                    </div>
+                </div>
+                <div class="channel-card" :class="{selected: taskForm.pushChannel===2}" @click="taskForm.pushChannel=2">
+                    <div class="channel-icon">✂️</div>
+                    <div class="channel-title">CapCut</div>
+                    <div class="channel-switch" v-if="taskForm.pushChannel===2" @click.stop>
+                        <el-switch v-model="taskForm.saveTraffic[2]" active-text="开启省流" inactive-text="关闭省流" size="small"></el-switch>
+                    </div>
+                </div>
+                <div class="channel-card" :class="{selected: taskForm.pushChannel===3}" @click="taskForm.pushChannel=3">
+                    <div class="channel-icon">🌐</div>
+                    <div class="channel-title">比特浏览器</div>
+                    <div class="channel-switch" v-if="taskForm.pushChannel===3" @click.stop>
+                        <el-switch v-model="taskForm.saveTraffic[3]" active-text="开启省流" inactive-text="关闭省流" size="small"></el-switch>
+                    </div>
+                </div>
+            </div>
+            <div class="traffic-tips">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <i class="el-icon-info" style="color: #409EFF;"></i>
+                    <span style="font-weight: bold; color: #409EFF;">省流模式说明</span>
+                </div>
+                <div style="font-size: 13px; color: #666; line-height: 1.6;">
+                    <p style="margin: 0 0 5px 0;">• <strong>开启省流</strong>：上传文件走本地网络，不经过VPN代理，上传速度更快</p>
+                    <p style="margin: 0 0 5px 0;">• <strong>关闭省流</strong>：上传文件走VPN代理，与账号代理IP一致，播放量效果更稳定</p>
+                </div>
+            </div>
+            <div style="margin-top:30px;text-align:center;">
+                <el-button @click="createTaskDialog=false">取消</el-button>
+                <el-button type="primary" :disabled="!taskForm.pushChannel" @click="nextGetAccountGroups()">下一步</el-button>
+            </div>
+        </div>
+        <div v-if="activeStep===1">
+            <div class="group-action-bar">
+                <div class="selection-info">已选择 <strong>{{ selectedGroups.length }}</strong> 个分组，共 <strong>{{ selectedGroupAccountCount }}</strong> 个账号</div>
+                <div>
+                    <el-button size="small" @click="selectAllGroups">全选分组</el-button>
+                    <el-button size="small" @click="invertGroupSelection">反选分组</el-button>
+                    <el-button size="small" @click="clearGroupSelection">清空选择</el-button>
+                </div>
+            </div>
+            <div class="group-list-container">
+                <el-checkbox-group v-model="selectedGroups" @change="handleGroupChange">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;">
+                        <el-checkbox v-for="group in accountGroups" :key="group.id" :label="group.id"
+                                     :disabled="getGroupAccountCount(group.id)===0">{{ group.name }} ({{ getGroupAccountCount(group.id) }}个账号)
+                        </el-checkbox>
+                    </div>
+                </el-checkbox-group>
+            </div>
+            <div style="margin-top:20px;">
+                <el-button @click="activeStep=0">上一步</el-button>
+                <el-button type="primary" :disabled="!selectedGroups.length" @click="activeStep=2">下一步</el-button>
+            </div>
+        </div>
+        <div v-if="activeStep===2">
+            <div class="group-action-bar">
+                <div class="selection-info">已选择 <strong>{{ selectedAccounts.length }}</strong> 个账号</div>
+                <div>
+                    <el-button size="small" @click="selectAllAccounts">全选账号</el-button>
+                    <el-button size="small" @click="invertAccountSelection">反选账号</el-button>
+                    <el-button size="small" @click="clearAccountSelection">清空选择</el-button>
+                </div>
+            </div>
+            <div class="group-list-container">
+                <div v-for="group in filteredAccountGroups" :key="group.id" class="group-accounts">
+                    <div class="group-title"><span>{{ group.name }} ({{ group.accounts.length }}个账号)</span>
+                        <div>
+                            <el-button type="text" size="mini" @click="toggleGroupAccounts(group.id)">{{ isGroupAllSelected(group.id) ? '取消全选' : '全选' }}</el-button>
+                            <el-button type="text" size="mini" @click="invertGroupAccounts(group.id)">反选</el-button>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:5px;">
+                        <el-checkbox v-for="acc in group.accounts" :key="acc.id" :label="acc.id"
+                                     v-model="selectedAccounts" class="account-checkbox">{{ acc.account }}
+                        </el-checkbox>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:20px;">
+                <el-button @click="activeStep=1">上一步</el-button>
+                <el-button type="primary" :disabled="!selectedAccounts.length" @click="goToNextStep">下一步</el-button>
+            </div>
+        </div>
+        <div v-if="activeStep===3">
+            <el-form label-width="130px">
+                <el-form-item label="素材路径">
+                    <div style="display:flex;gap:10px;">
+                        <el-input v-model="materialPath" placeholder="视频文件夹路径"></el-input>
+                        <el-button @click="browseFolder">检查路径</el-button>
+                    </div>
+                </el-form-item>
+                <el-form-item label="发布策略">
+                    <el-radio-group v-model="publishStrategy">
+                        <el-radio label="random">随机发布（视频数量大于1可以）</el-radio>
+                        <el-radio label="deduplicate">去重发布（视频数量大于等于账号数）</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+                <!-- 仅在去重发布模式下显示删除素材开关 -->
+                <el-form-item v-if="publishStrategy === 'deduplicate'" label="删除已发布素材">
+                    <el-switch v-model="deleteAfterPublish"></el-switch>
+                    <span style="margin-left:10px;font-size:13px;color:#999;">
+                        开启后，视频发布完成将从素材目录中删除该文件
+                    </span>
+                </el-form-item>
+            </el-form>
+            <div style="margin-top:20px;">
+                <el-button @click="activeStep=2">上一步</el-button>
+                <el-button type="primary" :disabled="!materialPath" @click="goToNextStep">下一步</el-button>
+            </div>
+        </div>
+        <div v-if="activeStep===4">
+            <div class="config-section">
+                <div class="config-header"><span>文案配置</span>
+                    <el-switch v-model="captionConfig.enabled"></el-switch>
+                </div>
+                <div v-if="captionConfig.enabled">
+                    <el-input type="textarea" v-model="captionConfig.content" rows="6" placeholder="每行一个文案"></el-input>
+                    <div class="text-count">已输入 {{ captionLineCount }} 行文案</div>
+                    <div>
+                        <el-button size="small" @click="addDefaultCaption">默认文案</el-button>
+                        <el-button size="small" @click="clearCaption">清空</el-button>
+                    </div>
+                </div>
+            </div>
+            <div class="config-section">
+                <div class="config-header"><span>标签配置</span>
+                    <el-switch v-model="hashtagConfig.enabled"></el-switch>
+                </div>
+                <div v-if="hashtagConfig.enabled">
+                    <el-input type="textarea" v-model="hashtagConfig.content" rows="4" placeholder="每行一个标签(不加#)"></el-input>
+                    <div style="margin-top:10px;">
+                        <el-radio-group v-model="hashtagConfig.countType">
+                            <el-radio label="range">范围数量</el-radio>
+                            <el-radio label="fixed">固定数量</el-radio>
+                        </el-radio-group>
+                        <span style="margin-left:15px;">每个视频使用
+                            <el-input-number v-if="hashtagConfig.countType==='range'" v-model="hashtagConfig.minCount" :min="1" :max="10" size="small"></el-input-number>
+                            <span v-if="hashtagConfig.countType==='range'"> 到 </span>
+                            <el-input-number v-if="hashtagConfig.countType==='range'" v-model="hashtagConfig.maxCount" :min="1" :max="10" size="small"></el-input-number>
+                            <el-input-number v-if="hashtagConfig.countType==='fixed'" v-model="hashtagConfig.fixedCount" :min="1" :max="10" size="small"></el-input-number> 个标签
+                        </span>
+                    </div>
+                    <div>
+                        <el-button size="small" @click="addDefaultHashtag">默认标签</el-button>
+                        <el-button size="small" @click="clearHashtag">清空</el-button>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:20px;">
+                <el-button @click="activeStep=3">上一步</el-button>
+                <el-button type="primary" @click="goToNextStep">下一步</el-button>
+            </div>
+        </div>
+        <div v-if="activeStep===5">
+            <el-form :model="taskForm" label-width="120px">
+                <el-form-item label="任务名称">
+                    <el-input v-model="taskForm.name"></el-input>
+                </el-form-item>
+                <el-form-item label="线程数">
+                    <el-input-number v-model="taskForm.threads" :min="1" :max="10000"></el-input-number>
+                </el-form-item>
+                <el-form-item label="@指定用户">
+                    <el-switch v-model="taskForm.mentionEnabled"></el-switch>
+                    <span v-if="taskForm.mentionEnabled" style="margin-left:15px;">数量:<el-input-number v-model="taskForm.mentionCount" :min="1" :max="99"></el-input-number></span>
+                </el-form-item>
+                <el-form-item label="固定@用户" v-if="taskForm.mentionEnabled">
+                    <el-input v-model="taskForm.fixedMentions" placeholder="多个用户用逗号分隔，如: user1,user2,user3" style="width:100%;"></el-input>
+                    <div style="font-size:12px;color:#999;margin-top:5px;">
+                        <i class="el-icon-info"></i> 输入固定的用户名，多个用逗号分隔，将和随机@用户一起使用
+                    </div>
+                </el-form-item>
+                <el-form-item label="@tk用户分组" v-if="taskForm.mentionEnabled">
+                    <el-select v-model="taskForm.friendGroupId" placeholder="请选择好友分组" style="width:100%;" clearable>
+                        <el-option v-for="g in friendGroups" :key="g.id" :label="g.groupName" :value="g.id"></el-option>
+                    </el-select>
+                    <div style="font-size:12px;color:#999;margin-top:5px;">当未填写固定@用户时，从该分组随机选取用户</div>
+                </el-form-item>
+                <el-form-item label="定时任务">
+                    <el-switch v-model="taskForm.isTiming"></el-switch>
+                    <el-date-picker v-if="taskForm.isTiming" v-model="taskForm.specificDateTime" type="datetime"
+                                    placeholder="选择时间" :picker-options="datePickerOptions" value-format="timestamp"
+                                    style="margin-left:15px;"></el-date-picker>
+                </el-form-item>
+                <el-form-item label="备注">
+                    <el-input type="textarea" v-model="taskForm.remark" rows="2"></el-input>
+                </el-form-item>
+            </el-form>
+            <div>
+                <el-button @click="activeStep=4">上一步</el-button>
+                <el-button type="primary" :loading="createTaskLoading" @click="confirmCreateTask">创建任务</el-button>
+            </div>
+        </div>
+    </el-dialog>
+
+    <!-- 创建群发任务弹窗 -->
+    <el-dialog title="创建群发任务" :visible.sync="createMassTaskDialog" width="75%" :close-on-click-modal="false" append-to-body>
+        <el-steps :active="massActiveStep" finish-status="success">
+            <el-step title="群发入口"></el-step>
+            <el-step title="账号分组"></el-step>
+            <el-step title="账号选择"></el-step>
+            <el-step title="发送内容"></el-step>
+            <el-step title="任务配置"></el-step>
+        </el-steps>
+
+        <div v-if="massActiveStep===0">
+            <div class="channel-selection">
+                <div class="channel-card" :class="{selected: massTaskForm.pushChannel===1}" @click="massTaskForm.pushChannel=1">
+                    <div class="channel-icon">🔌</div>
+                    <div class="channel-title">API群发</div>
+                    <div class="channel-desc" style="font-size:12px;color:#999;margin-top:8px;">HTTP接口发送，速度快</div>
+                </div>
+                <div class="channel-card" :class="{selected: massTaskForm.pushChannel===2}" @click="massTaskForm.pushChannel=2">
+                    <div class="channel-icon">🔗</div>
+                    <div class="channel-title">WebSocket群发</div>
+                    <div class="channel-desc" style="font-size:12px;color:#999;margin-top:8px;">长连接发送，稳定可靠</div>
+                </div>
+                <div class="channel-card" :class="{selected: massTaskForm.pushChannel===3}" @click="massTaskForm.pushChannel=3">
+                    <div class="channel-icon">🌐</div>
+                    <div class="channel-title">比特浏览器</div>
+                    <div class="channel-desc" style="font-size:12px;color:#999;margin-top:8px;">浏览器模拟发送，正在开发中。。。</div>
+                </div>
+            </div>
+
+            <div class="channel-tips" style="margin-top:20px;padding:12px;background:#f5f7fa;border-radius:8px;">
+                <div style="display:flex;gap:20px;font-size:13px;">
+                    <div><span style="color:#409EFF;">🔌 API群发</span>：适合大批量发送，通过HTTP接口调用，速度最快</div>
+                    <div><span style="color:#67c23a;">🔗 WebSocket群发</span>：维持长连接，实时性高，稳定性好</div>
+                    <div><span style="color:#e6a23c;">🌐 比特浏览器</span>：模拟真实用户行为，适合需要指纹环境的场景</div>
+                </div>
+            </div>
+
+            <div style="margin-top:30px;text-align:center;">
+                <el-button @click="createMassTaskDialog=false">取消</el-button>
+                <el-button type="primary" :disabled="!massTaskForm.pushChannel" @click="massLoadAccountGroups">下一步</el-button>
+            </div>
+        </div>
+
+        <div v-if="massActiveStep===1">
+            <div class="group-action-bar">
+                <div class="selection-info">已选择 <strong>{{ massSelectedGroups.length }}</strong> 个分组，共 <strong>{{ massSelectedGroupAccountCount }}</strong> 个账号</div>
+                <div>
+                    <el-button size="small" @click="massSelectAllGroups">全选分组</el-button>
+                    <el-button size="small" @click="massInvertGroupSelection">反选分组</el-button>
+                    <el-button size="small" @click="massClearGroupSelection">清空选择</el-button>
+                </div>
+            </div>
+            <div class="group-list-container">
+                <el-checkbox-group v-model="massSelectedGroups" @change="massHandleGroupChange">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;">
+                        <el-checkbox v-for="g in accountGroups" :key="g.id" :label="g.id"
+                                     :disabled="getGroupAccountCount(g.id)===0">{{ g.name }} ({{ getGroupAccountCount(g.id) }}个账号)
+                        </el-checkbox>
+                    </div>
+                </el-checkbox-group>
+            </div>
+            <div style="margin-top:20px;text-align:right;">
+                <el-button @click="massActiveStep=0">上一步</el-button>
+                <el-button type="primary" :disabled="!massSelectedGroups.length" @click="massActiveStep=2">下一步</el-button>
+            </div>
+        </div>
+
+        <div v-if="massActiveStep===2">
+            <div class="group-action-bar">
+                <div class="selection-info">已选择 <strong>{{ massSelectedAccounts.length }}</strong> 个账号</div>
+                <div>
+                    <el-button size="small" @click="massSelectAllAccounts">全选账号</el-button>
+                    <el-button size="small" @click="massInvertAccountSelection">反选</el-button>
+                    <el-button size="small" @click="massClearAccountSelection">清空</el-button>
+                </div>
+            </div>
+            <div class="group-list-container">
+                <div v-for="group in massFilteredAccountGroups" :key="group.id" class="group-accounts">
+                    <div class="group-title"><span>{{ group.name }} ({{ group.accounts.length }}个账号)</span>
+                        <div>
+                            <el-button type="text" size="mini" @click="massToggleGroupAccounts(group.id)">{{ massIsGroupAllSelected(group.id)?'取消全选':'全选' }}</el-button>
+                            <el-button type="text" size="mini" @click="massInvertGroupAccounts(group.id)">反选</el-button>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:5px;">
+                        <el-checkbox v-for="acc in group.accounts" :key="acc.id" :label="acc.id"
+                                     v-model="massSelectedAccounts">{{ acc.account }}
+                        </el-checkbox>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <el-button @click="massActiveStep=1">上一步</el-button>
+                <el-button type="primary" :disabled="!massSelectedAccounts.length" @click="massActiveStep=3">下一步</el-button>
+            </div>
+        </div>
+
+        <div v-if="massActiveStep===3">
+            <div class="config-section">
+                <textarea v-model="massMessageContent" class="message-textarea" placeholder="每行一个消息内容，随机发送" @input="massHandleMessageInput"></textarea>
+                <div class="text-count">已输入 {{ massMessageLineCount }} 行内容</div>
+            </div>
+            <div>
+                <el-button @click="massActiveStep=2">上一步</el-button>
+                <el-button type="primary" :disabled="!massMessageContent" @click="massActiveStep=4">下一步</el-button>
+            </div>
+        </div>
+
+        <div v-if="massActiveStep===4">
+            <el-form :model="massTaskForm" label-width="140px">
+                <el-form-item label="任务名称">
+                    <el-input v-model="massTaskForm.name" style="width:300px;"></el-input>
+                </el-form-item>
+                <el-form-item label="线程数">
+                    <el-input-number v-model="massTaskForm.threads" :min="1" :max="10000"></el-input-number>
+                </el-form-item>
+                <el-form-item label="发送人群">
+                    <el-radio-group v-model="massTaskForm.sendToType">
+                        <el-radio label="1">新好友</el-radio>
+                        <el-radio label="2">未回复好友</el-radio>
+                        <el-radio label="3">导入好友</el-radio>
+                        <el-radio label="4">固定对象</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+                <!-- 在发送人群后面添加 -->
+                <el-form-item label="固定发送对象" v-if="massTaskForm.sendToType === '4'">
+                    <el-input v-model="massTaskForm.fixedTargets" placeholder="输入UID或用户名，多个用逗号分隔" style="width:400px;"></el-input>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                        输入固定的UID或用户名，多个用逗号分隔，将作为发送目标
+                    </div>
+                </el-form-item>
+                <el-form-item v-if="massTaskForm.sendToType === '1'" label="发送前拉取最新粉丝">
+                    <el-switch v-model="massTaskForm.syncBeforeSend"></el-switch>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                        开启后，发送前会自动拉取最新粉丝列表作为发送目标
+                    </div>
+                </el-form-item>
+                <el-form-item v-if="massTaskForm.sendToType === '2'" label="发送前同步最新消息">
+                    <el-switch v-model="massTaskForm.syncMsgBeforeSend"></el-switch>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                        开启后，发送前会同步聊天记录，过滤掉已回复的好友
+                    </div>
+                </el-form-item>
+                <el-form-item label="好友分组" v-if="massTaskForm.sendToType === '3'">
+                    <el-select v-model="massTaskForm.friendGroupId" placeholder="请选择" style="width:100%;">
+                        <el-option v-for="g in friendGroups" :key="g.id" :label="g.groupName" :value="g.id"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="每个账号发送数" v-if="massTaskForm.sendToType === '3'">
+                    <el-input-number v-model="massTaskForm.sendCountPerAccount" :min="1" :max="10000" :step="1" controls-position="right"></el-input-number>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">每个账号发送的消息数量（1-9999条）</div>
+                </el-form-item>
+                <el-form-item label="发送间隔(秒)">
+                    <el-input-number v-model="massTaskForm.sendInterval" :min="1" :max="3600"></el-input-number>
+                </el-form-item>
+                <el-form-item label="失败退出次数">
+                    <el-input-number v-model="massTaskForm.retryCount" :min="0" :max="100" :step="1" controls-position="right"></el-input-number>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">发送失败连续{{massTaskForm.retryCount}}次时退出群发任务</div>
+                </el-form-item>
+                <el-form-item label="定时任务">
+                    <el-switch v-model="massTaskForm.isTiming"></el-switch>
+                    <el-date-picker v-if="massTaskForm.isTiming" v-model="massTaskForm.specificDateTime" type="datetime"
+                                    placeholder="选择时间" :picker-options="datePickerOptions" value-format="timestamp"></el-date-picker>
+                </el-form-item>
+                <el-form-item label="备注">
+                    <el-input type="textarea" v-model="massTaskForm.remark" rows="2" style="width:400px;"></el-input>
+                </el-form-item>
+            </el-form>
+            <div>
+                <el-button @click="massActiveStep=3">上一步</el-button>
+                <el-button type="primary" @click="submitMassTask" :loading="massSubmitLoading">提交任务</el-button>
+            </div>
+        </div>
+    </el-dialog>
+
+    <!-- 视频任务详情弹窗 -->
+    <el-dialog title="视频任务详情" :visible.sync="videoDetailDialog" width="90%" :close-on-click-modal="false" append-to-body>
+        <div v-if="currentVideoTask" class="detail-progress">
+            <el-row :gutter="20">
+                <el-col :span="8"><strong>任务名称：</strong>{{ currentVideoTask.taskName }}</el-col>
+                <el-col :span="8"><strong>任务ID：</strong>{{ currentVideoTask.id }}</el-col>
+                <el-col :span="8"><strong>状态：</strong><span class="status-tag" :class="'status-'+currentVideoTask.status">{{ getStatusText(currentVideoTask.status) }}</span></el-col>
+                <el-col :span="8"><strong>账号数：</strong>{{ currentVideoTask.accountCount || 0 }}</el-col>
+                <el-col :span="8"><strong>素材数：</strong>{{ currentVideoTask.materialCount || 0 }}</el-col>
+                <el-col :span="8"><strong>线程数：</strong>{{ currentVideoTask.threads || 3 }}</el-col>
+                <el-col :span="24" style="margin-top:10px;"><strong>进度：</strong>
+                    <el-progress :percentage="currentVideoTask.progress || 0" :status="getProgressStatus(currentVideoTask.status)"></el-progress>
+                </el-col>
+            </el-row>
+        </div>
+
+        <!-- 状态筛选和批量重新发布栏 -->
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 8px 12px; background: #fafafa; border-radius: 4px; flex-wrap: wrap;">
+            <span style="font-size: 13px; color: #666;">状态筛选：</span>
+            <el-select v-model="videoItemStatusFilter" placeholder="全部状态" size="small" clearable @change="loadVideoItems(currentVideoTask.id)" style="width: 130px;">
+                <el-option label="全部" value=""></el-option>
+                <el-option label="待发布" value="0"></el-option>
+                <el-option label="发布中" value="1"></el-option>
+                <el-option label="成功" value="2"></el-option>
+                <el-option label="失败" value="3"></el-option>
+            </el-select>
+            <el-button size="small" type="danger" @click="batchRePublish" :loading="batchRePublishLoading" :disabled="selectedVideoItems.length === 0">批量重新发布 ({{ selectedVideoItems.length }})</el-button>
+            <span style="font-size: 12px; color: #999; margin-left: auto;">提示：仅支持重新发布状态为"失败"或"待发布"的视频</span>
+        </div>
+
+        <div class="batch-edit-bar" v-if="selectedVideoItems.length > 0">
+            <span style="color:#409EFF;">已选择 {{ selectedVideoItems.length }} 个视频</span>
+            <el-input v-model="batchLocation" placeholder="批量设置定位" style="width:180px;" size="small"></el-input>
+            <el-input v-model="batchShop" placeholder="批量设置商品" style="width:180px;" size="small"></el-input>
+            <el-button type="primary" size="small" @click="batchUpdateVideoItems" :loading="batchUpdateLoading">批量更新</el-button>
+            <el-button size="small" @click="clearBatchSelection">清空选择</el-button>
+        </div>
+
+        <el-table :data="videoItems" v-loading="videoItemLoading" stripe border style="width:100%"
+                  @selection-change="handleVideoItemSelectionChange" ref="videoItemTable">
+            <el-table-column type="selection" width="55"></el-table-column>
+            <el-table-column prop="id" label="队列ID" width="80"></el-table-column>
+            <el-table-column prop="accountName" label="账号名称" min-width="150">
+                <template slot-scope="scope">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span>{{ scope.row.accountName || '-' }}</span>
+                        <el-button v-if="scope.row.accountId" type="text" size="mini" @click="viewAccount(scope.row.accountId)" icon="el-icon-view" style="color: #409EFF; padding: 0;">查看</el-button>
+                    </div>
+                </template>
+            </el-table-column>
+            <el-table-column prop="videoName" label="视频名称" min-width="180" show-overflow-tooltip>
+                <template slot-scope="scope"><span class="video-preview-link" @click="previewVideoPath(scope.row.videoPath)">{{ scope.row.videoName || scope.row.videoPath || '-' }}</span></template>
+            </el-table-column>
+            <el-table-column label="发布状态" width="100">
+                <template slot-scope="scope">
+                    <el-tag :type="getVideoItemStatusType(scope.row.status)" size="small">{{ getVideoItemStatusText(scope.row.status) }}</el-tag>
+                </template>
+            </el-table-column>
+            <el-table-column prop="location" label="定位" width="150">
+                <template slot-scope="scope">
+                    <el-input v-model="scope.row.location" size="small" placeholder="定位" @change="updateVideoItemField(scope.row, 'location')"></el-input>
+                </template>
+            </el-table-column>
+            <el-table-column prop="shop" label="商品" width="150">
+                <template slot-scope="scope">
+                    <el-input v-model="scope.row.shop" size="small" placeholder="商品" @change="updateVideoItemField(scope.row, 'shop')"></el-input>
+                </template>
+            </el-table-column>
+            <el-table-column prop="publishTime" label="发布时间" width="160">
+                <template slot-scope="scope">{{ formatDate(scope.row.publishTime) }}</template>
+            </el-table-column>
+            <el-table-column prop="caption" label="文案" min-width="150" show-overflow-tooltip>
+                <template slot-scope="scope">{{ scope.row.caption || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="hashtag" label="标签" min-width="120" show-overflow-tooltip>
+                <template slot-scope="scope">{{ scope.row.hashtag || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="errorMsg" label="错误信息" min-width="180" show-overflow-tooltip>
+                <template slot-scope="scope"><span style="color:#f56c6c;">{{ scope.row.errorMsg || '-' }}</span></template>
+            </el-table-column>
+        </el-table>
+        <div class="pagination-container" style="margin-top:20px;">
+            <el-pagination @size-change="videoItemSizeChange" @current-change="videoItemCurrentChange"
+                           :current-page="videoItemPage" :page-sizes="[10,20,50,100]" :page-size="videoItemSize"
+                           layout="total, sizes, prev, pager, next, jumper" :total="videoItemTotal"></el-pagination>
+        </div>
+        <span slot="footer"><el-button @click="videoDetailDialog=false">关闭</el-button><el-button type="primary" @click="refreshVideoItems">刷新</el-button></span>
+    </el-dialog>
+
+    <!-- 群发任务详情弹窗 -->
+    <el-dialog title="群发任务详情" :visible.sync="messageDetailDialog" width="85%" :close-on-click-modal="false" append-to-body>
+        <div v-if="currentMessageTask" class="detail-progress">
+            <el-row :gutter="20">
+                <el-col :span="8"><strong>任务名称：</strong>{{ currentMessageTask.taskName }}</el-col>
+                <el-col :span="8"><strong>任务ID：</strong>{{ currentMessageTask.id }}</el-col>
+                <el-col :span="8"><strong>状态：</strong><span class="status-tag" :class="'status-'+currentMessageTask.status">{{ getStatusText(currentMessageTask.status) }}</span></el-col>
+                <el-col :span="8"><strong>总数量：</strong>{{ currentMessageTask.totalCount || 0 }}</el-col>
+                <el-col :span="8"><strong>完成：</strong>{{ currentMessageTask.successCount || 0 }}</el-col>
+                <el-col :span="8"><strong>失败：</strong>{{ currentMessageTask.failCount || 0 }}</el-col>
+                <el-col :span="24" style="margin-top:10px;"><strong>进度：</strong>
+                    <el-progress :percentage="currentMessageTask.progress || 0" :status="getProgressStatus(currentMessageTask.status)"></el-progress>
+                </el-col>
+            </el-row>
+        </div>
+
+        <!-- 状态筛选和排序栏 -->
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 8px 12px; background: #fafafa; border-radius: 4px; flex-wrap: wrap;">
+            <span style="font-size: 13px; color: #666;">状态筛选：</span>
+            <el-select v-model="messageItemStatusFilter" placeholder="全部状态" size="small" clearable @change="loadMessageItems(currentMessageTask.id)" style="width: 130px;">
+                <el-option label="全部" value=""></el-option>
+                <el-option label="待发送" value="0"></el-option>
+                <el-option label="发送中" value="1"></el-option>
+                <el-option label="完成" value="2"></el-option>
+                <el-option label="失败" value="3"></el-option>
+            </el-select>
+
+            <span style="font-size: 13px; color: #666; margin-left: 12px;">排序：</span>
+            <el-select v-model="messageItemSortField" placeholder="排序字段" size="small" @change="loadMessageItems(currentMessageTask.id)" style="width: 130px;">
+                <el-option label="默认" value=""></el-option>
+                <el-option label="按ID" value="id"></el-option>
+                <el-option label="按状态" value="status"></el-option>
+                <el-option label="按发送数" value="sendCount"></el-option>
+                <el-option label="按成功数" value="successSend"></el-option>
+                <el-option label="按更新时间" value="updateTime"></el-option>
+            </el-select>
+            <el-select v-model="messageItemSortOrder" placeholder="排序方式" size="small" @change="loadMessageItems(currentMessageTask.id)" style="width: 110px;">
+                <el-option label="降序" value="descending"></el-option>
+                <el-option label="升序" value="ascending"></el-option>
+            </el-select>
+
+            <el-button size="small" type="primary" @click="loadMessageItems(currentMessageTask.id)" icon="el-icon-refresh">刷新</el-button>
+
+            <!-- ✅ 统计信息显示 -->
+            <span style="font-size: 13px; color: #666; margin-left: 8px;">
+            📊 统计：失败 <span style="color: #f56c6c; font-weight: bold;">{{ messageStats.failTotal }}</span> /
+            成功 <span style="color: #67c23a; font-weight: bold;">{{ messageStats.successTotal }}</span> /
+            总发送 <span style="color: #409EFF; font-weight: bold;">{{ messageStats.totalSend }}</span>
+        </span>
+
+            <span style="font-size: 12px; color: #999; margin-left: auto;">
+            共 {{ messageItemTotal }} 条任务记录
+        </span>
+        </div>
+
+        <!-- 表格 -->
+        <el-table :data="messageItems" v-loading="messageItemLoading" stripe border style="width:100%">
+            <el-table-column prop="id" label="队列ID" width="80"></el-table-column>
+            <el-table-column prop="accountName" label="账号名称" min-width="150">
+                <template slot-scope="scope">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span>{{ scope.row.accountName || '-' }}</span>
+                        <el-button v-if="scope.row.accountId" type="text" size="mini" @click="viewAccount(scope.row.accountId)" icon="el-icon-view" style="color: #409EFF; padding: 0;">查看</el-button>
+                    </div>
+                </template>
+            </el-table-column>
+            <el-table-column label="发送状态" width="100">
+                <template slot-scope="scope">
+                    <el-tag :type="getItemStatusType(scope.row.status)" size="small">{{ getItemStatusText(scope.row.status) }}</el-tag>
+                </template>
+            </el-table-column>
+            <el-table-column label="已发送/总数" width="120">
+                <template slot-scope="scope">{{ scope.row.sendCount || 0 }} / {{ scope.row.totalSend || 0 }}</template>
+            </el-table-column>
+            <el-table-column label="发送失败" width="120">
+                <template slot-scope="scope">{{ scope.row.failSend || 0 }}</template>
+            </el-table-column>
+            <el-table-column label="发送成功" width="120">
+                <template slot-scope="scope">{{ scope.row.successSend || 0 }}</template>
+            </el-table-column>
+            <el-table-column label="进度" width="140">
+                <template slot-scope="scope">
+                    <el-progress :percentage="scope.row.progress || 0" :status="scope.row.status === 2 ? 'success' : (scope.row.status === 1 ? '' : 'exception')"></el-progress>
+                </template>
+            </el-table-column>
+            <el-table-column prop="updateTime" label="更新时间" width="160">
+                <template slot-scope="scope">{{ formatDate(scope.row.updateTime) }}</template>
+            </el-table-column>
+            <el-table-column prop="errorMsg" label="错误信息" min-width="200" show-overflow-tooltip>
+                <template slot-scope="scope"><span style="color:#f56c6c;">{{ scope.row.errorMsg || '-' }}</span></template>
+            </el-table-column>
+        </el-table>
+
+        <!-- 分页 -->
+        <div class="pagination-container" style="margin-top:20px;">
+            <el-pagination @size-change="messageItemSizeChange" @current-change="messageItemCurrentChange"
+                           :current-page="messageItemPage" :page-sizes="[10,20,50,100]" :page-size="messageItemSize"
+                           layout="total, sizes, prev, pager, next, jumper" :total="messageItemTotal"></el-pagination>
+        </div>
+
+        <span slot="footer">
+        <el-button @click="messageDetailDialog=false">关闭</el-button>
+        <el-button type="primary" @click="refreshMessageItems">刷新</el-button>
+    </span>
+    </el-dialog>
+    <!-- 好友管理弹窗 -->
+    <el-dialog title="好友管理" :visible.sync="friendImportDialog" width="700" :close-on-click-modal="false" append-to-body>
+        <div class="friend-import-dialog">
+            <div class="friend-group-list">
+                <div class="friend-group-container">
+                    <div class="group-actions-header">
+                        <div class="group-header-title"><i class="el-icon-folder-opened"></i> 好友分组</div>
+                    </div>
+                    <el-button type="primary" size="small" class="add-group-btn" @click="addFriendGroup" icon="el-icon-plus">新建分组</el-button>
+                    <div class="group-list-wrapper">
+                        <div v-for="g in friendGroups" :key="g.id" class="group-item" :class="{active: selectedFriendGroupId === g.id}" @click="selectFriendGroup(g.id)">
+                            <div class="group-info-row">
+                                <div class="group-name">{{ g.groupName }}<span v-if="g.id===0" class="all-accounts">(所有账号)</span></div>
+                                <div class="group-count"><i class="el-icon-user-solid"></i> {{ g.remark || 0 }}</div>
+                            </div>
+                            <div class="group-meta-row">
+                                <div class="group-create-time"><i class="el-icon-time"></i> {{ g.createTime ? formatSimpleDate(g.createTime) : '系统默认' }}</div>
+                                <div v-if="g.id!=0" class="group-actions">
+                                    <el-button type="text" size="mini" class="group-action-btn edit" @click.stop="editFriendGroup(g)">编辑</el-button>
+                                    <el-button type="text" size="mini" class="group-action-btn delete" style="color:#f56c6c" @click.stop="deleteFriendGroup(g.id)">删除</el-button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="friend-main-content">
+                <div class="friend-top-actions">
+                    <div>
+                        <el-input v-model="uidSearchForm.search" placeholder="搜索UID" size="small" style="width:180px;" clearable @keyup.enter="loadFriendList"></el-input>
+                        <el-select v-model="uidSearchForm.status" placeholder="状态" size="small" style="width:100px;margin-left:8px;" clearable @change="loadFriendList">
+                            <el-option label="未使用" value="0"></el-option>
+                            <el-option label="已使用" value="1"></el-option>
+                        </el-select>
+                        <el-button type="primary" size="small" style="margin-left:8px;" @click="openUidImportDialog" :disabled="!selectedFriendGroupId">导入TXT</el-button>
+                        <el-button type="success" size="small" @click="exportUnusedUids" :disabled="!selectedFriendGroupId">导出未使用</el-button>
+                        <el-button type="danger" size="small" @click="deleteCurrentGroupFriends" :disabled="!selectedFriendGroupId">清空分组</el-button>
+                        <el-button type="info" size="small" @click="openUidStatsDialog" :disabled="!selectedFriendGroupId">统计</el-button>
+                        <el-button type="warning" size="small" @click="deduplicateSuccessUids" :disabled="!selectedFriendGroupId" :loading="deduplicateLoading">
+                            <i class="el-icon-circle-check"></i> 私信成功去重
+                        </el-button>
+                    </div>
+                    <div class="friend-stats">{{ getFriendStatsText() }}</div>
+                </div>
+                <div class="friend-table-container">
+                    <el-table :data="paginatedFriends" v-loading="friendTableLoading" border size="small">
+                        <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                        <el-table-column prop="uid" label="UID" min-width="150"></el-table-column>
+                        <el-table-column prop="status" label="状态" width="100">
+                            <template slot-scope="scope">
+                                <el-tag :type="scope.row.status==0?'success':'info'" size="small">{{ scope.row.status==0?'未使用':'已使用' }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="createTime" label="创建时间" width="160">
+                            <template slot-scope="scope">{{ formatDate(scope.row.createTime) }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="80">
+                            <template slot-scope="scope">
+                                <el-button type="text" size="mini" style="color:#f56c6c;" @click="deleteFriend(scope.row.id)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </div>
+                <div class="friend-pagination">
+                    <el-pagination @size-change="friendHandleSizeChange" @current-change="friendHandleCurrentChange"
+                                   :current-page="friendCurrentPage" :page-sizes="[10,20,50,100]"
+                                   :page-size="friendPageSize" layout="total, sizes, prev, pager, next, jumper"
+                                   :total="friendTotalCount"></el-pagination>
+                </div>
+            </div>
+        </div>
+    </el-dialog>
+
+    <!-- 其他对话框 -->
+    <el-dialog title="导入UID文件" :visible.sync="uidImportDialog" width="500px" append-to-body>
+        <el-form :model="uidImportForm" label-width="100px">
+            <el-form-item label="选择分组">
+                <el-select v-model="uidImportForm.groupId" disabled style="width:100%">
+                    <el-option v-for="g in friendGroups" :key="g.id" :label="g.groupName" :value="g.id"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="文件上传">
+                <el-upload :auto-upload="false" :limit="1" :on-change="handleUidFileChange" accept=".txt">
+                    <el-button size="small" type="primary">选择TXT文件</el-button>
+                </el-upload>
+            </el-form-item>
+            <el-form-item label="重复处理">
+                <el-radio-group v-model="uidImportForm.deleteType">
+                    <el-radio label="all">清空后导入</el-radio>
+                    <el-radio label="unused">去重导入</el-radio>
+                </el-radio-group>
+            </el-form-item>
+        </el-form>
+        <div slot="footer">
+            <el-button @click="uidImportDialog=false">取消</el-button>
+            <el-button type="primary" @click="submitUidImport" :loading="uidImportLoading">开始导入</el-button>
+        </div>
+    </el-dialog>
+
+    <el-dialog title="UID统计" :visible.sync="uidStatsDialog" width="400px" append-to-body>
+        <div v-if="currentUidStats">
+            <el-descriptions :column="1" border>
+                <el-descriptions-item label="分组">{{ currentUidStats.groupName }}</el-descriptions-item>
+                <el-descriptions-item label="总数">{{ currentUidStats.total }}</el-descriptions-item>
+                <el-descriptions-item label="私信成功">{{ currentUidStats.sixinOk }}</el-descriptions-item>
+                <el-descriptions-item label="已使用">{{ currentUidStats.used }}</el-descriptions-item>
+
+                <el-descriptions-item label="未使用">{{ currentUidStats.unused }}</el-descriptions-item>
+                <el-descriptions-item label="使用率">
+                    <el-progress :percentage="parseFloat(currentUidStats.usageRate)||0"></el-progress>
+                </el-descriptions-item>
+            </el-descriptions>
+        </div>
+        <div slot="footer">
+            <el-button type="danger" size="small" @click="deleteUidByGroup('sixinOk')">清理私信成功</el-button>
+            <el-button type="danger" size="small" @click="deleteUidByGroup('used')">清理已使用</el-button>
+            <el-button type="danger" size="small" @click="deleteUidByGroup('unused')">清理未使用</el-button>
+            <el-button @click="uidStatsDialog=false">关闭</el-button>
+        </div>
+    </el-dialog>
+
+    <el-dialog title="编辑分组" :visible.sync="editFriendGroupDialog" width="400px" append-to-body>
+        <el-form>
+            <el-form-item label="分组名">
+                <el-input v-model="friendGroupForm.name"></el-input>
+            </el-form-item>
+        </el-form>
+        <div slot="footer">
+            <el-button @click="editFriendGroupDialog=false">取消</el-button>
+            <el-button type="primary" @click="saveFriendGroup">保存</el-button>
+        </div>
+    </el-dialog>
+
+    <el-dialog title="视频预览" :visible.sync="videoPreviewDialog" width="60%" append-to-body>
+        <video :src="previewVideoUrl" controls autoplay style="width:100%;max-height:500px;"></video>
+        <span slot="footer"><el-button @click="videoPreviewDialog=false">关闭</el-button></span>
+    </el-dialog>
+</div>
+
+<script>
+    new Vue({
+        el: '#app',
+        data() {
+            return {
+                activeNav: 'publish',
+                activeTab: 'video',
+                searchKeyword: '',
+                activeStatus: '',
+                videoPage: 1,
+                videoSize: 10,
+                messageStats: {
+                    failTotal: 0,
+                    successTotal: 0,
+                    totalSend: 0
+                },
+                videoTotal: 0,
+                deduplicateLoading: false,  // 新增：去重加载状态
+                videoTasks: [],
+                videoLoading: false,
+                videoStatusStats: {},
+                messagePage: 1,
+                messageSize: 10,
+                messageTotal: 0,
+                deleteAfterPublish: false,
+                messageTasks: [],
+                messageLoading: false,
+                statusTags: [
+                    {label: '全部', value: '', type: ''},
+                    {label: '待执行', value: 1, type: 'info'},
+                    {label: '执行中', value: 2, type: 'success'},
+                    {label: '已完成', value: 3, type: 'primary'},
+                    {label: '已停止', value: 4, type: 'danger'},
+                    {label: '失败', value: 5, type: 'warning'}
+                ],
+                userName: '加载中...',
+                userRole: '普通用户',
+                userAvatar: '',
+                userId: null,
+                createTaskDialog: false,
+                activeStep: 0,
+                createTaskLoading: false,
+                folderSelectLoading: false,
+                accountGroups: [],
+                selectedGroups: [],
+                selectedAccounts: [],
+                materialPath: '',
+                publishStrategy: 'random',
+                captionConfig: {enabled: true, content: "Amazing video!\nCheck this out!"},
+                hashtagConfig: {
+                    enabled: true,
+                    content: "fyp\nviral\ntiktok",
+                    countType: 'range',
+                    minCount: 2,
+                    maxCount: 4,
+                    fixedCount: 3
+                },
+                taskForm: {
+                    pushChannel: null,
+                    name: '',
+                    threads: 3,
+                    mentionEnabled: false,
+                    friendGroupId: null,
+                    mentionCount: 1,
+                    fixedMentions: '',  // 新增：固定@用户
+                    isTiming: false,
+                    specificDateTime: null,
+                    remark: '',
+                    saveTraffic: { 1: false, 2: false, 3: false }
+                },
+                createMassTaskDialog: false,
+                massActiveStep: 0,
+                massSelectedGroups: [],
+                massSelectedAccounts: [],
+                massSelectedGroupAccountCount: 0,
+                massMessageContent: '',
+                massSubmitLoading: false,
+                massMessageLineCount: 0,
+                massTaskForm: {
+                    name: '',
+                    pushChannel: 1,
+                    sendToType: '1',
+                    friendGroupId: '',
+                    threads: 5,
+                    retryCount: 6,
+                    sendInterval: 5,
+                    isTiming: false,
+                    specificDateTime: null,
+                    sendCountPerAccount: 1,
+                    remark: '',
+                    saveTraffic: { 1: false, 2: false, 3: false },
+                    syncBeforeSend: false,
+                    syncMsgBeforeSend: false,
+                    fixedTargets: ''  // 新增
+                },
+                videoDetailDialog: false,
+                currentVideoTask: null,
+                videoItems: [],
+                videoItemLoading: false,
+                videoItemPage: 1,
+                videoItemSize: 10,
+                videoItemTotal: 0,
+                selectedVideoItems: [],
+                batchLocation: '',
+                batchShop: '',
+                batchUpdateLoading: false,
+                videoItemStatusFilter: '',
+                batchRePublishLoading: false,
+                messageDetailDialog: false,
+                currentMessageTask: null,
+                messageItems: [],
+                messageItemLoading: false,
+                messageItemStatusFilter: '',
+                messageItemSortField: 'updateTime',
+                messageItemSortOrder: 'descending',
+                messageItemPage: 1,
+                messageItemSize: 10,
+                messageItemTotal: 0,
+                videoPreviewDialog: false,
+                previewVideoUrl: '',
+                friendImportDialog: false,
+                friendGroups: [],
+                selectedFriendGroupId: null,
+                friendTableLoading: false,
+                paginatedFriends: [],
+                friendCurrentPage: 1,
+                friendPageSize: 10,
+                friendTotalCount: 0,
+                uidSearchForm: {search: '', status: ''},
+                uidImportDialog: false,
+                uidImportForm: {file: null, groupId: '', deleteType: 'unused'},
+                uidImportLoading: false,
+                uidStatsDialog: false,
+                currentUidStats: null,
+                editFriendGroupDialog: false,
+                friendGroupForm: {id: '', name: ''},
+                datePickerOptions: {
+                    disabledDate(time) {
+                        return time.getTime() < Date.now() - 86400000;
+                    }
+                }
+            }
+        },
+        computed: {
+            selectedGroupAccountCount() {
+                let t = 0;
+                this.selectedGroups.forEach(gid => {
+                    let g = this.accountGroups.find(x => x.id === gid);
+                    if (g) t += g.accounts.length;
+                });
+                return t;
+            },
+            filteredAccountGroups() {
+                return this.accountGroups.filter(g => this.selectedGroups.includes(g.id) && g.accounts.length > 0);
+            },
+            massFilteredAccountGroups() {
+                return this.accountGroups.filter(g => this.massSelectedGroups.includes(g.id));
+            },
+            captionLineCount() {
+                return this.captionConfig.content.split('\n').filter(l => l.trim()).length;
+            }
+        },
+        created() {
+            this.checkLoginAndLoadUserInfo();
+            this.loadVideoTasks();
+            this.loadMessageTasks();
+            this.taskForm.specificDateTime = new Date(Date.now() + 3600000).getTime();
+        },
+        methods: {
+            checkLoginAndLoadUserInfo() {
+                const token = getToken();
+                if (!token) {
+                    this.$message.warning('请先登录');
+                    setTimeout(() => {
+                        window.location.href = '/page/index';
+                    }, 1000);
+                    return;
+                }
+                this.loadUserInfo();
+            },
+            /**
+             * 私信成功去重 - 根据分组ID去重，仅保留未使用的UID
+             */
+            deduplicateSuccessUids() {
+                if (!this.selectedFriendGroupId) {
+                    this.$message.warning('请先选择好友分组');
+                    return;
+                }
+
+                // 获取当前分组名称
+                const group = this.friendGroups.find(g => g.id === this.selectedFriendGroupId);
+                const groupName = group ? group.groupName : '未命名分组';
+
+                this.$confirm(
+                    `确定要对「${groupName}」分组进行私信成功去重吗？\n\n` +
+                    `操作说明：\n` +
+                    `• 保留所有「未使用」(status=0) 的UID\n` +
+                    `• 删除所有「已使用」(status=1) 的UID\n` +
+                    `• 如果同一个UID同时存在多个记录，只保留一个未使用的记录\n\n` +
+                    `⚠️ 此操作不可恢复，请谨慎操作！`,
+                    '私信成功去重',
+                    {
+                        confirmButtonText: '确定去重',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }
+                ).then(() => {
+                    this.deduplicateLoading = true;
+
+                    apiPost('/api/task/uid/deduplicate', {
+                        groupId: this.selectedFriendGroupId
+                    }).then(res => {
+                        if (res.data.code === 200) {
+                            const data = res.data.data;
+                            this.$message.success(
+                                `去重完成！保留 ${data.keptCount || 0} 个未使用UID，` +
+                                `删除 ${data.deletedCount || 0} 个已使用UID` +
+                                (data.duplicateRemovedCount ? `，移除 ${data.duplicateRemovedCount} 个重复记录` : '')
+                            );
+                            // 刷新列表和统计
+                            this.loadFriendList();
+                            this.loadUidStats();
+                        } else {
+                            this.$message.error(res.data.msg || '去重失败');
+                        }
+                    }).catch(() => {
+                        this.$message.error('去重失败，请重试');
+                    }).finally(() => {
+                        this.deduplicateLoading = false;
+                    });
+                }).catch(() => {
+                    this.$message.info('已取消操作');
+                });
+            },
+            onPublishStrategyChange() {
+                // 切换到随机发布时，自动关闭删除素材开关
+                if (this.publishStrategy === 'random') {
+                    this.deleteAfterPublish = false;
+                }
+            },
+            /**
+             * 导出未使用的UID到TXT文件
+             */
+            exportUnusedUids() {
+                if (!this.selectedFriendGroupId) {
+                    this.$message.warning('请先选择好友分组');
+                    return;
+                }
+
+                // 获取当前分组名称
+                const group = this.friendGroups.find(g => g.id === this.selectedFriendGroupId);
+                const groupName = group ? group.groupName : '未命名分组';
+
+                this.$confirm(
+                    `确定要导出「${groupName}」分组中所有未使用的UID吗？\n\n将导出为TXT文件，每行一个UID。`,
+                    '导出未使用UID',
+                    {
+                        confirmButtonText: '确定导出',
+                        cancelButtonText: '取消',
+                        type: 'info'
+                    }
+                ).then(() => {
+                    const loading = this.$loading({
+                        lock: true,
+                        text: '正在导出未使用UID...',
+                        spinner: 'el-icon-loading',
+                        background: 'rgba(0, 0, 0, 0.7)'
+                    });
+
+                    // 获取所有未使用的UID
+                    apiGet('/api/tk-group/uid/export-unused', {
+                        groupId: this.selectedFriendGroupId
+                    }).then(res => {
+                        if (res.data.code === 200) {
+                            const data = res.data.data;
+                            const uidList = data.uidList || [];
+
+                            if (uidList.length === 0) {
+                                this.$message.warning('该分组没有未使用的UID');
+                                return;
+                            }
+
+                            // 生成文件内容（每行一个UID）
+                            const content = uidList.join('\n');
+
+                            // 创建下载
+                            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+
+                            // 文件名：分组名_未使用UID_日期.txt
+                            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                            link.download = `${groupName}_未使用UID_${dateStr}.txt`;
+
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            URL.revokeObjectURL(url);
+
+                            this.$message.success(`成功导出 ${uidList.length} 个未使用UID`);
+                        } else {
+                            this.$message.error(res.data.msg || '导出失败');
+                        }
+                    }).catch(() => {
+                        this.$message.error('导出失败，请重试');
+                    }).finally(() => {
+                        loading.close();
+                    });
+                }).catch(() => {
+                    this.$message.info('已取消导出');
+                });
+            },
+            getUserRoleName(roles) {
+                if (!roles || roles.length === 0) return '普通用户';
+                if (Array.isArray(roles)) {
+                    if (typeof roles[0] === 'string') {
+                        if (roles.includes('admin')) return '超级管理员';
+                        if (roles.includes('agent')) return '代理商';
+                        return roles[0] || '普通用户';
+                    }
+                    const adminRole = roles.find(r => r.roleKey === 'admin' || r.roleName === '超级管理员');
+                    if (adminRole) return '超级管理员';
+                    const agentRole = roles.find(r => r.roleKey === 'agent' || r.roleName === '代理商');
+                    if (agentRole) return '代理商';
+                    return roles[0]?.roleName || '普通用户';
+                }
+                return '普通用户';
+            },
+            loadUserInfo() {
+                const cachedUserInfo = localStorage.getItem('userInfo');
+                if (cachedUserInfo) {
+                    try {
+                        const userInfo = JSON.parse(cachedUserInfo);
+                        if (userInfo.user) {
+                            this.userName = userInfo.user.nickName || userInfo.user.userName || '管理员';
+                            this.userRole = this.getUserRoleName(userInfo.roles);
+                            this.userAvatar = userInfo.user.avatar || '';
+                            this.userId = userInfo.user.userId;
+                        }
+                    } catch (e) {
+                        console.error('解析用户缓存失败:', e);
+                    }
+                }
+            },
+            handleLogout() {
+                try {
+                    apiPost('/api/user/logout');
+                } catch (error) {
+                    console.error('退出接口调用失败:', error);
+                } finally {
+                    clearToken();
+                    this.$message.success('已退出登录');
+                    setTimeout(() => {
+                        window.location.href = '/page/index';
+                    }, 1000);
+                }
+            },
+            handleProfile() {
+                this.$message.info('个人中心功能开发中');
+            },
+            handlePersonalSettings() {
+                this.$message.info('个人设置功能开发中');
+            },
+            handleUserCommand(command) {
+                switch (command) {
+                    case 'profile':
+                        this.handleProfile();
+                        break;
+                    case 'settings':
+                        this.handlePersonalSettings();
+                        break;
+                    case 'logout':
+                        this.$confirm('确定要退出登录吗？', '提示', {
+                            type: 'warning',
+                            confirmButtonText: '确定退出',
+                            cancelButtonText: '取消'
+                        }).then(() => {
+                            this.handleLogout();
+                        }).catch(() => {});
+                        break;
+                    default:
+                        this.$message.info('功能开发中');
+                }
+            },
+            navigateTo(url) {
+                const baseUrl = window.location.origin;  // 获取当前域名+端口
+                window.location.href = baseUrl + '/page/' + url;
+            },
+            handleNavSelect(idx) {
+                if (idx !== 'publish') this.navigateTo(idx);
+            },
+            formatDate(d) {
+                if (!d) return '-';
+                try {
+                    return new Date(d).toLocaleString();
+                } catch (e) {
+                    return d;
+                }
+            },
+            formatSimpleDate(d) {
+                if (!d) return '-';
+                try {
+                    let date = new Date(d);
+                    return `${date.getMonth() + 1}-${date.getDate()}`;
+                } catch (e) {
+                    return d;
+                }
+            },
+            getStatusText(s) {
+                const m = {1: '待执行', 2: '执行中', 3: '已完成', 4: '已停止', 5: '失败'};
+                return m[s] || '未知';
+            },
+            getChannelText(c) {
+                const m = {1: 'TikTok Studio', 2: 'CapCut', 3: '比特浏览器'};
+                return m[c] || '未知';
+            },
+            getChannelClass(c) {
+                const m = {1: 'tiktokstudio', 2: 'capcut', 3: 'bitbrowser'};
+                return m[c] || '';
+            },
+            getMessageChannelText(c) {
+                const m = {1: 'API群发', 2: 'WebSocket群发', 3: '比特浏览器'};
+                return m[c] || '未知';
+            },
+            getMessageChannelClass(c) {
+                const m = {1: 'api', 2: 'websocket', 3: 'bitbrowser'};
+                return m[c] || '';
+            },
+            getSendTargetText(t) {
+                const m = {1: '新好友', 2: '未回复好友', 3: '导入好友', 4: '固定对象'};
+                return m[t] || '-';
+            },
+            getProgressStatus(s) {
+                if (s === 2) return '';
+                if (s === 3) return 'success';
+                return 'exception';
+            },
+            getItemStatusText(s) {
+                const m = {0: '待发送', 1: '发送中', 2: '完成', 3: '失败'};
+                return m[s] || '未知';
+            },
+            getItemStatusType(s) {
+                const m = {0: 'info', 1: 'warning', 2: 'success', 3: 'danger'};
+                return m[s] || 'info';
+            },
+            getVideoItemStatusText(s) {
+                const m = {0: '待发布', 1: '发布中', 2: '成功', 3: '失败'};
+                return m[s] || '未知';
+            },
+            getVideoItemStatusType(s) {
+                const m = {0: 'info', 1: 'warning', 2: 'success', 3: 'danger'};
+                return m[s] || 'info';
+            },
+            calculateStatusStats(tasks) {
+                const stats = {};
+                tasks.forEach(task => {
+                    const status = task.status || 0;
+                    stats[status] = (stats[status] || 0) + 1;
+                });
+                [1, 2, 3, 4, 5].forEach(s => {
+                    if (!stats[s]) stats[s] = 0;
+                });
+                this.videoStatusStats = stats;
+            },
+            previewVideoPath(videoPath) {
+                if (!videoPath) {
+                    this.$message.warning('无视频路径');
+                    return;
+                }
+                const loading = this.$loading({
+                    lock: true,
+                    text: '正在加载视频...',
+                    spinner: 'el-icon-loading'
+                });
+                const encodedPath = encodeURIComponent(videoPath);
+                apiGet(`/api/system/video/base64?path=${encodedPath}`).then(res => {
+                    if (res.data.code === 200) {
+                        this.previewVideoUrl = res.data.data;
+                        this.videoPreviewDialog = true;
+                    } else {
+                        this.$message.error('加载视频失败');
+                    }
+                }).finally(() => {
+                    loading.close();
+                });
+            },
+            loadVideoTasks() {
+                this.videoLoading = true;
+                const params = {page: this.videoPage, size: this.videoSize, taskType: 1};
+                if (this.searchKeyword) params.taskName = this.searchKeyword;
+                if (this.activeStatus) params.status = this.activeStatus;
+                apiGet('/api/task/list', params).then(res => {
+                    if (res.data.code === 200) {
+                        const data = res.data.data;
+                        this.videoTasks = data.records || [];
+                        this.videoTotal = data.total || 0;
+                        this.calculateStatusStats(data.records || []);
+                    }
+                }).catch(() => {
+                    this.$message.error('加载视频任务失败');
+                }).finally(() => {
+                    this.videoLoading = false;
+                });
+            },
+            loadMessageTasks() {
+                this.messageLoading = true;
+                const params = {page: this.messagePage, size: this.messageSize, taskType: 2};
+                if (this.searchKeyword) params.taskName = this.searchKeyword;
+                if (this.activeStatus) params.status = this.activeStatus;
+                apiGet('/api/task/list', params).then(res => {
+                    if (res.data.code === 200) {
+                        const data = res.data.data;
+                        this.messageTasks = data.records || [];
+                        this.messageTotal = data.total || 0;
+                    }
+                }).catch(() => {
+                    this.$message.error('加载群发任务失败');
+                }).finally(() => {
+                    this.messageLoading = false;
+                });
+            },
+            loadVideoItems(taskId) {
+                this.videoItemLoading = true;
+                const params = {
+                    page: this.videoItemPage,
+                    size: this.videoItemSize,
+                    taskId: taskId,
+                    status: this.videoItemStatusFilter
+                };
+                apiGet('/api/task/video-item/list', params).then(res => {
+                    if (res.data.code === 200) {
+                        const data = res.data.data;
+                        this.videoItems = (data.records || []).map(item => ({
+                            ...item,
+                            location: item.location || '',
+                            shop: item.shop || ''
+                        }));
+                        this.videoItemTotal = data.total || 0;
+                    }
+                }).catch(() => {
+                    this.$message.error('加载队列失败');
+                }).finally(() => {
+                    this.videoItemLoading = false;
+                });
+            },
+            viewVideoTaskDetail(task) {
+                this.currentVideoTask = task;
+                this.videoItemPage = 1;
+                this.selectedVideoItems = [];
+                this.batchLocation = '';
+                this.batchShop = '';
+                this.videoItemStatusFilter = '';
+                this.videoDetailDialog = true;
+                this.loadVideoItems(task.id);
+            },
+            refreshVideoItems() {
+                if (this.currentVideoTask) this.loadVideoItems(this.currentVideoTask.id);
+            },
+            videoItemSizeChange(v) {
+                this.videoItemSize = v;
+                this.videoItemPage = 1;
+                if (this.currentVideoTask) this.loadVideoItems(this.currentVideoTask.id);
+            },
+            videoItemCurrentChange(v) {
+                this.videoItemPage = v;
+                if (this.currentVideoTask) this.loadVideoItems(this.currentVideoTask.id);
+            },
+            handleVideoItemSelectionChange(val) {
+                this.selectedVideoItems = val;
+            },
+            clearBatchSelection() {
+                this.selectedVideoItems = [];
+                if (this.$refs.videoItemTable) this.$refs.videoItemTable.clearSelection();
+            },
+            updateVideoItemField(row, field) {
+                const data = {id: row.id, [field]: row[field]};
+                apiPost('/api/task/video-item/update', data).then(res => {
+                    if (res.data.code === 200) this.$message.success('更新成功');
+                    else this.$message.error(res.data.msg);
+                }).catch(() => {
+                    this.$message.error('更新失败');
+                });
+            },
+            batchUpdateVideoItems() {
+                if (this.selectedVideoItems.length === 0) return this.$message.warning('请先选择视频');
+                const ids = this.selectedVideoItems.map(item => item.id);
+                const data = {ids: ids, location: this.batchLocation, shop: this.batchShop};
+                this.batchUpdateLoading = true;
+                apiPost('/api/task/video-item/batch-update', data).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success(`成功更新 ${this.selectedVideoItems.length} 个视频`);
+                        this.refreshVideoItems();
+                        this.clearBatchSelection();
+                    } else this.$message.error(res.data.msg);
+                }).finally(() => {
+                    this.batchUpdateLoading = false;
+                });
+            },
+            batchRePublish() {
+                if (this.selectedVideoItems.length === 0) {
+                    this.$message.warning('请先选择需要重新发布的视频');
+                    return;
+                }
+                const validItems = this.selectedVideoItems.filter(item =>
+                    item.status === 3 || item.status === 0
+                );
+                if (validItems.length === 0) {
+                    this.$message.warning('选中的视频中没有可重新发布的（仅支持状态为"失败"或"待发布"的视频）');
+                    return;
+                }
+                this.$confirm(
+                    `确定要重新发布选中的 ${validItems.length} 个视频吗？\n（仅重新发布状态为"失败"或"待发布"的视频）`,
+                    '批量重新发布',
+                    {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }
+                ).then(() => {
+                    this.batchRePublishLoading = true;
+                    const ids = validItems.map(item => item.id);
+                    const taskId = this.currentVideoTask ? this.currentVideoTask.id : null;
+                    if (!taskId) {
+                        this.$message.error('任务ID不存在');
+                        this.batchRePublishLoading = false;
+                        return;
+                    }
+                    apiPost('/api/task/video-item/batch-republish', {
+                        ids: ids,
+                        taskId: taskId
+                    }).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success(`成功发起 ${validItems.length} 个视频的重新发布`);
+                            this.refreshVideoItems();
+                            this.clearBatchSelection();
+                        } else {
+                            this.$message.error(res.data.msg || '批量重新发布失败');
+                        }
+                    }).catch(() => {
+                        this.$message.error('批量重新发布失败');
+                    }).finally(() => {
+                        this.batchRePublishLoading = false;
+                    });
+                }).catch(() => {
+                    this.$message.info('已取消操作');
+                });
+            },
+            loadMessageItems(taskId) {
+                if (!taskId) return;
+                this.messageItemLoading = true;
+                const params = {
+                    page: this.messageItemPage,
+                    size: this.messageItemSize,
+                    taskId: taskId
+                };
+
+                // 添加状态筛选
+                if (this.messageItemStatusFilter !== '' && this.messageItemStatusFilter !== null) {
+                    params.status = this.messageItemStatusFilter;
+                }
+
+                // 添加排序参数
+                if (this.messageItemSortField) {
+                    params.sortField = this.messageItemSortField;
+                    params.sortOrder = this.messageItemSortOrder || 'descending';
+                }
+
+                apiGet('/api/task/message-item/list', params).then(res => {
+                    if (res.data.code === 200) {
+                        const data = res.data.data;
+                        this.messageItems = data.records || [];
+                        this.messageItemTotal = data.total || 0;
+
+                        // ✅ 解析 msg 并更新统计
+                        // msg 格式: "失败数/成功数/总发送数"，如 "6/0/145"
+                        if (res.data.msg) {
+                            const parts = res.data.msg.split('/');
+                            if (parts.length === 3) {
+                                this.messageStats = {
+                                    failTotal: parseInt(parts[0]) || 0,
+                                    successTotal: parseInt(parts[1]) || 0,
+                                    totalSend: parseInt(parts[2]) || 0
+                                };
+                            } else {
+                                // 如果格式不匹配，重置统计
+                                this.messageStats = { failTotal: 0, successTotal: 0, totalSend: 0 };
+                            }
+                        }
+                    }
+                }).catch(() => {
+                    this.$message.error('加载队列失败');
+                }).finally(() => {
+                    this.messageItemLoading = false;
+                });
+            },
+            viewMessageTaskDetail(task) {
+                this.currentMessageTask = task;
+                this.messageItemPage = 1;
+                this.messageItemStatusFilter = '';        // 重置状态筛选
+                this.messageItemSortField = 'updateTime'; // 默认按更新时间
+                this.messageItemSortOrder = 'descending'; // 默认降序
+                this.messageDetailDialog = true;
+                this.loadMessageItems(task.id);
+            },
+            refreshMessageItems() {
+                if (this.currentMessageTask) {
+                    // 保持当前筛选条件刷新
+                    this.loadMessageItems(this.currentMessageTask.id);
+                }
+            },
+            messageItemSizeChange(v) {
+                this.messageItemSize = v;
+                this.messageItemPage = 1;
+                if (this.currentMessageTask) this.loadMessageItems(this.currentMessageTask.id);
+            },
+            messageItemCurrentChange(v) {
+                this.messageItemPage = v;
+                if (this.currentMessageTask) this.loadMessageItems(this.currentMessageTask.id);
+            },
+            refreshCurrentTab() {
+                if (this.activeTab === 'video') this.loadVideoTasks();
+                else this.loadMessageTasks();
+                this.$message.success('刷新成功');
+            },
+            handleSearchClear() {
+                this.searchKeyword = '';
+                this.resetAndReload();
+            },
+            handleSearch() {
+                this.resetAndReload();
+            },
+            filterByStatus(s) {
+                this.activeStatus = s;
+                this.resetAndReload();
+            },
+            clearFilter() {
+                this.searchKeyword = '';
+                this.activeStatus = '';
+                this.resetAndReload();
+            },
+            resetAndReload() {
+                this.videoPage = 1;
+                this.messagePage = 1;
+                this.loadVideoTasks();
+                this.loadMessageTasks();
+            },
+            handleTabChange() {
+                this.refreshCurrentTab();
+            },
+            videoSizeChange(v) {
+                this.videoSize = v;
+                this.videoPage = 1;
+                this.loadVideoTasks();
+            },
+            videoCurrentChange(v) {
+                this.videoPage = v;
+                this.loadVideoTasks();
+            },
+            messageSizeChange(v) {
+                this.messageSize = v;
+                this.messagePage = 1;
+                this.loadMessageTasks();
+            },
+            messageCurrentChange(v) {
+                this.messagePage = v;
+                this.loadMessageTasks();
+            },
+            startTask(t) {
+                const taskTypeName = t.taskType === 1 ? '视频发布任务' : '群发消息任务';
+                let message = `确定要启动「${t.taskName}」吗？\n\n任务类型：${taskTypeName}\n任务ID：${t.id}`;
+                if (t.totalCount) message += `\n总数量：${t.totalCount}`;
+                message += `\n\n启动后任务将立即开始执行。`;
+                this.$confirm(message, '确认启动任务', {
+                    confirmButtonText: '确定启动',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    apiPost(`/api/task/start/${t.id}`).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success(`任务「${t.taskName}」已启动`);
+                            this.refreshCurrentTab();
+                        } else {
+                            this.$message.error(res.data.msg || '启动失败');
+                        }
+                    }).catch(() => {
+                        this.$message.error('启动失败');
+                    });
+                }).catch(() => {
+                    this.$message.info('已取消启动');
+                });
+            },
+            stopTask(t) {
+                this.$confirm(`确定要停止任务「${t.taskName}」吗？`, '确认停止', {
+                    confirmButtonText: '确定停止',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    apiPost(`/api/task/stop/${t.id}`).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('任务已停止');
+                            this.refreshCurrentTab();
+                        } else {
+                            this.$message.error(res.data.msg || '停止失败');
+                        }
+                    }).catch(() => {
+                        this.$message.error('停止失败');
+                    });
+                }).catch(() => {
+                    this.$message.info('已取消停止');
+                });
+            },
+            startMsgTask(t) { this.startTask(t); },
+            stopMsgTask(t) { this.stopTask(t); },
+            deleteTask(t) {
+                this.$confirm(`确定要删除任务「${t.taskName}」吗？删除后无法恢复！`, '确认删除', {
+                    confirmButtonText: '确定删除',
+                    cancelButtonText: '取消',
+                    type: 'error'
+                }).then(() => {
+                    apiDelete(`/api/task/delete/${t.id}`).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('删除成功');
+                            this.refreshCurrentTab();
+                        } else {
+                            this.$message.error(res.data.msg || '删除失败');
+                        }
+                    }).catch(() => {
+                        this.$message.error('删除失败');
+                    });
+                }).catch(() => {
+                    this.$message.info('已取消删除');
+                });
+            },
+            openCreateTaskDialog() {
+                this.loadUidGroup();
+                this.createTaskDialog = true;
+                this.activeStep = 0;
+                this.deleteAfterPublish = false;  // 新增重置
+                this.taskForm = {
+                    pushChannel: null,
+                    name: '',
+                    threads: 3,
+                    mentionEnabled: false,
+                    friendGroupId: null,
+                    mentionCount: 1,
+                    fixedMentions: '',  // 新增
+                    isTiming: false,
+                    specificDateTime: null,
+                    remark: '',
+                    saveTraffic: {1: false, 2: false, 3: false}
+                };
+                this.selectedGroups = [];
+                this.selectedAccounts = [];
+                this.materialPath = '';
+            },
+            openCreateMassTaskDialog() {
+                this.loadUidGroup();
+                this.createMassTaskDialog = true;
+                this.massActiveStep = 0;
+                this.massSelectedGroups = [];
+                this.massSelectedAccounts = [];
+                this.massMessageContent = '';
+                this.massTaskForm = {
+                    name: '',
+                    pushChannel: 1,
+                    sendToType: '1',
+                    friendGroupId: '',
+                    threads: 5,
+                    retryCount: 3,
+                    sendInterval: 5,
+                    isTiming: false,
+                    specificDateTime: null,
+                    sendCountPerAccount: 1,
+                    remark: '',
+                    saveTraffic: { 1: false, 2: false, 3: false },
+                    syncBeforeSend: false,
+                    syncMsgBeforeSend: false,
+                    fixedTargets: ''  // 新增
+                };
+                this.accountGroups = [];
+                this.loadUidGroup();
+            },
+            openFriendImportDialog() {
+                this.friendImportDialog = true;
+                this.loadUidGroup();
+                this.$nextTick(() => {
+                    if (this.friendGroups.length) this.selectFriendGroup(this.friendGroups[0].id);
+                });
+            },
+            loadVideoAccountGroup() {
+                const pushChannel = this.taskForm.pushChannel || 1;
+                return apiGet(window.API_BASE_URL + '/tiktok/group/accountVideoGroupTask/' + pushChannel)
+                    .then(res => {
+                        if (res.data.code === 200) {
+                            this.accountGroups = res.data.data;
+                        } else {
+                            this.$message.error(res.data.msg || '加载分组失败');
+                        }
+                    })
+                    .catch(() => {
+                        this.$message.error('加载分组失败');
+                        throw new Error('加载分组失败');
+                    });
+            },
+            loadUidGroup() {
+                apiGet("/api/tk-group/uidGroup").then(res => {
+                    if (res.data.code === 200) this.friendGroups = res.data.data;
+                }).catch(() => this.$message.error('加载好友分组失败'));
+            },
+            getGroupAccountCount(id) {
+                let g = this.accountGroups.find(x => x.id === id);
+                return g ? (g.accounts ? g.accounts.length : 0) : 0;
+            },
+            nextGetAccountGroups() {
+                const loading = this.$loading({
+                    lock: true,
+                    text: '正在加载账号分组...',
+                    spinner: 'el-icon-loading',
+                    background: 'rgba(0, 0, 0, 0.7)'
+                });
+                this.loadVideoAccountGroup().finally(() => {
+                    loading.close();
+                    this.activeStep = 1;
+                });
+            },
+            selectAllGroups() {
+                this.selectedGroups = this.accountGroups.filter(g => g.accounts?.length > 0).map(g => g.id);
+            },
+            invertGroupSelection() {
+                let all = this.accountGroups.filter(g => g.accounts?.length > 0).map(g => g.id);
+                this.selectedGroups = all.filter(id => !this.selectedGroups.includes(id));
+            },
+            clearGroupSelection() {
+                this.selectedGroups = [];
+            },
+            selectAllAccounts() {
+                let ids = [];
+                this.filteredAccountGroups.forEach(g => {
+                    ids.push(...g.accounts.map(a => a.id));
+                });
+                this.selectedAccounts = ids;
+            },
+            invertAccountSelection() {
+                let all = [];
+                this.filteredAccountGroups.forEach(g => {
+                    all.push(...g.accounts.map(a => a.id));
+                });
+                this.selectedAccounts = all.filter(id => !this.selectedAccounts.includes(id));
+            },
+            clearAccountSelection() {
+                this.selectedAccounts = [];
+            },
+            toggleGroupAccounts(gid) {
+                let g = this.accountGroups.find(x => x.id === gid);
+                if (!g) return;
+                let ids = g.accounts.map(a => a.id);
+                let all = ids.every(id => this.selectedAccounts.includes(id));
+                if (all) this.selectedAccounts = this.selectedAccounts.filter(x => !ids.includes(x));
+                else this.selectedAccounts = [...new Set([...this.selectedAccounts, ...ids])];
+            },
+            invertGroupAccounts(gid) {
+                let g = this.accountGroups.find(x => x.id === gid);
+                if (!g) return;
+                g.accounts.forEach(a => {
+                    let idx = this.selectedAccounts.indexOf(a.id);
+                    if (idx > -1) {
+                        this.selectedAccounts.splice(idx, 1);
+                    } else {
+                        this.selectedAccounts.push(a.id);
+                    }
+                });
+            },
+            isGroupAllSelected(gid) {
+                let g = this.accountGroups.find(x => x.id === gid);
+                return g ? g.accounts.map(a => a.id).every(id => this.selectedAccounts.includes(id)) : false;
+            },
+            handleGroupChange() {
+                this.selectedAccounts = [];
+            },
+            browseFolder() {
+                if (!this.materialPath || this.materialPath.trim() === '') {
+                    this.$message.warning('请先选择或输入素材路径');
+                    return;
+                }
+                this.checkFolderPath(this.materialPath);
+            },
+            async checkFolderPath(folderPath) {
+                if (!folderPath || folderPath.trim() === '') {
+                    this.$message.error('请先选择素材路径');
+                    return { valid: false, message: '请先选择素材路径', videoCount: 0 };
+                }
+                this.folderSelectLoading = true;
+                try {
+                    const res = await apiPost('/api/task/check-folder', { folderPath: folderPath.trim() });
+                    if (res.data.code === 200) {
+                        const data = res.data.data;
+                        if (!data.exists) {
+                            this.$message.error(data.message || '文件夹不存在');
+                            return { valid: false, message: data.message, videoCount: 0 };
+                        }
+                        const videoCount = data.videoCount || 0;
+                        if (videoCount === 0) {
+                            this.$message.error('文件夹中没有找到视频文件');
+                            return { valid: false, message: '没有视频文件', videoCount: 0 };
+                        }
+                        this.$message.success(`文件夹检查通过，找到 ${videoCount} 个视频文件`);
+                        return { valid: true, videoCount: videoCount, videoList: data.videoList || [] };
+                    } else {
+                        this.$message.error(res.data.msg || '检查文件夹失败');
+                        return { valid: false, message: res.data.msg, videoCount: 0 };
+                    }
+                } catch (error) {
+                    console.error("检查文件夹失败:", error);
+                    this.$message.error("检查文件夹失败");
+                    return { valid: false, message: '检查失败', videoCount: 0 };
+                } finally {
+                    this.folderSelectLoading = false;
+                }
+            },
+            async goToNextStep() {
+                if (this.activeStep === 3) {
+                    if (!this.materialPath) {
+                        this.$message.warning('请先选择素材路径');
+                        return;
+                    }
+                    const checkResult = await this.checkFolderPath(this.materialPath);
+                    if (!checkResult.valid) return;
+                    const videoCount = checkResult.videoCount;
+                    const accountCount = this.selectedAccounts.length > 0 ? this.selectedAccounts.length : this.selectedGroupAccountCount;
+
+                    if (this.publishStrategy === 'random') {
+                        if (videoCount < 1) {
+                            this.$message.error('随机发布模式下，至少需要1个视频文件');
+                            return;
+                        }
+                       /* if (videoCount === 1 && accountCount > 1) {
+                            this.$confirm(`当前只有 ${videoCount} 个视频，${accountCount} 个账号将发布同一个视频，是否继续？`, '视频数量提示', {
+                                type: 'warning',
+                                confirmButtonText: '继续',
+                                cancelButtonText: '返回修改'
+                            }).then(() => { this.activeStep = 4; }).catch(() => {});
+                            return;
+                        }*/
+                    } else if (this.publishStrategy === 'deduplicate') {
+                        if (videoCount < accountCount) {
+                            this.$message.error(`去重发布模式下，视频数量(${videoCount})必须大于等于账号数量(${accountCount})`);
+                            return;
+                        }
+                    }
+                    this.activeStep = 4;
+                } else if (this.activeStep === 4) {
+                    if (this.hashtagConfig.enabled) {
+                        const validationResult = this.validateHashtagConfig();
+                        if (!validationResult.valid) {
+                            this.$message.error(validationResult.message);
+                            return;
+                        }
+                    }
+                    this.activeStep = 5;
+                } else {
+                    this.activeStep++;
+                }
+            },
+            validateHashtagConfig() {
+                if (!this.hashtagConfig.enabled) return { valid: true };
+                const content = this.hashtagConfig.content;
+                if (!content || content.trim() === '') return { valid: false, message: '请填写标签内容' };
+                const lines = content.split('\n').filter(line => line.trim());
+                const tagCount = lines.length;
+                if (tagCount === 0) return { valid: false, message: '请至少填写一个标签' };
+                const countType = this.hashtagConfig.countType;
+                if (countType === 'range') {
+                    const minCount = this.hashtagConfig.minCount || 1;
+                    const maxCount = this.hashtagConfig.maxCount || 1;
+                    if (minCount > maxCount) return { valid: false, message: '最小标签数量不能大于最大标签数量' };
+                    if (minCount > tagCount) return { valid: false, message: `最少需要 ${minCount} 个标签，当前只有 ${tagCount} 个` };
+                    if (maxCount > tagCount) return { valid: false, message: `最多只能设置 ${tagCount} 个标签，但您设置了最大 ${maxCount} 个` };
+                } else if (countType === 'fixed') {
+                    const fixedCount = this.hashtagConfig.fixedCount || 1;
+                    if (fixedCount > tagCount) return { valid: false, message: `每个视频需要 ${fixedCount} 个标签，但当前只有 ${tagCount} 行` };
+                }
+                return { valid: true };
+            },
+            async confirmCreateTask() {
+                if (!this.taskForm.name) { this.$message.warning('任务名必填'); return; }
+                if (!this.taskForm.pushChannel) { this.$message.warning('选择发布入口'); return; }
+                if (!this.selectedGroups.length && !this.selectedAccounts.length) { this.$message.warning('选择分组或账号'); return; }
+                if (!this.materialPath) { this.$message.warning('请选择素材路径'); return; }
+                if (this.hashtagConfig.enabled) {
+                    const validationResult = this.validateHashtagConfig();
+                    if (!validationResult.valid) {
+                        this.$message.error(validationResult.message);
+                        this.activeStep = 4;
+                        return;
+                    }
+                }
+                this.createTaskLoading = true;
+                try {
+                    const checkResult = await this.checkFolderPath(this.materialPath);
+                    if (!checkResult.valid) { this.createTaskLoading = false; return; }
+                    const videoCount = checkResult.videoCount;
+                    const accountCount = this.selectedAccounts.length > 0 ? this.selectedAccounts.length : this.selectedGroupAccountCount;
+
+                    if (this.publishStrategy === 'random') {
+                        if (videoCount < 1) { this.$message.error('随机发布模式下，至少需要1个视频文件'); this.createTaskLoading = false; return; }
+                        if (videoCount === 1) {
+                            this.$confirm(`当前只有 ${videoCount} 个视频，所有账号将发布同一个视频，是否继续？`, '视频数量提示', {
+                                type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消'
+                            }).then(async () => { await this.doCreateTask(accountCount); }).catch(() => { this.createTaskLoading = false; });
+                            return;
+                        }
+                    } else if (this.publishStrategy === 'deduplicate') {
+                        if (videoCount < accountCount) { this.$message.error(`去重发布模式下，视频数量(${videoCount})必须大于等于账号数量(${accountCount})`); this.createTaskLoading = false; return; }
+                    }
+                    await this.doCreateTask(accountCount);
+                } catch (error) {
+                    console.error("验证失败:", error);
+                    this.$message.error("验证失败");
+                    this.createTaskLoading = false;
+                }
+            },
+            async doCreateTask(accountCount) {
+                const saveTrafficEnabled = this.taskForm.saveTraffic[this.taskForm.pushChannel] || false;
+                const saveTrafficValue = saveTrafficEnabled ? 1 : 0;
+                const params = {
+                    taskType: 1,
+                    pushChannel: this.taskForm.pushChannel,
+                    taskName: this.taskForm.name,
+                    selectedGroups: this.selectedGroups,
+                    selectedAccounts: this.selectedAccounts,
+                    materialPath: this.materialPath,
+                    publishStrategy: this.publishStrategy,
+                    captionEnabled: this.captionConfig.enabled,
+                    captionContent: this.captionConfig.content,
+                    hashtagEnabled: this.hashtagConfig.enabled,
+                    hashtagContent: this.hashtagConfig.content,
+                    hashtagCountType: this.hashtagConfig.countType,
+                    deleteAfterPublish: this.deleteAfterPublish,  // 新增
+                    hashtagMinCount: this.hashtagConfig.minCount,
+                    hashtagMaxCount: this.hashtagConfig.maxCount,
+                    hashtagFixedCount: this.hashtagConfig.fixedCount,
+                    mentionEnabled: this.taskForm.mentionEnabled,
+                    friendGroupId: this.taskForm.friendGroupId,
+                    mentionCount: this.taskForm.mentionCount,
+                    fixedMentions: this.taskForm.fixedMentions || '',  // 新增
+
+                    threads: this.taskForm.threads,
+                    isTiming: this.taskForm.isTiming,
+                    specificDateTime: this.taskForm.isTiming ? this.taskForm.specificDateTime : null,
+                    remark: this.taskForm.remark,
+                    saveTraffic: saveTrafficValue
+                };
+                try {
+                    const res = await apiPost('/api/task/video/create', params);
+                    if (res.data.code === 200) {
+                        this.$message.success('创建成功');
+                        this.createTaskDialog = false;
+                        this.refreshCurrentTab();
+                    } else {
+                        this.$message.error(res.data.msg || '创建失败');
+                    }
+                } catch (error) {
+                    console.error("创建任务失败:", error);
+                    this.$message.error("创建任务失败");
+                } finally {
+                    this.createTaskLoading = false;
+                }
+            },
+            addDefaultCaption() { this.captionConfig.content = "Amazing video!\nCheck this!"; },
+            clearCaption() { this.captionConfig.content = ""; },
+            addDefaultHashtag() { this.hashtagConfig.content = "fyp\nviral\ntiktok"; },
+            clearHashtag() { this.hashtagConfig.content = ""; },
+            massHandleGroupChange() {
+                let c = 0;
+                this.massSelectedGroups.forEach(gid => {
+                    let g = this.accountGroups.find(x => x.id === gid);
+                    if (g) c += g.accounts.length;
+                });
+                this.massSelectedGroupAccountCount = c;
+                this.massSelectedAccounts = [];
+            },
+            massSelectAllAccounts() {
+                let arr = [];
+                this.massFilteredAccountGroups.forEach(g => arr.push(...g.accounts.map(a => a.id)));
+                this.massSelectedAccounts = arr;
+            },
+            massInvertAccountSelection() {
+                let arr = [];
+                this.massFilteredAccountGroups.forEach(g => arr.push(...g.accounts.map(a => a.id)));
+                this.massSelectedAccounts = arr.filter(id => !this.massSelectedAccounts.includes(id));
+            },
+            massLoadAccountGroups() {
+                if (this.massTaskForm.pushChannel === 3) {
+                    this.$message.warning('比特浏览器群发功能正在开发中，敬请期待。。。');
+                    return;
+                }
+                const loading = this.$loading({
+                    lock: true,
+                    text: '正在加载账号分组...',
+                    spinner: 'el-icon-loading',
+                    background: 'rgba(0, 0, 0, 0.7)'
+                });
+                this.loadVideoAccountGroup().finally(() => {
+                    loading.close();
+                    this.massActiveStep = 1;
+                });
+            },
+            massClearAccountSelection() {
+                this.massSelectedAccounts = [];
+            },
+            massToggleGroupAccounts(gid) {
+                let g = this.accountGroups.find(x => x.id === gid);
+                if (!g) return;
+                let ids = g.accounts.map(a => a.id);
+                let all = ids.every(id => this.massSelectedAccounts.includes(id));
+                if (all) this.massSelectedAccounts = this.massSelectedAccounts.filter(x => !ids.includes(x));
+                else this.massSelectedAccounts = [...new Set([...this.massSelectedAccounts, ...ids])];
+            },
+            massInvertGroupAccounts(gid) {
+                let g = this.accountGroups.find(x => x.id === gid);
+                if (!g) return;
+                g.accounts.forEach(a => {
+                    let idx = this.massSelectedAccounts.indexOf(a.id);
+                    if (idx > -1) {
+                        this.massSelectedAccounts.splice(idx, 1);
+                    } else {
+                        this.massSelectedAccounts.push(a.id);
+                    }
+                });
+            },
+            massIsGroupAllSelected(gid) {
+                let g = this.accountGroups.find(x => x.id === gid);
+                return g ? g.accounts.map(a => a.id).every(id => this.massSelectedAccounts.includes(id)) : false;
+            },
+            massHandleMessageInput() {
+                this.massMessageLineCount = this.massMessageContent.split('\n').filter(l => l.trim()).length;
+            },
+            submitMassTask() {
+                if (!this.massTaskForm.name) return this.$message.warning('任务名称必填');
+                if (!this.massSelectedAccounts.length) return this.$message.warning('选择账号');
+                if (!this.massMessageContent) return this.$message.warning('消息内容');
+
+                const saveTrafficEnabled = this.massTaskForm.saveTraffic[this.massTaskForm.pushChannel] || false;
+                const saveTrafficValue = saveTrafficEnabled ? 1 : 0;
+
+                const req = {
+                    taskType: 2,
+                    pushChannel: this.massTaskForm.pushChannel,
+                    taskName: this.massTaskForm.name,
+                    threads: this.massTaskForm.threads,
+                    selectedAccounts: this.massSelectedAccounts,
+                    sendTargetType: parseInt(this.massTaskForm.sendToType),
+                    friendGroupId: this.massTaskForm.friendGroupId || null,
+                    messageContent: this.massMessageContent,
+                    sendInterval: this.massTaskForm.sendInterval,
+                    retryCount: this.massTaskForm.retryCount,
+                    isTiming: this.massTaskForm.isTiming,
+                    specificDateTime: this.massTaskForm.isTiming ? this.massTaskForm.specificDateTime : null,
+                    remark: this.massTaskForm.remark,
+                    sendCountPerAccount: this.massTaskForm.sendCountPerAccount,
+                    saveTraffic: saveTrafficValue,
+                    syncBeforeSend: this.massTaskForm.syncBeforeSend,
+                    syncMsgBeforeSend: this.massTaskForm.syncMsgBeforeSend,
+                    fixedTargets: this.massTaskForm.fixedTargets || ''  // 新增
+                };
+                this.massSubmitLoading = true;  // 开始加载
+
+                apiPost('/api/task/mass/create', req)
+                    .then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('群发任务创建成功');
+                            this.createMassTaskDialog = false;
+                            this.refreshCurrentTab();
+                        } else {
+                            this.$message.error(res.data.msg || '创建失败');
+                        }
+                    })
+                    .catch(() => {
+                        this.$message.error('创建失败');
+                    })
+                    .finally(() => {
+                        this.massSubmitLoading = false;  // 结束加载
+                    });
+            },
+            selectFriendGroup(id) {
+                this.selectedFriendGroupId = id;
+                this.friendCurrentPage = 1;
+                this.loadFriendList();
+            },
+            loadFriendList() {
+                if (!this.selectedFriendGroupId) return;
+                this.friendTableLoading = true;
+                apiGet('/api/task/uid/list', {
+                    page: this.friendCurrentPage,
+                    size: this.friendPageSize,
+                    groupId: this.selectedFriendGroupId,
+                    status: this.uidSearchForm.status,
+                    search: this.uidSearchForm.search
+                }).then(res => {
+                    if (res.data.code === 200) {
+                        this.paginatedFriends = res.data.data.records || [];
+                        this.friendTotalCount = res.data.data.total;
+                    }
+                }).finally(() => {
+                    this.friendTableLoading = false;
+                });
+            },
+            friendHandleSizeChange(s) { this.friendPageSize = s; this.loadFriendList(); },
+            friendHandleCurrentChange(p) { this.friendCurrentPage = p; this.loadFriendList(); },
+            deleteFriend(id) {
+                this.$confirm('删除此UID?', '提示').then(() => {
+                    apiDelete(`/api/task/uid/delete/com.tt.ck:app-sdk:jar:1.0.0`).then(() => {
+                        this.$message.success('删除成功');
+                        this.loadFriendList();
+                    }).catch(() => this.$message.error('删除失败'));
+                });
+            },
+            openUidImportDialog() {
+                if (!this.selectedFriendGroupId) return;
+                this.uidImportForm = {file: null, groupId: this.selectedFriendGroupId, deleteType: 'unused'};
+                this.uidImportDialog = true;
+            },
+            handleUidFileChange(file) { this.uidImportForm.file = file.raw; },
+            submitUidImport() {
+                if (!this.uidImportForm.file) return;
+                const fd = new FormData();
+                fd.append('file', this.uidImportForm.file);
+                fd.append('groupId', this.uidImportForm.groupId);
+                this.uidImportLoading = true;
+
+                const token = getToken();
+                axios.post('/api/task/uid/import', fd, {
+                    headers: { 'Content-Type': 'multipart/form-data', 'Authorization': 'Bearer ' + (token || '') }
+                }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('导入成功');
+                        this.uidImportDialog = false;
+                        this.loadFriendList();
+                        this.loadUidStats();
+                    } else {
+                        this.$message.error(res.data.msg || '导入失败');
+                    }
+                }).catch(() => this.$message.error('导入失败')).finally(() => {
+                    this.uidImportLoading = false;
+                });
+            },
+            loadUidStats() {
+                if (!this.selectedFriendGroupId) return;
+                apiGet(`/api/task/uid/stats/${this.selectedFriendGroupId}`).then(res => {
+                    if (res.data.code === 200) this.currentUidStats = res.data.data;
+                }).catch(() => console.error('加载统计失败'));
+            },
+            viewAccount(accountId) {
+                if (!accountId) {
+                    this.$message.warning('账号ID不存在');
+                    return;
+                }
+                apiGet(`/api/tk-account/detail/${accountId}`).then(res => {
+                    if (res.data.code === 200) {
+                        const account = res.data.data;
+                        if (account.tkUser) {
+                            apiGet(`/api/tk-account/gotoTk/${account.tkUser}`).then(() => {
+                                this.$message.success('正在打开浏览器');
+                            }).catch(() => this.$message.error('打开浏览器失败'));
+                        } else {
+                            this.$message.warning('该账号无用户名');
+                        }
+                    } else {
+                        this.$message.error('获取账号信息失败');
+                    }
+                }).catch(() => this.$message.error('获取账号信息失败'));
+            },
+            openUidStatsDialog() { this.loadUidStats(); this.uidStatsDialog = true; },
+            deleteUidByGroup(type) {
+                this.$confirm('确认操作?', '提示').then(() => {
+                    apiDelete(`/api/task/uid/delete-by-group/${this.selectedFriendGroupId}`, {data: {deleteType: type}}).then(() => {
+                        this.$message.success('操作成功');
+                        this.loadFriendList();
+                        this.loadUidStats();
+                    }).catch(() => this.$message.error('操作失败'));
+                });
+            },
+            deleteCurrentGroupFriends() { this.deleteUidByGroup('all'); },
+            getFriendStatsText() {
+                if (this.currentUidStats) return `总计:${this.currentUidStats.total} 已使用:${this.currentUidStats.used} 未使用:${this.currentUidStats.unused}`;
+                return '暂无统计数据，点击统计获取最新数据';
+            },
+            addFriendGroup() {
+                this.friendGroupForm = {id: '', name: ''};
+                this.editFriendGroupDialog = true;
+            },
+            editFriendGroup(g) {
+                this.friendGroupForm = {id: g.id, name: g.groupName};
+                this.editFriendGroupDialog = true;
+            },
+            saveFriendGroup() {
+                if (!this.friendGroupForm.name) return;
+                if (!this.friendGroupForm.id) {
+                    apiPost("/api/tk-group/add", {groupName: this.friendGroupForm.name, groupType: 9}).then(() => {
+                        this.loadUidGroup();
+                        this.editFriendGroupDialog = false;
+                    }).catch(() => this.$message.error('保存失败'));
+                } else {
+                    apiPut("/api/tk-group/update", {id: this.friendGroupForm.id, groupName: this.friendGroupForm.name, groupType: 9}).then(() => {
+                        this.loadUidGroup();
+                        this.editFriendGroupDialog = false;
+                    }).catch(() => this.$message.error('保存失败'));
+                }
+            },
+            deleteFriendGroup(id) {
+                this.$confirm('删除分组将清空所有UID', '危险', {type: 'error'}).then(() => {
+                    apiDelete(`/api/tk-group/delete/com.tt.ck:app-sdk:jar:1.0.0`).then(() => {
+                        this.loadUidGroup();
+                        if (this.selectedFriendGroupId === id) this.selectedFriendGroupId = null;
+                    }).catch(() => this.$message.error('删除失败'));
+                });
+            },
+            massSelectAllGroups() {
+                this.massSelectedGroups = this.accountGroups.filter(g => g.accounts?.length > 0).map(g => g.id);
+                this.massHandleGroupChange();
+            },
+            massInvertGroupSelection() {
+                let all = this.accountGroups.filter(g => g.accounts?.length > 0).map(g => g.id);
+                this.massSelectedGroups = all.filter(id => !this.massSelectedGroups.includes(id));
+                this.massHandleGroupChange();
+            },
+            massClearGroupSelection() {
+                this.massSelectedGroups = [];
+                this.massHandleGroupChange();
+            }
+        }
+    });
+</script>
+</body>
+</html>

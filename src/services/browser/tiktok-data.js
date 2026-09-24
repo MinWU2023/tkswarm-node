@@ -1,6 +1,8 @@
 const { chromium } = require('playwright-core');
 const { BitBrowserProvider } = require('./bit-browser-provider');
-const { db } = require('../../db');
+const dataStore = require('../data-store');
+const phpApi = require('../php-api');
+const { isHeadless } = require('./headless');
 
 function numberFromText(value) {
   const text = String(value || '').replace(/,/g, '').trim().toUpperCase();
@@ -18,18 +20,27 @@ function extractStat(text, labels) {
   return null;
 }
 
+async function loadAccount(accountId) {
+  const bundle = await dataStore.getAccountBundle(accountId);
+  if (!bundle) throw new Error('账号不存在');
+  return {
+    id: bundle.id,
+    username: bundle.username,
+    browser_profile_id: bundle.browser_profile_id,
+  };
+}
+
 async function syncProfile(accountId) {
-  const account = db.prepare('SELECT id, username, browser_profile_id FROM accounts WHERE id=?').get(accountId);
-  if (!account) throw new Error('账号不存在');
+  const account = await loadAccount(accountId);
   if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
   const provider = new BitBrowserProvider();
   let browser;
   try {
-    const opened = await provider.open(account.browser_profile_id);
+    const opened = await provider.open(account.browser_profile_id, { headless: isHeadless('profile') });
     if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
     browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
     const context = browser.contexts()[0];
-    const page = context.pages().find(item => /tiktok\.com/i.test(item.url())) || context.pages()[0] || await context.newPage();
+    const page = context.pages().find((item) => /tiktok\.com/i.test(item.url())) || context.pages()[0] || await context.newPage();
     const url = `https://www.tiktok.com/@${encodeURIComponent(account.username)}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(2500);
@@ -52,20 +63,28 @@ async function syncProfile(accountId) {
     profile.displayName = title.replace(/\s*\|\s*TikTok.*$/i, '').trim() || account.username;
     const avatar = await page.locator('img').first().getAttribute('src').catch(() => '');
     profile.avatarUrl = avatar || '';
-    db.prepare(`INSERT INTO tiktok_stat_snapshots(account_id,followers_count,following_count,likes_count,videos_count)
-      VALUES (?,?,?,?,?)`).run(account.id, profile.followersCount, profile.followingCount, profile.likesCount, profile.videosCount);
-    db.prepare(`INSERT INTO tiktok_profiles
-      (account_id,handle,display_name,bio,avatar_url,followers_count,following_count,likes_count,videos_count,verified,source_url,last_synced_at,sync_status,sync_error,updated_at)
-      VALUES (@accountId,@handle,@displayName,@bio,@avatarUrl,@followersCount,@followingCount,@likesCount,@videosCount,@verified,@sourceUrl,CURRENT_TIMESTAMP,'success','',CURRENT_TIMESTAMP)
-      ON CONFLICT(account_id) DO UPDATE SET handle=@handle,display_name=@displayName,bio=@bio,avatar_url=@avatarUrl,
-      followers_count=@followersCount,following_count=@followingCount,likes_count=@likesCount,videos_count=@videosCount,
-      verified=@verified,source_url=@sourceUrl,last_synced_at=CURRENT_TIMESTAMP,sync_status='success',sync_error='',updated_at=CURRENT_TIMESTAMP`).run(profile);
+
+    await dataStore.tiktokSync(account.id, {
+      profile: {
+        handle: profile.handle,
+        displayName: profile.displayName,
+        bio: profile.bio,
+        avatarUrl: profile.avatarUrl,
+        followers: profile.followersCount || 0,
+        following: profile.followingCount || 0,
+        likes: profile.likesCount || 0,
+        videos: profile.videosCount || 0,
+      },
+      stats: {
+        followers: profile.followersCount || 0,
+        following: profile.followingCount || 0,
+        likes: profile.likesCount || 0,
+        videos: profile.videosCount || 0,
+      },
+    });
     return profile;
   } catch (error) {
-    db.prepare(`INSERT INTO tiktok_profiles(account_id,sync_status,sync_error,last_synced_at)
-      VALUES (?, 'failed', ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(account_id) DO UPDATE SET sync_status='failed',sync_error=?,last_synced_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP`)
-      .run(account.id, error.message, error.message);
+    await dataStore.tiktokSync(account.id, { error: error.message }).catch(() => {});
     throw error;
   } finally {
     if (browser) await browser.close().catch(() => {});
@@ -74,31 +93,28 @@ async function syncProfile(accountId) {
 }
 
 async function syncVideos(accountId, limit = 100) {
-  const account = db.prepare('SELECT id, username, browser_profile_id FROM accounts WHERE id=?').get(accountId);
-  if (!account) throw new Error('账号不存在');
+  const account = await loadAccount(accountId);
   if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
   const provider = new BitBrowserProvider();
   let browser;
   try {
-    const opened = await provider.open(account.browser_profile_id);
+    const opened = await provider.open(account.browser_profile_id, { headless: isHeadless('sync') });
     if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
     browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
     const context = browser.contexts()[0];
-    const page = context.pages().find(item => /tiktok\.com/i.test(item.url())) || context.pages()[0] || await context.newPage();
+    const page = context.pages().find((item) => /tiktok\.com/i.test(item.url())) || context.pages()[0] || await context.newPage();
     await page.goto(`https://www.tiktok.com/@${encodeURIComponent(account.username)}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(2500);
-    const links = await page.locator(`a[href*="/@${account.username}/video/"]`).evaluateAll((els, max) => els.slice(0, max).map(el => ({
+    const links = await page.locator(`a[href*="/@${account.username}/video/"]`).evaluateAll((els, max) => els.slice(0, max).map((el) => ({
       url: el.href, text: (el.innerText || el.getAttribute('aria-label') || '').trim(),
       image: el.querySelector('img')?.src || '',
     })), Math.min(100, Math.max(1, Number(limit) || 100)));
-    const items = links.map(item => {
+    const items = links.map((item) => {
       const match = item.url.match(/\/video\/(\d+)/);
       return match ? { videoId: match[1], videoUrl: item.url, description: item.text.slice(0, 1000), thumbnailUrl: item.image } : null;
     }).filter(Boolean);
-    const upsert = db.prepare(`INSERT INTO tiktok_videos(account_id,video_id,video_url,description,thumbnail_url,last_synced_at)
-      VALUES (@accountId,@videoId,@videoUrl,@description,@thumbnailUrl,CURRENT_TIMESTAMP)
-      ON CONFLICT(account_id,video_id) DO UPDATE SET video_url=@videoUrl,description=@description,thumbnail_url=@thumbnailUrl,last_synced_at=CURRENT_TIMESTAMP`);
-    db.transaction(() => items.forEach(item => upsert.run({ accountId: account.id, ...item })) )();
+
+    await dataStore.tiktokSync(account.id, { videos: items });
     return { accountId: account.id, count: items.length, items };
   } finally {
     if (browser) await browser.close().catch(() => {});
@@ -106,16 +122,30 @@ async function syncVideos(accountId, limit = 100) {
   }
 }
 
-function getProfile(accountId) {
-  return db.prepare('SELECT * FROM tiktok_profiles WHERE account_id=?').get(accountId) || null;
+async function getProfile(accountId) {
+  try {
+    return await phpApi.get(`/accounts/${accountId}/tiktok-profile`);
+  } catch {
+    return null;
+  }
 }
 
-function getVideos(accountId) {
-  return db.prepare('SELECT * FROM tiktok_videos WHERE account_id=? ORDER BY last_synced_at DESC, id DESC').all(accountId);
+async function getVideos(accountId) {
+  try {
+    const data = await phpApi.get(`/accounts/${accountId}/tiktok-videos`);
+    return Array.isArray(data) ? data : (data?.items || []);
+  } catch {
+    return [];
+  }
 }
 
-function getStats(accountId) {
-  return db.prepare('SELECT * FROM tiktok_stat_snapshots WHERE account_id=? ORDER BY captured_at DESC LIMIT 30').all(accountId);
+async function getStats(accountId) {
+  try {
+    const data = await phpApi.get(`/accounts/${accountId}/tiktok-stats`);
+    return Array.isArray(data) ? data : (data?.items || []);
+  } catch {
+    return [];
+  }
 }
 
 module.exports = { syncProfile, getProfile, syncVideos, getVideos, getStats };

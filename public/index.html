@@ -3,34 +3,85 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0f172a">
-  <title>TkSwarm Rebuild</title>
-  <link rel="stylesheet" href="/styles.css">
+  <meta name="theme-color" content="#ffffff">
+  <title>TKSwarm</title>
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <link rel="shortcut icon" href="/images/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/images/favicon.svg">
+  <link rel="stylesheet" href="/styles.css?v=5.4">
+  <link rel="stylesheet" href="/ui.css?v=5.0">
+  <link rel="stylesheet" href="/theme-tech.css?v=5.3">
+  <link rel="stylesheet" href="/theme-ep.css?v=5.3">
+  <script src="/config.js?v=6.0"></script>
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">T</span><div><b>TkSwarm</b><small>REBUILD</small></div></div>
-      <nav id="nav">
-        <button class="active" data-view="dashboard">◫ <span>控制台</span></button>
-        <button data-view="accounts">◎ <span>账号管理</span></button>
-        <button data-view="proxies">⇄ <span>代理管理</span></button>
-        <button data-view="browser">◉ <span>浏览器环境</span></button>
-        <button data-view="tasks">▷ <span>任务中心</span></button>
-        <button data-view="materials">□ <span>素材库</span></button>
-        <button data-view="templates">✉ <span>消息模板</span></button>
-        <button data-view="groups">▦ <span>分组管理</span></button>
-        <button data-view="settings">⚙ <span>系统设置</span></button>
+  <div class="app-container">
+    <header class="navbar">
+      <a class="logo" href="/" title="Dyy TkSwarm"><span class="logo-mark">Dyy</span><span class="logo-name">TkSwarm</span></a>
+      <nav id="nav" class="nav-menu">
+        <button class="active" data-view="accounts">账号管理</button>
+        <button data-view="proxies">代理IP</button>
+        <button data-view="agent">AI机器人</button>
+        <button data-view="publish">AI矩阵</button>
+        <button data-view="chat">客服聊天</button>
+        <button data-view="logs">实时日志</button>
+        <button data-view="rbac">权限与系统</button>
       </nav>
-      <div class="server-state"><i></i><div><b>本地服务正常</b><small>127.0.0.1:8400</small></div></div>
-    </aside>
-    <main>
-      <header><div><h1 id="page-title">控制台</h1><p id="page-desc">查看矩阵运行概况</p></div><div class="header-actions"><span id="clock"></span><button class="ghost" onclick="app.refresh()">刷新</button></div></header>
-      <section id="content" class="content"></section>
-    </main>
+      <div class="user-info">
+        <div id="clock" class="username"></div>
+      </div>
+    </header>
+    <div class="main-container">
+      <section id="content" class="page-content"></section>
+    </div>
   </div>
-  <div id="toast" class="toast"></div>
-  <div id="modal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h2 id="modal-title"></h2><button onclick="app.closeModal()">×</button></div><form id="modal-form"><div id="modal-body"></div><div class="modal-foot"><button type="button" class="ghost" onclick="app.closeModal()">取消</button><button class="primary" type="submit">保存</button></div></form></div></div>
-  <script src="/app.js"></script>
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+  <div id="page-loading" class="page-loading hidden" role="status" aria-live="assertive">
+    <div class="loader-card">
+      <div class="ep-spinner" aria-hidden="true">
+        <svg viewBox="25 25 50 50"><circle cx="50" cy="50" r="20" fill="none" stroke-width="4"></circle></svg>
+      </div>
+      <div class="loader-text">
+        <b id="loading-title">正在处理</b>
+        <span id="loading-desc">请稍候，不要关闭页面</span>
+      </div>
+    </div>
+  </div>
+  <div id="confirm-mask" class="confirm-mask hidden" role="dialog" aria-modal="true">
+    <div class="confirm-card">
+      <div class="confirm-body">
+        <div class="confirm-icon" id="confirm-icon" aria-hidden="true"></div>
+        <div class="confirm-content">
+          <h3 id="confirm-title">请确认</h3>
+          <p id="confirm-desc"></p>
+        </div>
+      </div>
+      <div class="confirm-foot">
+        <button type="button" class="ep-btn ep-btn-default" id="confirm-cancel">取消</button>
+        <button type="button" class="ep-btn ep-btn-primary" id="confirm-ok">确定</button>
+      </div>
+    </div>
+  </div>
+  <div id="preview-mask" class="preview-mask hidden"><button type="button" class="preview-close" onclick="UI.closePreview()">关闭</button><img id="preview-image" alt="预览"></div>
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="modal-title"></h2>
+        <button type="button" class="modal-close icon-btn" onclick="app.closeModal()" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <form id="modal-form">
+        <div id="modal-body" class="modal-body"></div>
+        <div class="modal-foot">
+          <button type="button" class="ep-btn ep-btn-default" onclick="app.closeModal()">取消</button>
+          <button class="ep-btn ep-btn-primary" type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="scope-switcher" class="scope-switcher hidden" aria-live="polite"></div>
+  <script src="/ui.js?v=5.1"></script>
+  <script src="/app.js?v=7.6"></script>
 </body>
 </html>

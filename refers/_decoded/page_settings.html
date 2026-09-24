@@ -1,0 +1,2070 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>系统设置 - TKSwarm</title>
+    <!-- 本地静态资源 -->
+    <script src="/static/js/vue.js"></script>
+    <link rel="stylesheet" href="/static/css/index.css">
+    <link rel="stylesheet" href="/static/css/all.css">
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/request.js"></script>
+    <script src="/static/js/index.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #f0f2f6;
+            font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+        }
+
+        .app-wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 导航栏样式 */
+        .navbar {
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+
+        .logo {
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            margin-right: 40px;
+        }
+
+        .navbar-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        /* 软件到期时间样式 */
+        .expiry-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: rgba(255,255,255,.85);
+            font-size: 13px;
+            padding: 4px 12px;
+            border-radius: 16px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+            white-space: nowrap;
+        }
+
+        .expiry-info .expiry-icon {
+            font-size: 14px;
+        }
+
+        .expiry-info .expiry-date {
+            font-weight: 500;
+        }
+
+        .expiry-info .expiry-date.expiring-soon {
+            color: #ffd666;
+        }
+
+        .expiry-info .expiry-date.expired {
+            color: #ff7875;
+        }
+
+        .language-dropdown {
+            cursor: pointer;
+        }
+
+        .language-trigger {
+            color: rgba(255,255,255,.8);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .user-dropdown {
+            cursor: pointer;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .user-info:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #409EFF;
+            color: white;
+            font-weight: bold;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .user-details {
+            margin-left: 0;
+        }
+
+        .user-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .user-role {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* 主布局 */
+        .main-layout {
+            display: flex;
+            margin-top: 60px;
+            min-height: calc(100vh - 60px);
+        }
+
+        /* 左侧菜单 */
+        .settings-sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #e8e8e8;
+            padding: 20px 0;
+            position: fixed;
+            height: calc(100vh - 60px);
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 15px;
+            font-size: 14px;
+            color: #666;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 15px;
+        }
+
+        .settings-menu {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .settings-menu-item {
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .settings-menu-item:hover {
+            background-color: #f5f7fa;
+            color: #409EFF;
+        }
+
+        .settings-menu-item.active {
+            background-color: #ecf5ff;
+            color: #409EFF;
+            border-right: 3px solid #409EFF;
+        }
+
+        /* 右侧内容 */
+        .settings-content {
+            flex: 1;
+            margin-left: 240px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        /* 设置卡片 */
+        .settings-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e8e8e8;
+            margin-bottom: 20px;
+        }
+
+        .settings-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        /* 表单样式 */
+        .form-row {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .form-label {
+            width: 120px;
+            text-align: right;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-content {
+            flex: 1;
+        }
+
+        /* 时钟容器 */
+        .clock-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .clock-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            min-width: 180px;
+        }
+
+        .clock-time {
+            font-size: 28px;
+            font-weight: bold;
+            font-family: monospace;
+        }
+
+        .clock-country {
+            font-size: 16px;
+            margin-top: 8px;
+        }
+
+        .clock-date {
+            font-size: 12px;
+            margin-top: 5px;
+            opacity: 0.8;
+        }
+
+        /* 隐藏文件输入 */
+        .hidden-file-input {
+            display: none;
+        }
+
+        /* 状态标签 */
+        .status-active {
+            color: #67C23A;
+        }
+
+        .status-inactive {
+            color: #F56C6C;
+        }
+
+        /* 进度条 */
+        .traffic-progress {
+            margin-top: 10px;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .settings-sidebar {
+                width: 200px;
+            }
+            .settings-content {
+                margin-left: 200px;
+            }
+            .form-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .form-label {
+                width: 100%;
+                text-align: left;
+                margin-bottom: 8px;
+            }
+            .expiry-info {
+                font-size: 11px;
+                padding: 2px 8px;
+            }
+            .expiry-info .expiry-icon {
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .expiry-info .expiry-date-text {
+                display: none;
+            }
+            .expiry-info .expiry-date {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-wrapper">
+        <!-- 顶部导航栏 -->
+        <el-menu :default-active="activeNav" class="navbar" mode="horizontal" background-color="#001529" text-color="rgba(255,255,255,.8)" active-text-color="#409EFF" @select="handleNavSelect">
+            <div class="logo">TKSwarm</div>
+            <el-menu-item index="account">账号管理</el-menu-item>
+            <el-menu-item index="proxy">代理IP</el-menu-item>
+            <el-menu-item index="agent">AI机器人</el-menu-item>
+            <el-menu-item index="publish">AI矩阵</el-menu-item>
+            <el-menu-item index="chat">客服聊天</el-menu-item>
+            <el-menu-item index="settings">系统设置</el-menu-item>
+            <div class="navbar-right">
+                <!-- 软件到期时间 -->
+                <div class="expiry-info" v-if="softwareExpiry">
+                    <span class="expiry-icon">⏳</span>
+                    <span class="expiry-date-text">到期：</span>
+                    <span class="expiry-date" :class="expiryStatusClass">{{ softwareExpiry }}</span>
+                </div>
+                <el-dropdown @command="handleLanguageChange" trigger="click" class="language-dropdown">
+                    <span class="language-trigger"><i class="el-icon-global"></i> {{ currentLanguage }} <i class="el-icon-arrow-down el-icon--right"></i></span>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="zh-CN">简体中文</el-dropdown-item>
+                        <el-dropdown-item command="en-US">English</el-dropdown-item>
+                        <el-dropdown-item command="ja-JP">日本語</el-dropdown-item>
+                        <el-dropdown-item command="ko-KR">한국어</el-dropdown-item>
+                        <el-dropdown-item command="zh-TW">繁體中文</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+                <el-dropdown @command="handleUserCommand" trigger="click" class="user-dropdown">
+                    <div class="user-info">
+                        <div class="user-avatar" v-if="!userAvatar">
+                            {{ userName ? userName.charAt(0).toUpperCase() : 'U' }}
+                        </div>
+                        <div class="user-avatar" v-else>
+                            <img :src="userAvatar" :alt="userName">
+                        </div>
+                        <div class="user-details">
+                            <div class="user-name">{{ userName }}</div>
+                            <div class="user-role">{{ userRole }}</div>
+                        </div>
+                        <i class="el-icon-arrow-down el-icon--right"></i>
+                    </div>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="profile" icon="el-icon-user">个人中心</el-dropdown-item>
+                        <el-dropdown-item command="settings" icon="el-icon-setting">个人设置</el-dropdown-item>
+                        <el-dropdown-item divided command="logout" icon="el-icon-switch-button">退出登录</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </div>
+        </el-menu>
+
+        <!-- 主要内容区 -->
+        <div class="main-layout">
+            <!-- 左侧设置菜单 -->
+            <div class="settings-sidebar">
+                <div class="sidebar-header"><span>⚙️ 设置分类</span></div>
+                <div class="settings-menu">
+                    <div v-for="menu in settingsMenuItems" :key="menu.key" class="settings-menu-item" :class="{ active: activeSettingsKey === menu.key }" @click="scrollToSection(menu.key)">
+                        <i :class="menu.icon"></i><span>{{ menu.label }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧内容区 -->
+            <div class="settings-content" ref="scrollContainer">
+                <!-- 浏览器设置卡片 -->
+                <div id="section-browser" class="settings-card">
+                    <div class="settings-header">
+                        <span class="settings-title">🌐 浏览器设置</span>
+                    </div>
+                    <el-form label-width="120px">
+                        <el-form-item label="浏览器类型">
+                            <el-select v-model="browserForm.browserType" @change="onBrowserTypeChange" style="width: 200px;">
+                                <el-option label="比特浏览器" value="bit"></el-option>
+                                <el-option :disabled="true" label="AdsPower正在开发中..." value="adspower"></el-option>
+                                <el-option :disabled="true" label="MoreLogin正在开发中..." value="morelogin"></el-option>
+                                <el-option :disabled="true" label="TgeBrowser正在开发中..." value="tgebrowser"></el-option>
+                            </el-select>
+                            <el-button type="primary" size="small" @click="downloadCurrentBrowser" style="margin-left: 10px;">下载{{ currentBrowserLabel }}</el-button>
+                        </el-form-item>
+                        <el-form-item label="API密钥">
+                            <el-input v-model="browserForm.apiKey" :disabled="true" placeholder="请输入API密钥" style="width: 300px;"></el-input>
+                            <el-button type="text" @click="testBrowserConnection" style="margin-left: 10px;">测试连接</el-button>
+                        </el-form-item>
+                        <el-form-item label="浏览器服务器">
+                            <el-input-number v-model="browserForm.browserServer" :min="1" :max="10" style="width: 120px;"></el-input-number>
+                            <span style="color: #999; margin-left: 10px;">(1-10，建议3)</span>
+                        </el-form-item>
+                        <el-form-item label="远程地址">
+                            <el-input v-model="browserForm.remoteAddress" placeholder="请输入远程地址" style="width: 300px;"></el-input>
+                            <el-button type="text" @click="openRemoteConfigDialog">远程配置</el-button>
+                        </el-form-item>
+                        <el-form-item label="保存配置">
+                            <el-radio-group v-model="browserForm.saveConfig">
+                                <el-radio label="always">每次保存</el-radio>
+                                <el-radio label="onExit">退出时保存</el-radio>
+                                <el-radio label="never">从不保存</el-radio>
+                            </el-radio-group>
+                        </el-form-item>
+                        <el-form-item label="清除缓存">
+                            <el-switch v-model="browserForm.clearCache"></el-switch>
+                            <span style="color: #999; margin-left: 10px;">关闭浏览器时自动清除缓存</span>
+                        </el-form-item>
+                        <el-form-item label="缓存路径">
+                            <el-input v-model="browserForm.cachePath" placeholder="请选择缓存路径" style="width: 400px;" readonly></el-input>
+                            <el-button type="primary" size="small" @click="selectFolder">选择文件夹</el-button>
+                        </el-form-item>
+                        <el-form-item label="语言设置">
+                            <el-radio-group v-model="browserForm.languageMode">
+                                <el-radio label="auto">自动</el-radio>
+                                <el-radio label="custom">自定义</el-radio>
+                            </el-radio-group>
+                            <el-select v-if="browserForm.languageMode === 'custom'" v-model="browserForm.customLanguage" style="width: 150px; margin-left: 10px;">
+                                <el-option label="中文" value="zh-CN"></el-option>
+                                <el-option label="英文" value="en-US"></el-option>
+                                <el-option label="日语" value="ja-JP"></el-option>
+                                <el-option label="韩语" value="ko-KR"></el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="无头模式">
+                            <el-select v-model="browserForm.headlessMode" multiple collapse-tags placeholder="选择无头模式" style="width: 350px;">
+                                <el-option label="扫码登录" value="scan"></el-option>
+                                <el-option label="浏览器私信" value="message"></el-option>
+                                <el-option label="CapCut授权" value="capcut"></el-option>
+                                <el-option label="TikTok登录" value="login"></el-option>
+                                <el-option label="TikTok修改资料" value="profile"></el-option>
+                                <el-option label="TikTok发布视频" value="publish"></el-option>
+                            </el-select>
+                            <span style="color: #999; margin-left: 10px; font-size: 12px;">选择需要运行无头模式的功能</span>
+                        </el-form-item>
+                        <el-form-item label="内存节省">
+                            <el-switch v-model="browserForm.memorySaving"></el-switch>
+                            <span style="color: #999; margin-left: 10px;">开启后减少内存占用</span>
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" @click="saveBrowserSettings">保存设置</el-button>
+                            <el-button type="danger" @click="deleteBrowser">删除浏览器</el-button>
+                        </el-form-item>
+                    </el-form>
+                </div>
+
+
+                <!-- 数据库配置卡片 -->
+             <!--   <div id="section-database" class="settings-card">
+                    <div class="settings-header">
+                        <span class="settings-title">🗄️ 数据库配置管理</span>
+                        <el-tag :type="databaseStatus === 'connected' ? 'success' : 'danger'" size="small">
+                            {{ databaseStatus === 'connected' ? '● 已连接' : '● 未连接' }}
+                        </el-tag>
+                    </div>
+
+                    <el-form label-width="120px">
+                        &lt;!&ndash; 当前数据库类型 &ndash;&gt;
+                        <el-form-item label="当前数据库">
+                            <el-tag :type="currentDbType === 'mysql' ? 'primary' : 'warning'" size="medium">
+                                {{ currentDbType === 'mysql' ? 'MySQL' : 'SQLite' }}
+                            </el-tag>
+                            <span style="margin-left: 10px; color: #909399; font-size: 13px;">
+                {{ currentDbType === 'mysql' ? '生产环境推荐' : '默认轻量数据库' }}
+            </span>
+                        </el-form-item>
+
+                        &lt;!&ndash; 数据库切换 &ndash;&gt;
+                        <el-form-item label="切换数据库">
+                            <el-radio-group v-model="dbSwitchForm.dbType" @change="onDbTypeChange">
+                                <el-radio label="sqlite">
+                                    SQLite
+                                    <el-tag size="mini" type="info" style="margin-left: 5px;">轻量</el-tag>
+                                </el-radio>
+                                <el-radio label="mysql">
+                                    MySQL
+                                    <el-tag size="mini" type="success" style="margin-left: 5px;">高性能</el-tag>
+                                </el-radio>
+                            </el-radio-group>
+                            <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+                                <i class="el-icon-info"></i> 切换后需要重启应用才能生效
+                            </div>
+                        </el-form-item>
+
+                        &lt;!&ndash; MySQL 配置（仅当选择 MySQL 时显示） &ndash;&gt;
+                        <div v-if="dbSwitchForm.dbType === 'mysql'" style="border: 1px solid #e8e8e8; border-radius: 8px; padding: 16px; margin-bottom: 20px; background: #fafbfc;">
+                            <h4 style="margin-bottom: 15px; color: #409EFF;">
+                                <i class="el-icon-edit"></i> MySQL 连接配置
+                            </h4>
+
+                            <el-form-item label="主机地址">
+                                <el-input v-model="dbSwitchForm.mysqlHost" placeholder="localhost 或 IP地址" style="width: 300px;"></el-input>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">默认: localhost</span>
+                            </el-form-item>
+
+                            <el-form-item label="端口">
+                                <el-input-number v-model="dbSwitchForm.mysqlPort" :min="1" :max="65535" style="width: 150px;"></el-input-number>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">默认: 3306</span>
+                            </el-form-item>
+
+                            <el-form-item label="数据库名">
+                                <el-input v-model="dbSwitchForm.mysqlDatabase" placeholder="数据库名称" style="width: 300px;"></el-input>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">默认: tkswarm</span>
+                            </el-form-item>
+
+                            <el-form-item label="用户名">
+                                <el-input v-model="dbSwitchForm.mysqlUsername" placeholder="数据库用户名" style="width: 300px;"></el-input>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">默认: root</span>
+                            </el-form-item>
+
+                            <el-form-item label="密码">
+                                <el-input v-model="dbSwitchForm.mysqlPassword" type="password" placeholder="数据库密码" style="width: 300px;" show-password></el-input>
+                            </el-form-item>
+
+                            <el-form-item label="连接参数">
+                                <el-input v-model="dbSwitchForm.mysqlParams" placeholder="额外连接参数" style="width: 400px;"></el-input>
+                                <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+                                    例如: useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+                                </div>
+                            </el-form-item>
+                        </div>
+
+                        &lt;!&ndash; 连接池配置 &ndash;&gt;
+                        <div style="border: 1px solid #e8e8e8; border-radius: 8px; padding: 16px; margin-bottom: 20px; background: #fafbfc;">
+                            <h4 style="margin-bottom: 15px; color: #67c23a;">
+                                <i class="el-icon-s-data"></i> 连接池配置
+                            </h4>
+
+                            <el-form-item label="最大连接数">
+                                <el-input-number v-model="dbSwitchForm.maxPoolSize" :min="5" :max="200" style="width: 150px;"></el-input-number>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">建议: 50-100</span>
+                            </el-form-item>
+
+                            <el-form-item label="最小空闲连接">
+                                <el-input-number v-model="dbSwitchForm.minIdle" :min="1" :max="50" style="width: 150px;"></el-input-number>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">建议: 10-20</span>
+                            </el-form-item>
+
+                            <el-form-item label="连接超时(ms)">
+                                <el-input-number v-model="dbSwitchForm.connectionTimeout" :min="1000" :max="120000" :step="1000" style="width: 150px;"></el-input-number>
+                                <span style="color: #999; margin-left: 10px; font-size: 12px;">默认: 30000ms</span>
+                            </el-form-item>
+                        </div>
+
+                        &lt;!&ndash; 操作按钮 &ndash;&gt;
+                        <el-form-item>
+                            <el-button type="primary" @click="saveDatabaseConfig" :loading="dbSaving">
+                                <i class="el-icon-check"></i> 保存配置
+                            </el-button>
+                            <el-button type="success" @click="testDatabaseConnection" :loading="dbTesting">
+                                <i class="el-icon-connection"></i> 测试连接
+                            </el-button>
+                            <el-button type="warning" @click="resetDatabaseConfig">
+                                <i class="el-icon-refresh"></i> 重置
+                            </el-button>
+                            <el-button type="danger" @click="switchDatabaseNow" :loading="dbSwitching">
+                                <i class="el-icon-switch-button"></i> 立即切换
+                            </el-button>
+                        </el-form-item>
+
+                        &lt;!&ndash; 状态信息 &ndash;&gt;
+                        <div v-if="dbStatusMessage" style="margin-top: 10px; padding: 12px; border-radius: 8px; background: #f5f7fa;">
+                            <div :style="{ color: dbStatusType === 'success' ? '#67c23a' : '#f56c6c' }">
+                                <i :class="dbStatusType === 'success' ? 'el-icon-success' : 'el-icon-error'"></i>
+                                {{ dbStatusMessage }}
+                            </div>
+                        </div>
+                    </el-form>
+                </div>-->
+                <!-- 服务激活与管理卡片 -->
+                <div id="section-activation" class="settings-card">
+                    <div class="settings-header">
+                        <span class="settings-title">⚡ 服务激活与管理</span>
+                    </div>
+
+                    <!-- 软件激活 -->
+                    <div style="margin-bottom: 30px;">
+                        <h4 style="margin-bottom: 15px;">📦 软件套餐信息</h4>
+                        <el-form label-width="100px">
+                            <el-form-item label="套餐状态">
+            <span :class="expiryStatusClass === 'expired' ? 'status-inactive' : 'status-active'">
+                {{ expiryStatusClass === 'expired' ? '已过期' : '有效' }}
+            </span>
+                            </el-form-item>
+                            <el-form-item label="到期时间">
+            <span :class="expiryStatusClass === 'expired' ? 'expired' : (expiryStatusClass === 'expiring-soon' ? 'expiring-soon' : '')"
+                  style="font-weight: 500; font-size: 15px;">
+                {{ softwareExpiry }}
+            </span>
+                                <span v-if="expiryStatusClass === 'expiring-soon'" style="margin-left: 10px; color: #e6a23c; font-size: 13px;">
+                ⚠️ 即将到期，请及时续费
+            </span>
+                                <span v-if="expiryStatusClass === 'expired'" style="margin-left: 10px; color: #f56c6c; font-size: 13px;">
+                ⚠️ 已过期，请续费以继续使用
+            </span>
+                            </el-form-item>
+                            <el-form-item label="剩余天数">
+            <span style="font-weight: 600; color: #409EFF; font-size: 16px;">
+                {{ remainingDays }}
+            </span>
+                                <span style="color: #999; margin-left: 5px;">天</span>
+                            </el-form-item>
+                            <el-form-item label="端口数量">
+                                <span>无限端口</span>
+                                <span style="color: #999; margin-left: 10px; font-size: 13px;">（不限制端口数）</span>
+                            </el-form-item>
+                            <el-form-item label="软件版本">
+                                <span>V105</span>
+                                <el-button type="text" @click="openSoftwareTutorial" style="margin-left: 10px;">查看使用教程</el-button>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" plain icon="el-icon-refresh" @click="loadSoftwareExpiry">刷新状态</el-button>
+                                <el-button type="warning" plain icon="el-icon-shopping-cart-2" @click="handleSoftwareRecharge">立即续费</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+
+                    <!-- AI翻译激活 -->
+                    <div style="margin-bottom: 30px; border-top: 1px solid #e8e8e8; padding-top: 20px;">
+                        <h4 style="margin-bottom: 15px;">AI翻译激活</h4>
+                        <el-form label-width="100px">
+                            <el-form-item label="使用统计">
+                                <div style="display: flex; align-items: center; gap: 15px; background: #f5f7fa; padding: 12px 20px; border-radius: 12px; max-width: 500px;">
+                                    <i class="el-icon-data-line" style="color: #409EFF; font-size: 20px;"></i>
+                                    <div style="flex: 1;">
+                                        <el-progress
+                                                :percentage="translationQuota.total > 0 ? (translationQuota.used / translationQuota.total) * 100 : 0"
+                                                :color="translationQuota.total > 0 && (translationQuota.used / translationQuota.total) * 100 > 80 ? '#f56c6c' : '#67c23a'"
+                                                :stroke-width="10"
+                                                :show-text="false">
+                                        </el-progress>
+                                    </div>
+                                    <span style="font-size: 14px; font-weight: 500; color: #606266; min-width: 120px;">
+            {{ translationQuota.used }} / {{ translationQuota.total }} 字符
+        </span>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+                                    剩余次数: {{ translationQuota.remain }} 字符
+                                    <el-button
+                                            v-if="translationQuota.total > 0 && (translationQuota.used / translationQuota.total) * 100 > 80"
+                                            type="danger"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleTranslationRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                    <el-button
+                                            v-else
+                                            type="primary"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleTranslationRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                </div>
+                            </el-form-item>
+                            <el-form-item label="我的语言">
+                                <el-select
+                                        v-model="translationForm.selectedLanguage"
+                                        placeholder="选择目标语言"
+                                        filterable
+                                        style="width: 200px;"
+                                        @change="(val) => saveTranslationLanguage(val)">
+                                    <el-option v-for="lang in filteredLanguageOptions" :key="lang.language" :label="lang.name" :value="lang.language">
+                                    </el-option>
+                                </el-select>
+                                <el-button type="text" @click="refreshTranslationQuota" style="margin-left: 10px;">刷新余额</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+
+                    <!-- 代理IP激活 -->
+                   <!-- <div style="margin-bottom: 30px; border-top: 1px solid #e8e8e8; padding-top: 20px;">
+                        <h4 style="margin-bottom: 15px;">代理IP激活</h4>
+                        <el-form label-width="100px">
+                            <el-form-item label="流量统计">
+                                <div style="display: flex; align-items: center; gap: 15px; background: #f5f7fa; padding: 12px 20px; border-radius: 12px; max-width: 500px;">
+                                    <i class="el-icon-data-line" style="color: #409EFF; font-size: 20px;"></i>
+                                    <div style="flex: 1;">
+                                        <el-progress
+                                                :percentage="proxyTraffic.percent"
+                                                :color="proxyTraffic.percent > 80 ? '#f56c6c' : '#67c23a'"
+                                                :stroke-width="10"
+                                                :show-text="false">
+                                        </el-progress>
+                                    </div>
+                                    <span style="font-size: 14px; font-weight: 500; color: #606266; min-width: 140px;">
+                    {{ proxyTraffic.used.toFixed(2) }} / {{ proxyTraffic.total.toFixed(2) }} GB
+                </span>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+                                    剩余流量: {{ proxyTraffic.remain.toFixed(2) }} GB
+                                    <el-button
+                                            v-if="proxyTraffic.percent > 80 || proxyTraffic.total === 0"
+                                            type="danger"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleProxyRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                    <el-button
+                                            v-else
+                                            type="primary"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleProxyRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                </div>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="text" @click="openProxyDocs">代理使用说明</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>-->
+
+                    <!-- AI Token激活（新风格） -->
+                    <div style="border-top: 1px solid #e8e8e8; padding-top: 20px;">
+                        <h4 style="margin-bottom: 15px;">🤖 AI Token激活</h4>
+                        <el-form label-width="100px">
+                            <el-form-item label="Token统计">
+                                <div style="display: flex; align-items: center; gap: 15px; background: #f5f7fa; padding: 12px 20px; border-radius: 12px; max-width: 500px;">
+                                    <i class="el-icon-coin" style="color: #409EFF; font-size: 20px;"></i>
+                                    <div style="flex: 1;">
+                                        <el-progress
+                                                :percentage="aiTokenPercent"
+                                                :color="aiTokenPercent > 80 ? '#f56c6c' : '#67c23a'"
+                                                :stroke-width="10"
+                                                :show-text="false">
+                                        </el-progress>
+                                    </div>
+                                    <span style="font-size: 14px; font-weight: 500; color: #606266; min-width: 140px;">
+                    {{ aiToken.used }} / {{ aiToken.total }} Token
+                </span>
+                                    <el-button type="text" size="mini" @click="refreshAiToken" title="刷新余额" style="padding: 0 5px;">
+                                        <i class="el-icon-refresh" style="font-size: 16px; color: #409EFF;"></i>
+                                    </el-button>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+                                    剩余Token: {{ aiToken.remain }}
+                                    <span style="margin-left: 15px;">模型: {{ aiToken.model || 'GPT-4o-mini' }}</span>
+                                    <el-button
+                                            v-if="aiToken.total > 0 && aiTokenPercent > 80"
+                                            type="danger"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleAiTokenRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                    <el-button
+                                            v-else
+                                            type="primary"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleAiTokenRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                </div>
+                            </el-form-item>
+                           <!-- <el-form-item label="激活码">
+                                <el-input v-model="aiTokenForm.activationCode" placeholder="请输入AI Token激活码" style="width: 300px;"></el-input>
+                                <el-button type="primary" @click="activateAiToken" :loading="aiActivating" style="margin-left: 10px;">充值</el-button>
+                            </el-form-item>-->
+                            <el-form-item>
+                                <el-button type="text" @click="openAiDocs">AI使用说明</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+
+                    <!-- IP更换次卡激活 -->
+                    <div style="border-top: 1px solid #e8e8e8; padding-top: 20px;">
+                        <h4 style="margin-bottom: 15px;">🔄 IP更换次卡</h4>
+                        <el-form label-width="100px">
+                            <el-form-item label="使用统计">
+                                <div style="display: flex; align-items: center; gap: 15px; background: #f5f7fa; padding: 12px 20px; border-radius: 12px; max-width: 500px;">
+                                    <i class="el-icon-refresh" style="color: #409EFF; font-size: 20px;"></i>
+                                    <div style="flex: 1;">
+                                        <el-progress
+                                                :percentage="ipChangeCardPercent"
+                                                :color="ipChangeCardPercent > 80 ? '#f56c6c' : '#67c23a'"
+                                                :stroke-width="10"
+                                                :show-text="false">
+                                        </el-progress>
+                                    </div>
+                                    <span style="font-size: 14px; font-weight: 500; color: #606266; min-width: 120px;">
+                    {{ ipChangeCard.used }} / {{ ipChangeCard.total }} 次
+                </span>
+                                    <el-button type="text" size="mini" @click="refreshIpChangeCard" title="刷新余额" style="padding: 0 5px;">
+                                        <i class="el-icon-refresh" style="font-size: 16px; color: #409EFF;"></i>
+                                    </el-button>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+                                    剩余次数: {{ ipChangeCard.remain }} 次
+                                    <el-button
+                                            v-if="ipChangeCard.total > 0 && ipChangeCardPercent > 80"
+                                            type="danger"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleIpChangeCardRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                    <el-button
+                                            v-else
+                                            type="primary"
+                                            size="mini"
+                                            plain
+                                            icon="el-icon-shopping-cart-2"
+                                            @click="handleIpChangeCardRecharge"
+                                            style="margin-left: 10px; border-radius: 20px;">
+                                        充值
+                                    </el-button>
+                                </div>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="text" @click="openIpChangeCardDocs">使用说明</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+                </div>
+
+                <!-- 消息设置卡片 -->
+                <div id="section-message" class="settings-card">
+                    <div class="settings-header">
+                        <span class="settings-title">💬 消息设置</span>
+                    </div>
+                    <el-form label-width="140px">
+                        <el-form-item label="私信同步">
+                            <el-switch v-model="messageSettings.privateMessageSync" @change="handlePrivateMessageSyncChange"></el-switch>
+                            <span style="color: #999; margin-left: 10px;">开启后自动同步私信，防止最新消息丢失</span>
+                        </el-form-item>
+                        <el-form-item label="私信同步间隔" v-if="messageSettings.privateMessageSync">
+                            <el-input-number v-model="messageSettings.privateMessageInterval" :min="1" :max="60" style="width: 120px;"></el-input-number>
+                            <span style="margin-left: 10px;">分钟</span>
+                        </el-form-item>
+                        <el-form-item label="私信模式">
+                            <el-radio-group v-model="messageSettings.privateMode">
+                                <el-radio  :disabled="true" label="browser">浏览器模式</el-radio>
+                                <el-radio label="api">API模式</el-radio>
+                            </el-radio-group>
+                        </el-form-item>
+                        <el-form-item label="通知同步">
+                            <el-switch v-model="messageSettings.notificationSync" @change="handleNotificationSyncChange"></el-switch>
+                            <span style="color: #999; margin-left: 10px;">开启后同步系统通知</span>
+                        </el-form-item>
+                        <el-form-item label="通知间隔" v-if="messageSettings.notificationSync">
+                            <el-input-number v-model="messageSettings.notificationInterval" :min="1" :max="60" style="width: 120px;"></el-input-number>
+                            <span style="margin-left: 10px;">分钟</span>
+                        </el-form-item>
+                        <el-form-item label="提示音">
+                            <el-select v-model="messageSettings.notificationSound" style="width: 150px;">
+                                <el-option label="无" value="none"></el-option>
+                                <el-option label="铃声" value="chime"></el-option>
+                                <el-option label="轻柔" value="soft"></el-option>
+                                <el-option label="消息" value="message"></el-option>
+                                <el-option label="紧急" value="urgent"></el-option>
+                            </el-select>
+                            <el-button type="text" @click="testSound">试听</el-button>
+                        </el-form-item>
+                        <el-form-item label="翻译模式">
+                            <el-radio-group v-model="messageSettings.translateMode" @change="handleTranslateModeChange">
+                                <el-radio label="normal">普通接口翻译</el-radio>
+                                <el-radio label="ai">AI智能翻译（更智能精准）</el-radio>
+                            </el-radio-group>
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" @click="saveMessageSettings">保存设置</el-button>
+                            <el-button @click="resetMessageSettings">重置</el-button>
+                        </el-form-item>
+                    </el-form>
+                </div>
+
+                <!-- 各国时钟卡片 -->
+                <div id="section-clock" class="settings-card">
+                    <div class="settings-header">
+                        <span class="settings-title">🕒 各国时钟</span>
+                        <el-button type="text" @click="addClockDialog = true">+ 添加时钟</el-button>
+                    </div>
+                    <div class="clock-container">
+                        <div class="clock-card" v-for="clock in clocks" :key="clock.country + clock.timezone">
+                            <div class="clock-time">{{ clock.time }}</div>
+                            <div class="clock-country">{{ clock.country }}</div>
+                            <div class="clock-date">{{ clock.date }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加时钟对话框 -->
+    <el-dialog title="添加时钟" :visible.sync="addClockDialog" width="400px" append-to-body>
+        <el-form :model="clockForm" label-width="80px">
+            <el-form-item label="国家">
+                <el-select v-model="clockForm.country" placeholder="选择国家" filterable style="width:100%">
+                    <el-option v-for="c in countryOptions" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="时区">
+                <el-select v-model="clockForm.timezone" placeholder="选择时区" style="width:100%">
+                    <el-option v-for="tz in timezoneOptions" :key="tz.value" :label="tz.label" :value="tz.value"></el-option>
+                </el-select>
+            </el-form-item>
+        </el-form>
+        <span slot="footer">
+            <el-button @click="addClockDialog=false">取消</el-button>
+            <el-button type="primary" @click="addClock">确定</el-button>
+        </span>
+    </el-dialog>
+
+    <input type="file" id="folderInput" class="hidden-file-input" webkitdirectory directory multiple @change="onFolderSelected">
+</div>
+
+<script>
+    // 语言选项
+    const languageOptions = [
+        {"code": "zh-CN", "nation": "中国"},
+        {"code": "en-US", "nation": "美国"},
+        {"code": "ja-JP", "nation": "日本"},
+        {"code": "ko-KR", "nation": "韩国"},
+        {"code": "de-DE", "nation": "德国"},
+        {"code": "fr-FR", "nation": "法国"}
+    ];
+
+    new Vue({
+        el: '#app',
+        data() {
+            return {
+                activeNav: 'settings',
+                activeSettingsKey: 'browser',
+                // 在 settingsMenuItems 中添加
+                settingsMenuItems: [
+                    { key: 'browser', label: '浏览器设置', icon: 'el-icon-setting' },
+                    { key: 'database', label: '数据库配置', icon: 'el-icon-connection' },  // 新增
+                    { key: 'activation', label: '服务激活', icon: 'el-icon-key' },
+                    { key: 'message', label: '消息设置', icon: 'el-icon-chat-dot-round' },
+                    { key: 'clock', label: '多国时钟', icon: 'el-icon-time' }
+                ],
+                // 数据库配置
+                currentDbType: 'sqlite',
+                databaseStatus: 'connected',
+                dbSaving: false,
+                dbTesting: false,
+                dbSwitching: false,
+                dbStatusMessage: '',
+                dbStatusType: 'success',
+                dbSwitchForm: {
+                    dbType: 'sqlite',
+                    mysqlHost: 'localhost',
+                    mysqlPort: 3306,
+                    mysqlDatabase: 'tkswarm',
+                    mysqlUsername: 'root',
+                    mysqlPassword: '',
+                    mysqlParams: 'useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8',
+                    maxPoolSize: 50,
+                    minIdle: 10,
+                    connectionTimeout: 30000
+                },
+                // 用户信息
+                userName: '加载中...',
+                userRole: '普通用户',
+                userAvatar: '',
+                userId: null,
+                userEmail: '',
+                userPhone: '',
+                // 软件到期时间
+                softwareExpiry: '加载中...',
+                // 代理相关
+                proxyForm: { activationCode: '' },
+                proxyTraffic: { used: 0, total: 0, remain: 0, percent: 0 },
+                proxyInfo: { currentNode: '', expiryDate: '' },
+                proxyActivating: false,
+                // IP更换次卡
+                ipChangeCard: {
+                    used: 0,
+                    total: 0,
+                    remain: 0,
+                    percent: 0
+                },
+                ipChangeCardLoading: false,
+                // 浏览器设置
+                browserForm: {
+                    browserType: 'bit',
+                    apiKey: '',
+                    browserServer: 3,
+                    remoteAddress: '',
+                    saveConfig: 'always',
+                    clearCache: false,
+                    cachePath: '',
+                    languageMode: 'auto',
+                    customLanguage: 'zh-CN',
+                    headlessMode: [],
+                    memorySaving: false
+                },
+                // 消息设置
+                messageSettings: {
+                    privateMessageSync: false,
+                    privateMessageInterval: 5,
+                    privateMode: 'api',
+                    notificationSync: false,
+                    notificationInterval: 10,
+                    notificationSound: 'none',
+                    translateMode: 'normal'
+                },
+                // 激活相关
+                activationForm: { code: '', expiryDate: '' },
+                portCount: 0,
+                usedPortNum: 0,
+                isActivated: false,
+                // 翻译相关
+                translationForm: { code: '', selectedLanguage: 'zh-CN' },
+                translationQuota: { used: 0, total: 0, remain: 0 },
+                translatingActivate: false,
+                // AI Token相关（新风格）
+                aiTokenForm: { activationCode: '' },
+                aiToken: { used: 0, total: 0, remain: 0, model: 'GPT-4o-mini' },
+                aiActivating: false,
+                // 语言选项
+                allLanguageOptions: [],
+                filteredLanguageOptions: [],
+                searchLoading: false,
+                // 时钟
+                clocks: [
+                    { country: '中国', time: '--:--:--', date: '----', timezone: 'Asia/Shanghai' },
+                    { country: '美国(纽约)', time: '--:--:--', date: '----', timezone: 'America/New_York' }
+                ],
+                addClockDialog: false,
+                clockForm: { country: '', timezone: '' },
+                countryOptions: [
+                    { value: '中国', label: '中国' },
+                    { value: '美国', label: '美国' },
+                    { value: '日本', label: '日本' },
+                    { value: '韩国', label: '韩国' },
+                    { value: '英国', label: '英国' },
+                    { value: '法国', label: '法国' },
+                    { value: '德国', label: '德国' },
+                    { value: '澳大利亚', label: '澳大利亚' }
+                ],
+                timezoneOptions: [
+                    { value: 'Asia/Shanghai', label: '上海(UTC+8)' },
+                    { value: 'Asia/Tokyo', label: '东京(UTC+9)' },
+                    { value: 'Asia/Seoul', label: '首尔(UTC+9)' },
+                    { value: 'America/New_York', label: '纽约(UTC-5)' },
+                    { value: 'America/Los_Angeles', label: '洛杉矶(UTC-8)' },
+                    { value: 'Europe/London', label: '伦敦(UTC+0)' },
+                    { value: 'Europe/Paris', label: '巴黎(UTC+1)' },
+                    { value: 'Europe/Berlin', label: '柏林(UTC+1)' },
+                    { value: 'Australia/Sydney', label: '悉尼(UTC+10)' }
+                ],
+                currentLanguage: '简体中文',
+                languageOptions: languageOptions,
+                folderSelectLoading: false,
+                browserDownloadMap: {
+                    bit: '比特浏览器',
+                    adspower: 'AdsPower',
+                    morelogin: 'MoreLogin',
+                    tgebrowser: 'TgeBrowser'
+                },
+                clockInterval: null,
+                expiryCheckInterval: null
+            }
+        },
+        computed: {
+            currentBrowserLabel() {
+                return this.browserDownloadMap[this.browserForm.browserType] || '浏览器';
+            },
+            trafficPercent() {
+                if (this.proxyTraffic.total <= 0) return 0;
+                return (this.proxyTraffic.used / this.proxyTraffic.total) * 100;
+            },
+            // 剩余天数
+            remainingDays() {
+                if (!this.softwareExpiry || this.softwareExpiry === '加载中...' || this.softwareExpiry === '未获取到' || this.softwareExpiry === '获取失败') {
+                    return '--';
+                }
+                const today = new Date();
+                const expiryDate = new Date(this.softwareExpiry);
+                if (isNaN(expiryDate.getTime())) return '--';
+                const diffDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+                if (diffDays < 0) return '0';
+                return diffDays;
+            },
+            ipChangeCardPercent() {
+                const total = this.ipChangeCard.total || 0;
+                const used = this.ipChangeCard.used || 0;
+                if (total <= 0) return 0;
+                let percent = (used / total) * 100;
+                return Math.min(Math.max(percent, 0), 100);
+            },
+            // AI Token 百分比
+            aiTokenPercent() {
+                const total = this.aiToken.total || 0;
+                const used = this.aiToken.used || 0;
+                if (total <= 0) return 0;
+                let percent = (used / total) * 100;
+                return Math.min(Math.max(percent, 0), 100);
+            },
+            // 到期时间状态样式
+            expiryStatusClass() {
+                if (!this.softwareExpiry || this.softwareExpiry === '加载中...') return '';
+                const today = new Date();
+                const expiryDate = new Date(this.softwareExpiry);
+                if (isNaN(expiryDate.getTime())) return '';
+                const diffDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+                if (diffDays < 0) return 'expired';
+                if (diffDays <= 7) return 'expiring-soon';
+                return '';
+            }
+        },
+        created() {
+            this.checkLoginAndLoadUserInfo().then(() => {
+                this.$nextTick(() => {
+                    this.loadMessageSettings();
+                    this.refreshTranslationQuota();
+                    this.refreshIpChangeCardQuota();
+                    this.loadBrowserSettings();
+                    this.loadProxyInfo();
+                    this.loadAiTokenInfo();
+                    this.loadSoftwareExpiry();
+                    this.loadDatabaseConfig();  // 新增
+                });
+            });
+            this.loadLanguageData();
+            this.startClockTicker();
+        },
+        mounted() {
+            this.startClockTicker();
+            this.expiryCheckInterval = setInterval(() => {
+                this.loadSoftwareExpiry();
+            }, 5 * 60 * 1000);
+        },
+        beforeDestroy() {
+            if (this.clockInterval) {
+                clearInterval(this.clockInterval);
+            }
+            if (this.expiryCheckInterval) {
+                clearInterval(this.expiryCheckInterval);
+            }
+        },
+        methods: {
+            // ==================== 用户相关方法 ====================
+            /**
+             * 加载数据库配置
+             */
+            loadDatabaseConfig() {
+                apiGet('/api/database/config').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        const data = res.data.data;
+                        this.currentDbType = data.dbType || 'sqlite';
+                        this.dbSwitchForm.dbType = data.dbType || 'sqlite';
+                        this.dbSwitchForm.mysqlHost = data.mysqlHost || 'localhost';
+                        this.dbSwitchForm.mysqlPort = data.mysqlPort || 3306;
+                        this.dbSwitchForm.mysqlDatabase = data.mysqlDatabase || 'tkswarm';
+                        this.dbSwitchForm.mysqlUsername = data.mysqlUsername || 'root';
+                        this.dbSwitchForm.mysqlPassword = data.mysqlPassword || '';
+                        this.dbSwitchForm.mysqlParams = data.mysqlParams || 'useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8';
+                        this.dbSwitchForm.maxPoolSize = data.maxPoolSize || 50;
+                        this.dbSwitchForm.minIdle = data.minIdle || 10;
+                        this.dbSwitchForm.connectionTimeout = data.connectionTimeout || 30000;
+                        this.databaseStatus = 'connected';
+                    }
+                }).catch(() => {
+                    console.error('加载数据库配置失败');
+                });
+            },
+
+            /**
+             * 数据库类型切换
+             */
+            onDbTypeChange(val) {
+                this.$message.info(`已选择 ${val === 'mysql' ? 'MySQL' : 'SQLite'} 数据库`);
+            },
+
+            /**
+             * 保存数据库配置
+             */
+            saveDatabaseConfig() {
+                // 验证 MySQL 配置
+                if (this.dbSwitchForm.dbType === 'mysql') {
+                    if (!this.dbSwitchForm.mysqlHost) {
+                        return this.$message.warning('请输入MySQL主机地址');
+                    }
+                    if (!this.dbSwitchForm.mysqlDatabase) {
+                        return this.$message.warning('请输入数据库名称');
+                    }
+                    if (!this.dbSwitchForm.mysqlUsername) {
+                        return this.$message.warning('请输入数据库用户名');
+                    }
+                }
+
+                this.dbSaving = true;
+                apiPost('/api/database/config/save', this.dbSwitchForm).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('数据库配置保存成功');
+                        this.dbStatusMessage = '配置已保存，重启后生效';
+                        this.dbStatusType = 'success';
+                        this.currentDbType = this.dbSwitchForm.dbType;
+                    } else {
+                        this.$message.error(res.data.msg || '保存失败');
+                        this.dbStatusMessage = res.data.msg || '保存失败';
+                        this.dbStatusType = 'error';
+                    }
+                }).catch(() => {
+                    this.$message.error('保存配置失败');
+                    this.dbStatusMessage = '保存配置失败，请检查网络';
+                    this.dbStatusType = 'error';
+                }).finally(() => {
+                    this.dbSaving = false;
+                });
+            },
+
+            /**
+             * 测试数据库连接
+             */
+            testDatabaseConnection() {
+                this.dbTesting = true;
+                this.dbStatusMessage = '正在测试连接...';
+                this.dbStatusType = '';
+
+                // 如果是 MySQL，先保存配置再测试
+                const testData = { ...this.dbSwitchForm };
+                if (testData.dbType === 'mysql') {
+                    if (!testData.mysqlHost) {
+                        this.$message.warning('请先配置MySQL连接信息');
+                        this.dbTesting = false;
+                        this.dbStatusMessage = '请先配置MySQL连接信息';
+                        this.dbStatusType = 'error';
+                        return;
+                    }
+                }
+
+                apiPost('/api/database/test', testData).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('数据库连接测试成功！');
+                        this.dbStatusMessage = '✅ 连接成功，数据库运行正常';
+                        this.dbStatusType = 'success';
+                        this.databaseStatus = 'connected';
+                    } else {
+                        this.$message.error(res.data.msg || '连接测试失败');
+                        this.dbStatusMessage = '❌ ' + (res.data.msg || '连接测试失败');
+                        this.dbStatusType = 'error';
+                        this.databaseStatus = 'disconnected';
+                    }
+                }).catch((error) => {
+                    console.error('测试连接失败:', error);
+                    this.$message.error('连接测试失败，请检查配置');
+                    this.dbStatusMessage = '❌ 连接测试失败：' + (error.message || '未知错误');
+                    this.dbStatusType = 'error';
+                    this.databaseStatus = 'disconnected';
+                }).finally(() => {
+                    this.dbTesting = false;
+                });
+            },
+
+            /**
+             * 重置数据库配置
+             */
+            resetDatabaseConfig() {
+                this.$confirm('确定要重置数据库配置吗？', '提示', {
+                    type: 'warning'
+                }).then(() => {
+                    this.dbSwitchForm = {
+                        dbType: 'sqlite',
+                        mysqlHost: 'localhost',
+                        mysqlPort: 3306,
+                        mysqlDatabase: 'tkswarm',
+                        mysqlUsername: 'root',
+                        mysqlPassword: '',
+                        mysqlParams: 'useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8',
+                        maxPoolSize: 50,
+                        minIdle: 10,
+                        connectionTimeout: 30000
+                    };
+                    this.dbStatusMessage = '已重置为默认配置';
+                    this.dbStatusType = 'success';
+                    this.$message.success('已重置');
+                }).catch(() => {});
+            },
+
+            /**
+             * 立即切换数据库（带重启提示）
+             */
+            switchDatabaseNow() {
+                this.$confirm(
+                    `确定要切换到 ${this.dbSwitchForm.dbType === 'mysql' ? 'MySQL' : 'SQLite'} 数据库吗？\n\n` +
+                    '⚠️ 切换后需要重启应用才能生效\n' +
+                    '⚠️ 请确保目标数据库已创建且配置正确',
+                    '切换数据库',
+                    {
+                        type: 'warning',
+                        confirmButtonText: '确定切换',
+                        cancelButtonText: '取消'
+                    }
+                ).then(() => {
+                    this.dbSwitching = true;
+                    apiPost('/api/database/switch', { dbType: this.dbSwitchForm.dbType }).then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success({
+                                message: '数据库切换已触发，请重启应用',
+                                duration: 5000
+                            });
+                            this.dbStatusMessage = '✅ 切换已触发，请重启应用生效';
+                            this.dbStatusType = 'success';
+                            this.currentDbType = this.dbSwitchForm.dbType;
+                        } else {
+                            this.$message.error(res.data.msg || '切换失败');
+                            this.dbStatusMessage = '❌ ' + (res.data.msg || '切换失败');
+                            this.dbStatusType = 'error';
+                        }
+                    }).catch(() => {
+                        this.$message.error('切换请求失败');
+                        this.dbStatusMessage = '❌ 切换请求失败';
+                        this.dbStatusType = 'error';
+                    }).finally(() => {
+                        this.dbSwitching = false;
+                    });
+                }).catch(() => {});
+            },
+            async checkLoginAndLoadUserInfo() {
+                const token = getToken();
+                if (!token) {
+                    this.$message.warning('请先登录');
+                    setTimeout(() => {
+                        const baseUrl = window.location.origin;
+                        window.location.href = baseUrl + '/page/index';
+                    }, 1000);
+                    return Promise.reject('no token');
+                }
+                return this.loadUserInfo();
+            },
+// 软件续费
+            handleSoftwareRecharge() {
+                const token = localStorage.getItem('token');
+                window.open('http://recharge.tkswarm.com/index.html?activeTab=1&token=' + token);
+            },
+            getUserRoleName(roles) {
+                if (!roles || roles.length === 0) return '普通用户';
+                if (Array.isArray(roles)) {
+                    if (typeof roles[0] === 'string') {
+                        if (roles.includes('admin')) return '超级管理员';
+                        if (roles.includes('agent')) return '代理商';
+                        return roles[0] || '普通用户';
+                    }
+                    const adminRole = roles.find(r => r.roleKey === 'admin' || r.roleName === '超级管理员');
+                    if (adminRole) return '超级管理员';
+                    const agentRole = roles.find(r => r.roleKey === 'agent' || r.roleName === '代理商');
+                    if (agentRole) return '代理商';
+                    return roles[0]?.roleName || '普通用户';
+                }
+                return '普通用户';
+            },
+
+            async loadUserInfo() {
+                const cachedUserInfo = localStorage.getItem('userInfo');
+                if (cachedUserInfo) {
+                    try {
+                        const userInfo = JSON.parse(cachedUserInfo);
+                        if (userInfo.user) {
+                            this.userName = userInfo.user.nickName || userInfo.user.userName || '管理员';
+                            this.userRole = this.getUserRoleName(userInfo.roles);
+                            this.userAvatar = userInfo.user.avatar || '';
+                            this.userId = userInfo.user.userId;
+                            this.userEmail = userInfo.user.email;
+                            this.userPhone = userInfo.user.phonenumber;
+                        }
+                    } catch (e) {
+                        console.error('解析用户缓存失败:', e);
+                    }
+                }
+            },
+
+            // 加载软件到期时间
+            loadSoftwareExpiry() {
+                apiGet(window.API_BASE_URL + '/system/softwareLicense/softwareExpiry/1')
+                    .then(res => {
+                        if (res.data.code === 200 && res.data.data) {
+                            this.softwareExpiry = res.data.data.expireTime;
+                        } else {
+                            this.softwareExpiry = '未获取到';
+                        }
+                    })
+                    .catch(() => {
+                        this.softwareExpiry = '获取失败';
+                    });
+            },
+
+            async handleLogout() {
+                try {
+                    await apiPost('/api/user/logout');
+                } catch (error) {
+                    console.error('退出接口调用失败:', error);
+                } finally {
+                    clearToken();
+                    this.$message.success('已退出登录');
+                    setTimeout(() => {
+                        const baseUrl = window.location.origin;
+                        window.location.href = baseUrl + '/page/index';
+
+                    }, 1000);
+                }
+            },
+
+            handleProfile() {
+                this.$message.info('个人中心功能开发中');
+            },
+
+            handlePersonalSettings() {
+                this.$message.info('个人设置功能开发中');
+            },
+
+            handleUserCommand(command) {
+                switch (command) {
+                    case 'profile':
+                        this.handleProfile();
+                        break;
+                    case 'settings':
+                        this.handlePersonalSettings();
+                        break;
+                    case 'logout':
+                        this.$confirm('确定要退出登录吗？', '提示', {
+                            type: 'warning',
+                            confirmButtonText: '确定退出',
+                            cancelButtonText: '取消'
+                        }).then(() => {
+                            this.handleLogout();
+                        }).catch(() => {});
+                        break;
+                    default:
+                        this.$message.info('功能开发中');
+                }
+            },
+
+            // ==================== 页面导航 ====================
+
+            navigateTo(url) {
+                const baseUrl = window.location.origin;
+                window.location.href = baseUrl + '/page/'+url;
+            },
+
+            handleNavSelect(index) {
+                this.activeNav = index;
+                if (index !== 'settings') {
+                    const baseUrl = window.location.origin;
+                    window.location.href = baseUrl + '/page/'+index;
+                }
+            },
+
+            scrollToSection(key) {
+                this.activeSettingsKey = key;
+                const element = document.getElementById(`section-${key}`);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            },
+
+            // ==================== 浏览器设置 ====================
+
+            onBrowserTypeChange() {},
+
+            downloadCurrentBrowser() {
+                this.$message.success(`正在下载 ${this.currentBrowserLabel}，请稍后...`);
+                apiGet(`/api/tk-setting/downloadBrowser?type=${this.browserForm.browserType}`).catch(() => {
+                    this.$message.warning('下载链接已准备，请检查网络');
+                });
+            },
+
+            saveBrowserSettings() {
+                apiPost('/api/tk-setting/saveBrowserSettings', this.browserForm).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('保存成功');
+                    } else {
+                        this.$message.error(res.data.message);
+                    }
+                }).catch(() => {
+                    this.$message.error('保存失败');
+                });
+            },
+
+            testBrowserConnection() {
+                apiGet("/api/tk-setting/checkBt").then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('连接成功');
+                    }
+                }).catch(() => {
+                    this.$message.error('连接失败');
+                });
+            },
+
+            deleteBrowser() {
+                this.$confirm('确定删除浏览器?', '提示').then(() => {
+                    apiGet("/api/tk-setting/deletedBt").then(() => {
+                        this.$message.success('删除成功');
+                    }).catch(() => {
+                        this.$message.error('删除失败');
+                    });
+                }).catch(() => {});
+            },
+
+            selectFolder() {
+                document.getElementById('folderInput').click();
+            },
+
+            onFolderSelected(e) {
+                if (e.target.files.length) {
+                    this.browserForm.cachePath = e.target.files[0].webkitRelativePath.split('/')[0];
+                    e.target.value = '';
+                }
+            },
+
+            loadBrowserSettings() {
+                apiGet('/api/tk-setting/getBrowserSettings').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        this.browserForm = { ...this.browserForm, ...res.data.data };
+                    }
+                }).catch(() => {
+                    console.error('加载浏览器设置失败');
+                });
+            },
+
+            openRemoteConfigDialog() {
+                this.$message.info('远程配置功能开发中');
+            },
+
+            // ==================== 服务激活 ====================
+
+            loadCodekey() {
+                apiGet("/api/tk-setting/getCodeKey").then(res => {
+                    if (res.data && res.data.data) {
+                        this.activationForm.code = res.data.data.codeKey;
+                        this.isActivated = res.data.data.isActivated;
+                        if (this.isActivated) {
+                            this.activationForm.expiryDate = res.data.data.mess;
+                            this.portCount = res.data.data.videoPortNum;
+                            this.usedPortNum = res.data.data.usedPortNum;
+                            this.$message.success(res.data.data.mess);
+                        } else {
+                            this.$message.warning(res.data.data.mess);
+                        }
+                    }
+                }).catch(() => {
+                    this.$message.error('加载激活信息失败');
+                });
+            },
+
+            handleActivate() {
+                if (!this.activationForm.code.trim()) {
+                    return this.$message.warning('请输入激活码');
+                }
+                apiGet('/api/tk-setting/reqCodeKey/' + this.activationForm.code).then(res => {
+                    this.isActivated = res.data.data.isActivated;
+                    if (this.isActivated) {
+                        this.activationForm.expiryDate = res.data.data.mess;
+                        this.$message.success(res.data.data.mess);
+                        this.loadCodekey();
+                    } else {
+                        this.$message.warning(res.data.data.mess);
+                    }
+                }).catch(() => {
+                    this.$message.error('激活失败');
+                });
+            },
+
+            openSoftwareTutorial() {
+                apiGet('/api/tk-setting/doc').then(() => {
+                    this.$message.info('打开教程');
+                }).catch(() => {
+                    this.$message.error('打开失败');
+                });
+            },
+
+            // ==================== 消息设置 ====================
+
+            handlePrivateMessageSyncChange(val) {
+                this.$message.success(val ? '已开启私信同步' : '已关闭私信同步');
+            },
+
+            handleNotificationSyncChange(val) {
+                this.$message.success(val ? '已开启通知同步' : '已关闭通知同步');
+            },
+
+            saveMessageSettings() {
+                apiPost('/api/tk-setting/saveMessageSettings', this.messageSettings).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('消息设置保存成功');
+                        if (this.messageSettings.translateMode === 'ai') {
+                            this.refreshAiToken();
+                        }
+                    } else {
+                        this.$message.error(res.data.message || '保存失败');
+                    }
+                }).catch(() => {
+                    this.$message.error('保存消息设置失败');
+                });
+            },
+
+            resetMessageSettings() {
+                this.messageSettings = {
+                    privateMessageSync: false,
+                    privateMessageInterval: 5,
+                    privateMode: 'api',
+                    notificationSync: false,
+                    notificationInterval: 10,
+                    notificationSound: 'none',
+                    translateMode: 'normal'
+                };
+                this.$message.success('已重置');
+            },
+
+            loadMessageSettings() {
+                apiGet('/api/tk-setting/getMessageSettings').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        this.messageSettings = { ...this.messageSettings, ...res.data.data };
+                    }
+                }).catch(() => {
+                    console.error('加载消息设置失败');
+                });
+            },
+
+            testSound() {
+                const soundMap = {
+                    none: null,
+                    chime: '/static/sounds/chime.mp3',
+                    soft: '/static/sounds/soft.mp3',
+                    message: '/static/sounds/message.mp3',
+                    urgent: '/static/sounds/urgent.mp3'
+                };
+                const url = soundMap[this.messageSettings.notificationSound];
+                if (url) {
+                    const audio = new Audio(url);
+                    audio.play().catch(() => this.$message.warning('无法播放提示音'));
+                } else {
+                    this.$message.info('未选择提示音');
+                }
+            },
+
+            // ==================== 翻译设置 ====================
+
+            loadLanguageData() {
+                axios.get('/static/json/tiktok_lang.json').then(res => {
+                    if (res.data && res.data.languages) {
+                        this.allLanguageOptions = res.data.languages;
+                        this.filteredLanguageOptions = [...this.allLanguageOptions];
+                    }
+                }).catch(() => {});
+            },
+
+            searchLanguage(query) {
+                if (query) {
+                    this.filteredLanguageOptions = this.allLanguageOptions.filter(item =>
+                        item.name.includes(query) || item.language.includes(query)
+                    );
+                } else {
+                    this.filteredLanguageOptions = [...this.allLanguageOptions];
+                }
+            },
+
+            activateTranslation() {
+                if (!this.translationForm.code.trim()) {
+                    return this.$message.warning('请输入激活码');
+                }
+                this.translatingActivate = true;
+                apiGet('/api/tk-setting/getTkTranslation/' + this.translationForm.code).then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        this.translationQuota = {
+                            used: res.data.data.used || 0,
+                            total: res.data.data.total || 0,
+                            remain: res.data.data.remain || 0
+                        };
+                        this.$message.success('激活成功');
+                    } else {
+                        this.$message.warning(res.data.msg);
+                    }
+                    this.translatingActivate = false;
+                }).catch(() => {
+                    this.$message.error('激活失败');
+                    this.translatingActivate = false;
+                });
+            },
+
+            saveTranslationLanguage(value) {
+                const lang = value || this.translationForm.selectedLanguage;
+                if (!lang) return;
+
+                apiPost('/api/tk-setting/saveTranslationLanguage', { language: lang }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('保存语言成功');
+                    }
+                }).catch(() => {
+                    this.$message.error('保存失败');
+                });
+            },
+
+            // ==================== IP更换次卡设置 ====================
+
+            refreshIpChangeCardQuota() {
+                apiGet(window.API_BASE_URL + '/system/user/balance/myBalanceByType/5').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        const data = res.data.data;
+                        const total = data.totalQuota || 0;
+                        const used = data.usedQuota || 0;
+                        const remain = data.remainingQuota || 0;
+
+                        let percent = 0;
+                        if (total > 0) {
+                            percent = (used / total) * 100;
+                            percent = Math.min(percent, 100);
+                        }
+
+                        this.ipChangeCard = {
+                            total: total,
+                            used: used,
+                            remain: remain,
+                            percent: percent
+                        };
+                        this.$message.success('IP更换次卡余额刷新成功');
+                    } else {
+                        this.$message.warning(res.data.msg || '获取IP更换次卡余额失败');
+                        this.ipChangeCard = { used: 0, total: 0, remain: 0, percent: 0 };
+                    }
+                }).catch(() => {
+                    this.$message.error('获取IP更换次卡余额失败');
+                    this.ipChangeCard = { used: 0, total: 0, remain: 0, percent: 0 };
+                });
+            },
+
+            activateIpChangeCard() {
+                if (!this.ipChangeCardForm.activationCode.trim()) {
+                    return this.$message.warning('请输入激活码');
+                }
+                this.ipChangeCardLoading = true;
+                apiPost('/api/tk-setting/activateIpChangeCard', { code: this.ipChangeCardForm.activationCode }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('IP更换次卡激活成功');
+                        this.ipChangeCardForm.activationCode = '';
+                        this.refreshIpChangeCardQuota();
+                    } else {
+                        this.$message.error(res.data.message || res.data.msg || '激活失败');
+                    }
+                }).catch(() => {
+                    this.$message.error('激活失败，请检查网络');
+                }).finally(() => {
+                    this.ipChangeCardLoading = false;
+                });
+            },
+
+            handleIpChangeCardRecharge() {
+                const token = localStorage.getItem('token');
+                window.open('http://recharge.tkswarm.com/index.html?activeTab=5&token=' + token);
+            },
+
+            openIpChangeCardDocs() {
+                this.$message.info('IP更换次卡：用于账号更换代理IP时消耗，每次更换消耗1次额度。');
+            },
+
+            refreshIpChangeCard() {
+                this.refreshIpChangeCardQuota();
+            },
+
+            // ==================== AI翻译余额 ====================
+
+            refreshTranslationQuota() {
+                apiGet(window.API_BASE_URL + '/system/user/balance/myBalanceByType/2').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        const data = res.data.data;
+                        this.translationQuota = {
+                            total: data.totalQuota || 0,
+                            used: data.usedQuota || 0,
+                            remain: data.remainingQuota || 0
+                        };
+                        this.$message.success('刷新成功');
+                    } else {
+                        this.$message.warning(res.data.msg || '获取余额失败');
+                    }
+                }).catch(() => {
+                    this.$message.error('获取余额失败');
+                    this.translationQuota = { used: 0, total: 0, remain: 0 };
+                });
+            },
+
+            handleTranslationRecharge() {
+                const token = localStorage.getItem('token');
+                window.open('http://recharge.tkswarm.com/index.html?activeTab=2&token=' + token);
+            },
+
+            // ==================== AI Token设置（新风格） ====================
+
+            loadAiTokenInfo() {
+                apiGet(window.API_BASE_URL + '/system/user/balance/myBalanceByType/6').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        const data = res.data.data;
+                        this.aiToken = {
+                            total: data.totalQuota || 0,
+                            used: data.usedQuota || 0,
+                            remain: data.remainingQuota || 0,
+                            model: data.model || 'GPT-4o-mini'
+                        };
+                        console.log('AI Token信息加载成功:', this.aiToken);
+                    } else {
+                        console.error('获取AI Token信息失败:', res.data.msg);
+                        // 降级显示
+                        this.aiToken = { used: 0, total: 0, remain: 0, model: 'GPT-4o-mini' };
+                    }
+                }).catch(error => {
+                    console.error('获取AI Token信息失败:', error);
+                    this.aiToken = { used: 0, total: 0, remain: 0, model: 'GPT-4o-mini' };
+                });
+            },
+
+            activateAiToken() {
+                if (!this.aiTokenForm.activationCode.trim()) {
+                    return this.$message.warning('请输入AI Token激活码');
+                }
+                this.aiActivating = true;
+                apiPost('/api/tk-setting/activateAiToken', { code: this.aiTokenForm.activationCode }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('AI Token激活成功');
+                        this.aiTokenForm.activationCode = '';
+                        this.loadAiTokenInfo(); // 刷新余额
+                    } else {
+                        this.$message.error(res.data.message || res.data.msg || '激活失败');
+                    }
+                }).catch(() => {
+                    this.$message.error('激活失败，请检查网络');
+                }).finally(() => {
+                    this.aiActivating = false;
+                });
+            },
+
+            refreshAiToken() {
+                this.loadAiTokenInfo();
+                this.$message.success('AI Token余额已刷新');
+            },
+
+            handleAiTokenRecharge() {
+                const token = localStorage.getItem('token');
+                window.open('http://recharge.tkswarm.com/index.html?activeTab=6&token=' + token);
+            },
+
+            openAiDocs() {
+                this.$message.info('AI服务支持文案生成、视频脚本、智能回复等，消耗Token计费。');
+            },
+
+            // ==================== 代理设置 ====================
+
+            loadProxyInfo() {
+               /* apiGet(window.API_BASE_URL + '/tiktok/ip/getUserAgentIp').then(res => {
+                    if (res.data.code === 200 && res.data.data) {
+                        const data = res.data.data;
+                        const used = parseFloat(data.flowOverdue) || 0;
+                        const total = parseFloat(data.flow) || 0;
+                        let percent = 0;
+                        if (total > 0) {
+                            percent = (used / total) * 100;
+                            percent = Math.min(percent, 100);
+                        }
+                        const remain = total - used;
+
+                        this.proxyTraffic = {
+                            used: used,
+                            total: total,
+                            remain: remain,
+                            percent: percent
+                        };
+                        console.log('流量信息加载成功:', this.proxyTraffic);
+                    } else {
+                        console.error('获取流量信息失败:', res.data.msg);
+                    }
+                }).catch(error => {
+                    console.error('获取流量信息失败:', error);
+                    this.proxyTraffic = { used: 0.00, total: 0.0, remain: 0.00, percent: 0 };
+                    this.proxyInfo = { currentNode: '新加坡高速节点', expiryDate: '2026-05-20' };
+                });*/
+            },
+
+            activateProxy() {
+                if (!this.proxyForm.activationCode.trim()) {
+                    return this.$message.warning('请输入代理激活码');
+                }
+                this.proxyActivating = true;
+                apiPost('/api/tk-setting/activateProxy', { code: this.proxyForm.activationCode }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('代理激活成功');
+                        this.proxyForm.activationCode = '';
+                        this.loadProxyInfo();
+                    } else {
+                        this.$message.error(res.data.message);
+                    }
+                }).catch(() => {
+                    this.$message.error('激活失败');
+                }).finally(() => {
+                    this.proxyActivating = false;
+                });
+            },
+
+            refreshProxyInfo() {
+                this.loadProxyInfo();
+                this.$message.success('流量信息已刷新');
+            },
+
+            handleProxyRecharge() {
+                const token = localStorage.getItem('token');
+                window.open('http://recharge.tkswarm.com/index.html?activeTab=3&token=' + token);
+            },
+
+            openProxyDocs() {
+                this.$message.info('代理IP使用说明: 支持SOCKS5，动态切换节点，流量按GB计费');
+            },
+
+            // ==================== 翻译模式切换 ====================
+
+            handleTranslateModeChange(val) {
+                if (val === 'ai') {
+                    this.loadAiTokenInfo();
+                    const remain = this.aiToken.remain || 0;
+                    if (remain <= 0) {
+                        this.$confirm('AI Token余额不足，是否切换到普通翻译模式？', '余额不足', {
+                            type: 'warning',
+                            confirmButtonText: '切换到普通模式',
+                            cancelButtonText: '暂不切换'
+                        }).then(() => {
+                            this.messageSettings.translateMode = 'normal';
+                            this.$message.info('已切换到普通接口翻译模式');
+                        }).catch(() => {
+                            this.$message.warning('AI Token余额不足，翻译可能失败');
+                        });
+                    } else {
+                        this.$message.success(`已切换到AI翻译模式，当前剩余Token: ${remain}`);
+                    }
+                } else {
+                    this.$message.success('已切换到普通接口翻译模式');
+                }
+            },
+
+            // ==================== 工具方法 ====================
+
+            openUrlWithAxios: function (url, callback) {
+                var requestData = {url: url};
+                var headers = {'Content-Type': 'application/json', 'priority': 'u=1, i'};
+                apiPost('/api/tk-setting/openUrl', requestData, headers)
+                    .then(function (response) {
+                        var data = response.data;
+                        console.log('打开链接响应:', data);
+                        if (data.code === 200) {
+                            console.log('打开链接成功:', url);
+                            if (typeof callback === 'function') callback(null, data);
+                        } else {
+                            console.error('打开链接失败:', data.msg);
+                            if (typeof callback === 'function') callback(new Error(data.msg), null);
+                        }
+                    })
+                    .catch(function (error) {
+                        console.error('请求失败:', error);
+                        if (typeof callback === 'function') callback(error, null);
+                    });
+            },
+
+            // ==================== 语言设置 ====================
+
+            handleLanguageChange(langCode) {
+                const lang = this.languageOptions.find(l => l.code === langCode);
+                if (lang) {
+                    this.currentLanguage = lang.nation;
+                }
+                apiPost('/api/user/setLanguage', { language: langCode }).then(res => {
+                    if (res.data.code === 200) {
+                        this.$message.success('语言已更新');
+                        if (langCode !== 'zh-CN') {
+                            this.$confirm('刷新页面应用新语言?').then(() => {
+                                location.reload();
+                            });
+                        }
+                    }
+                }).catch(() => {
+                    this.$message.error('设置语言失败');
+                });
+            },
+
+            // ==================== 时钟设置 ====================
+
+            addClock() {
+                if (!this.clockForm.country || !this.clockForm.timezone) {
+                    return this.$message.warning('请完善信息');
+                }
+                this.clocks.push({
+                    country: this.clockForm.country,
+                    time: '00:00:00',
+                    date: '--',
+                    timezone: this.clockForm.timezone
+                });
+                this.addClockDialog = false;
+                this.clockForm = { country: '', timezone: '' };
+                this.$message.success('添加成功');
+            },
+
+            startClockTicker() {
+                this.clockInterval = setInterval(() => {
+                    this.clocks.forEach(clock => {
+                        const now = new Date();
+                        const opt = {
+                            timeZone: clock.timezone,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                        };
+                        clock.time = now.toLocaleTimeString('zh-CN', opt);
+                        clock.date = now.toLocaleDateString('zh-CN', {
+                            timeZone: clock.timezone,
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                        }).replace(/\//g, '-');
+                    });
+                }, 1000);
+            }
+        }
+    });
+</script>
+</body>
+</html>

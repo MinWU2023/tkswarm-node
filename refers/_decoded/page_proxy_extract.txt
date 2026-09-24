@@ -1,0 +1,357 @@
+=== TITLE ===
+代理IP - TKSwarm
+
+=== APIS (4) ===
+/api/tk-ip/batchAdd
+/api/tk-ip/update
+/api/tk-setting/openUrl
+/api/user/logout
+
+=== EL-DIALOGS ===
+批量添加IP
+获取代理IP
+添加SOCKS IP
+修改IP
+新建分组
+
+=== TABS ===
+
+=== DIALOG/TITLE ATTRS ===
+修改IP
+删除分组
+批量添加IP
+新建分组
+添加SOCKS IP
+编辑分组
+获取代理IP
+
+=== DROPDOWN ITEMS ===
+个人中心
+个人设置
+退出登录
+
+=== BUTTON TEXTS (sample) ===
+添加
+批量检测
+批量删除
+高级删除
+复制代理
+添加IP
+添加SOCKS IP
+充值
+刷新代理
+复制
+删除
+取消
+确定添加
+开始获取
+保存
+确定创建
+
+=== FORM/STATE KEYS ===
+addGroupDialog
+addIPDialog
+addSocksIPDialog
+browserDownloadMap
+browserForm
+cityList
+countryList
+editDialog
+editForm
+fetchIPDialog
+fetchIPForm
+getList
+groupForm
+handlePersonalSettings
+ipForm
+languageOptions
+loadCountryList
+openAddGroupDialog
+openAddSocksIPDialog
+openFetchIPDialog
+socksIPForm
+stateList
+
+=== SWITCH CASES ===
+logout
+profile
+settings
+
+=== ZH (231) ===
+不可用
+不超过100
+个人中心
+个人中心功能开发中
+个人设置
+个人设置功能开发中
+个代理
+个代理IP
+个代理IP到剪贴板
+个代理IP，不可恢复
+个代理IP，可能需要一些时间
+个分组
+中国
+主要内容区 --
+从静态JSON文件加载国家列表
+                fetch(
+代理IP
+代理IP - TKSwarm
+代理IP已复制到剪贴板
+代理分组
+                        
+代理商
+代理池
+代理类型
+使用次数
+例如:
+保存
+修改IP
+修改IP对话框 --
+修改分组名称
+修改失败
+充值
+                            
+充值跳转
+            handleRecharge() 
+分组修改成功
+分组内的代理IP不会自动删除
+分组名称
+分组名称不能为空
+分组已删除
+分组添加成功
+分钟
+分页 --
+列表
+列表响应:
+创建时间
+删除
+删除代理 
+删除分组
+删除失败
+刷新代理
+刷新数据
+                        this.refreshData()
+功能开发中
+加载IP列表失败
+加载中...
+加载代理IP分组失败:
+加载国家列表失败:
+加载城市列表中...
+                
+加载州列表中...
+                
+原有方法 
+取消
+可用
+可选：默认选中随机选项
+                        // this.fetchI
+右侧内容区 --
+国家、州、城市联动方法 
+国家变化时加载州列表
+            async onCountryChange(count
+在前面添加一个随机/不限的选项
+                        this.cityL
+在前面添加一个随机/不限的选项
+                        this.state
+地址
+城市接口响应:
+处理添加SOCKS IP
+            async handleAddSocksIP() 
+备注
+复制
+复制代理
+复制到剪贴板
+                const textarea 
+复制单个代理IP
+            copySingleIP(row) 
+复制选中的代理IP信息到剪贴板
+            copySelectedIPs() 
+如果为空就传空字符串
+                        rotateCycle: th
+如果城市ID存在且不为空字符串，则添加cityId参数
+                    if
+如果选择的州是
+客服聊天
+密码
+密码（可选）
+将原来的批量添加IP按钮改为复制代理 --
+州变化时加载城市列表
+            async onStateChange(areaId)
+州可以选择随机/不限，所以不强制要求
+                if (
+州接口响应:
+左侧分组管理 --
+已使用流量 (flowOverdue)
+                    total: 0, 
+已复制 
+已检测
+已退出登录
+已选择 
+开始获取
+德国
+总流量 (flow)
+                    percent: 0    // 使用
+打开添加SOCKS IP对话框
+            openAddSocksIPDialog()
+打开获取IP对话框
+            openFetchIPDialog() 
+打开链接响应:
+打开链接失败:
+打开链接成功:
+执行获取IP
+            async handleFetchIP() 
+批量删除
+批量操作面板 --
+批量检测
+批量添加IP
+批量添加IP对话框 --
+提示
+操作
+操作栏 --
+新增SOCKS IP相关数据
+                addSocksIPDialog: f
+新增：添加SOCKS IP按钮 --
+新增：添加SOCKS IP相关方法 
+新建分组
+日本
+普通用户
+暂无分组，点击上方添加
+未找到对应的国家信息
+未检测
+机器人
+构建要复制的文本内容
+                let copyText 
+根据 countryId 查找对应的 iso 码
+                    const
+格式1: ip:端口
+格式2: ip:端口:账号:密码
+格式: ip:端口
+格式: ip:端口:账号:密码
+                    let proxyStr 
+检测
+检测状态
+检测选中的 
+次
+                                
+每行一个IP，格式为 ip:端口
+                
+永久删除 
+法国
+流量进度条 --
+浏览器
+添加
+添加IP
+添加SOCKS IP
+添加SOCKS IP失败:
+添加SOCKS IP对话框 --
+添加分组失败
+添加分组失败:
+添加分组对话框 --
+添加失败
+添加成功
+添加这行
+            this.loadCountryList()
+添加这行，刷新时同时刷新流量
+            
+用户信息
+                userName: 
+用户相关方法 
+百分比
+                
+直接清空城市列表，不需要请求
+                if (areaId 
+矩阵
+确定创建
+确定删除
+确定添加
+确定要删除分组
+确定要退出登录吗
+确定退出
+确认删除
+端口
+端口
+                window.location.href 
+等
+
+                    const requestData 
+简体中文
+管理员
+系统设置
+编辑分组
+美国
+英国
+获取 iso 码，如 
+获取IP失败:
+获取IP对话框 --
+获取代理IP
+获取城市列表失败
+获取城市列表失败:
+获取城市列表失败，请稍后重试
+获取失败
+获取州列表失败
+获取州列表失败:
+获取州列表失败，请稍后重试
+获取当前域名
+获取成功
+获取数量
+获取流量信息
+            async fetchFlowInfo() 
+获取流量信息失败:
+表格滚动容器 --
+解析用户缓存失败:
+认证: 
+设置IP自动轮换的时间间隔（1-120分钟）
+详情
+语言选项
+    const languageOptions 
+请先创建代理分组
+请先登录
+请先选择IP
+请先选择要复制的代理IP
+请填写完整IP和端口
+请求失败
+请求失败:
+请求失败，请稍后重试
+请输入IP列表
+请输入IP列表，每行一个IP
+请输入SOCKS IP列表
+请输入SOCKS IP列表，每行一个IP
+请输入分组名称
+请输入分组名称（如：住宅代理）
+请输入备注
+请选择IP
+请选择代理类型
+请选择分组
+请选择国家
+请选择城市（可选随机）
+请选择州（可选随机）
+账号
+账号管理
+账号（可选）
+超级管理员
+轮转周期
+轮转周期请输入1-120之间的数字
+近期
+退出接口调用失败:
+退出登录
+选择分组
+选择国家
+选择城市
+选择州
+重置城市选择
+                this.fetchIPForm.cityId 
+重置州和城市的选择
+                this.fetchIPForm.areaId 
+重置表单
+                this.fetchIPForm 
+重置表单，默认选中当前激活的分组
+                this.socksIPForm 
+降级：使用内嵌数据
+                        this.countryList
+随机
+随机/不限
+韩国
+顶部导航栏 --
+验证表单
+                if (
+高级删除

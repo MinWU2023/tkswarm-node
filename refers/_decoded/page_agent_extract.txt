@@ -1,0 +1,399 @@
+=== TITLE ===
+AI机器人 - TKSwarm
+
+=== APIS (10) ===
+/api/agent/batchDelete
+/api/agent/delete/
+/api/agent/detail/
+/api/agent/list
+/api/agent/save
+/api/agent/testChat
+/api/agent/updateStatus
+/api/upload/avatar
+/api/user/info
+/api/user/logout
+
+=== EL-DIALOGS ===
+机器人模板
+测试聊天
+
+=== TABS ===
+
+=== DIALOG/TITLE ATTRS ===
+机器人模板
+测试聊天
+
+=== DROPDOWN ITEMS ===
+个人中心
+个人设置
+退出登录
+
+=== BUTTON TEXTS (sample) ===
+添加
+批量删除
+机器人模板
+测试聊天
+刷新列表
+更换头像
+删除
+保存
+取消
+应用模板
+发送
+
+=== FORM/STATE KEYS ===
+agentForm
+closeTestChatDialog
+conversationConfig
+handlePersonalSettings
+openTemplateDialog
+openTestChatDialog
+resetForm
+templateDialogVisible
+terminationConfig
+testChatDialogVisible
+
+=== SWITCH CASES ===
+logout
+profile
+settings
+
+=== ZH (276) ===
+上传失败，请重试
+上传配置
+                uploadUrl: 
+下单成功
+专业的外贸客服机器人，负责解答海外客户的产品咨询、报价、物流等问题
+专业的技术支持机器人，负责解答技术问题、故障排除、使用指导等
+专业的电商客服机器人，负责解答客户商品咨询、引导下单、处理简单售后问题
+专业稳重
+个人中心
+个人中心
+            handleProfile() 
+个人中心功能开发中
+个人设置
+个人设置
+            handlePersonalSettings() 
+个人设置功能开发中
+个智能体
+个智能体吗
+中文
+主要内容区 
+主要内容区 --
+亲切友好
+亲，您好
+代理IP
+代理商
+你是一名专业的技术支持工程师，精通产品技术原理和故障排查，能够耐心解答用户的技术问题，提供专业的解决方
+你是一名专业的电商客服人员，熟悉各类电商平台规则和产品知识，能够耐心、专业地解答客户的各种问题，引导客
+保存
+保存失败
+保存失败:
+保存成功
+保存智能体
+            async saveAgent() 
+保护客户隐私，不泄露任何敏感信息
+保护用户隐私和系统安全
+保持专业耐心的态度
+保持礼貌友好的语气
+关键词触发
+内置模型
+删除
+删除失败
+删除失败:
+删除成功
+删除智能体
+            async deleteAgent() 
+刷新列表
+功能开发中
+加载中...
+加载中...
+                    
+加载失败
+加载智能体列表
+            async loadAgents() 
+加载智能体列表失败:
+加载智能体配置失败:
+加载用户信息
+            async loadUserInfo() 
+加载配置失败
+加载配置失败，请重试
+包含匹配
+协议
+及时回复客户，不超过30秒
+发送
+取消
+只能上传图片文件
+右侧内容区 
+右侧：配置表单 --
+号码轮询分配
+号码轮询分配
+                    pollEnabled: false,
+  
+号码轮询分配 --
+启用
+启用号码轮询
+启用失败终止
+启用成功终止
+启用随机开场白
+回复语气
+回复语言
+图片
+图片大小不能超过2MB
+基础信息
+基础信息
+                this.form.agentId 
+基础信息 --
+处理简单的售后问题
+外贸客服
+外贸客服机器人
+失败关键词
+失败回复内容
+失败终止 --
+失败终止关键词
+                this.form.failTerminateKey
+失败终止关键词操作
+            addFailKeyword() 
+失败终止回复
+                this.form.failTerminateRepl
+头像
+头像上传
+            beforeAvatarUpload(file) 
+头像上传失败
+头像上传成功
+如：OpenAI v1
+如：gpt-3.5-turbo
+如：https://api.openai.com/v1
+定义AI的核心任务
+定义AI的行为规则
+定义AI的角色身份
+客服聊天
+对话终止条件
+对话终止条件
+                    successTerminateEnabled
+对话终止条件 --
+对话能力设置
+对话能力设置
+                    openings: 
+对话能力设置 --
+对话配置
+                if (data.conversationConfig) 
+导航相关 
+左侧边栏 
+左侧：智能体列表 --
+已购买
+已退出登录
+已选择 
+帮助用户排查故障
+平台
+幽默风趣
+应用模板
+底部操作按钮 --
+开场白
+开场白
+                this.form.openings 
+开场白操作
+            addOpening() 
+开场白：
+引导客户下单购买
+当用户表达不满或不购买意愿时
+很抱歉未能满足您的需求，如有问题可联系人工客服，我们会尽力为您解决
+您好
+您好呀
+感谢您的来访，有任何问题都可以尽管问哦
+成功关键词
+成功回复内容
+成功终止 --
+成功终止关键词
+                this.form.successTerminate
+成功终止关键词操作
+            addSuccessKeyword() 
+成功终止回复
+                this.form.successTerminateR
+我是技术支持，有什么可以帮您解决的吗
+我都可以为您解答
+或
+https://example.com/link1
+https://example.com/l
+户完成购买转化
+手机号码
+批量删除
+批量删除
+            batchDeleteAgents() 
+批量删除失败:
+批量删除成功
+批量操作面板 
+批量操作面板 --
+技术支持
+技术支持机器人
+抱歉，AI暂时无法回复
+抱歉，AI暂时无法回复，请稍后再试
+抱歉，网络连接异常，请检查网络后重试
+接入配置
+接入配置 --
+推广资源
+                if (data.resources 
+推广链接
+提供产品使用指导
+提示
+提示词语言
+搜索智能体
+            handleSearch() 
+搜索智能体...
+操作栏 
+操作栏 --
+收集客户反馈并记录
+收集客户反馈并记录
+                    
+收集用户反馈和改进建议
+文本
+新智能体
+无描述
+普通用户
+智能体名称
+智能体名称：
+智能体头像
+智能体描述
+智能体描述：
+智能体相关方法 
+暂无智能体
+                    
+更换头像
+更新智能体状态
+            async updateAgentStatus(agentI
+更新状态失败:
+更新表单数据
+            updateFormWithAgentData(data) 
+机器人
+机器人 - TKSwarm
+机器人模板
+机器人模板弹窗 --
+检查登录状态并加载用户信息
+            async checkLoginAndLoadU
+模型ID
+模型类型
+模型配置
+                    modelType: 0,
+          
+模型配置
+                if (data.model) 
+模板已应用，请确认后保存
+模板相关
+                templateDialogVisible: false,
+模板相关
+            openTemplateDialog() 
+欢迎光临小店，请问有什么可以帮助您的
+欢迎咨询技术支持，请告诉我您遇到的问题
+每个资源上限
+测试聊天
+测试聊天
+            openTestChatDialog() 
+测试聊天失败:
+测试聊天弹窗 --
+测试聊天相关
+                testChatDialogVisible: fals
+添加
+添加AI回复
+                        if (this.form.succe
+添加关键词
+                        if (this.form.succes
+添加新智能体
+            addNewAgent() 
+添加用户消息
+                this.chatMessages.push(
+添加资源
+                        if (this.form.pollEna
+温度参数
+游客
+状态
+状态更新失败
+状态更新成功
+用户下拉菜单命令处理
+            handleUserCommand(command) 
+用户信息
+                userName: 
+用户相关方法 
+用通俗易懂的语言解释技术问题
+电商客服
+电商客服机器人
+目标任务
+目标任务：
+矩阵
+确定要删除该智能体吗
+确定要删除选中的 
+确定要退出登录吗
+确定退出
+禁用
+端口
+                window.location.href 
+管理员
+精确匹配
+系统设置
+终止条件配置
+                if (data.terminationConfig)
+网络异常，请检查连接
+自动发送开场白
+                if (this.form.openings 
+自动回复
+自定义API
+自定义智能体
+英文
+获取当前域名
+获取用户信息失败:
+获取角色名称
+            getUserRoleName(roles) 
+表单数据
+                form: 
+表单验证规则
+                rules: 
+视频
+角色信息
+角色信息：
+解析用户缓存失败:
+解答客户关于商品的咨询（价格、规格、发货、售后等）
+解答用户的技术问题
+访客
+请从左侧选择或创建一个智能体
+                
+请先登录
+请先选择一个智能体
+请检查表单填写是否正确
+请详细描述一下，我会尽力帮您解决
+请输入API密钥
+请输入失败终止时的AI回复内容
+请输入开场白
+请输入成功终止时的AI回复内容
+请输入智能体名称
+请输入智能体描述
+请输入消息
+请输入消息...
+请输入资源，每行一个
+格式1: 手机号码
+格式2: 推广链接
+例如:
+13800138000
+请选择要删除的智能体
+请问您想了解哪款产品呢
+谢谢
+账号管理
+资源列表
+资源类型
+超级管理员
+退出接口调用失败:
+退出登录
+退出登录
+            async handleLogout() 
+选择智能体
+            async selectAgent(agent) 
+遇到什么问题了
+遇到复杂问题及时转接给工程师
+遇到无法解答的问题，引导客户转接人工客服
+配置表单 
+配置表单 --
+重置表单
+            resetForm() 
+重要规则
+顶部导航栏 
+顶部导航栏 --
+默认头像
+                defaultAvatar: 
