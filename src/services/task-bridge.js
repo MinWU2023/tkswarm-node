@@ -8,9 +8,10 @@ async function resumePublishViaPhp(taskId, itemId) {
   await phpApi.post(`/node/tasks/${taskId}/items/${itemId}/status`, { status: 'publishing' });
   try {
     const result = await resumePublish(Number(item.account_id || item.accountId), {
-      materialId: Number(item.material_id || item.materialId),
+      materialId: Number(item.material_id || item.materialId || item.payload?.materialId || 0),
       title: item.title || '',
       caption: item.caption || '',
+      deleteAfterPublish: !!(item.payload?.deleteAfterPublish),
     });
     await phpApi.post(`/node/tasks/${taskId}/items/${itemId}/result`, {
       status: result?.status === 'published' ? 'success' : (result?.status || 'failed'),

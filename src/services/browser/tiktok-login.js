@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const { chromium } = require('playwright-core');
 const { generateTotp } = require('../totp');
 const { BitBrowserProvider } = require('./bit-browser-provider');
-const { inspectTikTokSession } = require('./cdp-client');
+const { inspectTikTokSession, pageLooksLoggedOut } = require('./cdp-client');
 const dataStore = require('../data-store');
 const { publish: liveLog } = require('../live-log');
 const { isHeadless } = require('./headless');
@@ -11,9 +11,74 @@ const { isHeadless } = require('./headless');
 const sessions = new Map();
 /** @type {Map<string, number>} accountId -> lock startedAt */
 const activeLogins = new Map();
-const LOGIN_LOCK_TTL_MS = 90_000;
+const LOGIN_LOCK_TTL_MS = 120_000;
 const screenshotDir = path.resolve(__dirname, '../../data/automation');
 fs.mkdirSync(screenshotDir, { recursive: true });
+
+/**
+ * 一键登录封装：填账号密码 → 自动点 Log in → 填 2FA 并确认 → 校验会话。
+ * 前台只需点一次「登录」。
+ */
+async function fullLogin(accountId, options = {}) {
+  return loginAssist(accountId, {
+    autoSubmit: true,
+    submitAfterTotp: true,
+    ...options,
+  });
+}
+
+/**
+ * 按实际登录结果回调 PHP，同步账号 login_status：成功→online，失败→offline
+ */
+async function callbackLoginStatus(accountId, result) {
+  const ok = Boolean(result?.loginOk || result?.alreadyLoggedIn);
+  const status = ok ? 'online' : 'offline';
+  try {
+    await dataStore.updateLoginStatus(accountId, status);
+    liveLog(`账号 #${accountId}：登录状态已回调为 ${status === 'online' ? '已登录' : '未登录'}`, ok ? 'info' : 'warn', { accountId });
+  } catch (error) {
+    liveLog(`账号 #${accountId}：登录状态回调失败：${error.message || error}`, 'error', { accountId });
+  }
+  return { ...(result || {}), loginStatus: status, loginOk: ok };
+}
+
+async function finalizeAfterLogin(accountId, sessionWs, base = {}, page = null) {
+  if (base.alreadyLoggedIn || base.loginOk) {
+    // 即便上游声称已登录，也要用页面再验一次
+    if (page && await pageLooksLoggedOut(page)) {
+      return { ...base, alreadyLoggedIn: false, loginOk: false, message: '页面仍显示 Log in，登录未成功' };
+    }
+    return { ...base, loginOk: true };
+  }
+  if (base.attemptLimited || base.captcha) {
+    return { ...base, loginOk: false };
+  }
+  // 提交 / 2FA 后短暂轮询，确认是否已真正进入登录态
+  for (let i = 0; i < 12; i += 1) {
+    try {
+      const check = await inspectTikTokSession(sessionWs, page);
+      if (check?.loggedIn) {
+        return {
+          ...base,
+          loginOk: true,
+          alreadyLoggedIn: true,
+          message: base.submitted || base.totpFilled
+            ? '登录成功（已自动提交并确认会话）'
+            : (base.message || '登录成功'),
+        };
+      }
+    } catch { /* keep polling */ }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (base.submitted || base.totpFilled) {
+    return {
+      ...base,
+      loginOk: false,
+      message: (base.message || '已提交登录') + '；尚未检测到有效会话，已标记为未登录',
+    };
+  }
+  return { ...base, loginOk: false };
+}
 
 function acquireLoginLock(accountId) {
   const lockKey = String(accountId);
@@ -49,6 +114,104 @@ async function firstVisible(page, selectors) {
   return null;
 }
 
+/** 登录提交钮（避免点到禁用的 login-button 卡满 30s） */
+async function findLoginSubmitButton(page) {
+  const candidates = [
+    page.locator('[data-e2e="login-button"]').first(),
+    page.locator('button[type="submit"][data-e2e="login-button"]').first(),
+    page.getByRole('button', { name: /^(Log in|登录|Sign in)$/i }).first(),
+    page.locator('button[type="submit"]').filter({ hasText: /^(Log in|登录|Sign in)$/i }).first(),
+    page.locator('button[type="submit"]').first(),
+  ];
+  for (const loc of candidates) {
+    if (await loc.count().catch(() => 0) && await loc.isVisible().catch(() => false)) {
+      return loc;
+    }
+  }
+  return null;
+}
+
+/**
+ * 填完账号密码后，等提交钮变为 enabled 再点。
+ * TikTok 常用 disabled 的 data-e2e="login-button"；直接 click 会默认等 30s 超时。
+ */
+async function clickLoginSubmitWhenEnabled(page, {
+  timeoutMs = 18000,
+  accountId = 0,
+  username = '',
+  password = '',
+} = {}) {
+  const end = Date.now() + timeoutMs;
+  let button = await findLoginSubmitButton(page);
+  if (!button) return { clicked: false, reason: '未找到登录按钮' };
+  let refillTried = 0;
+
+  // 轻推 React 校验：点一下用户名再失焦密码框，促使 Log in 启用
+  const nudgeValidation = async () => {
+    const { usernameInput, passwordInput } = await resolveCredentialInputs(page);
+    if (usernameInput) await usernameInput.click({ timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(100);
+    if (passwordInput) {
+      await passwordInput.click({ timeout: 2000 }).catch(() => {});
+      await passwordInput.blur().catch(() => {});
+    }
+  };
+  await nudgeValidation();
+  await page.waitForTimeout(200);
+
+  while (Date.now() < end) {
+    const { usernameInput, passwordInput } = await resolveCredentialInputs(page);
+    const u = usernameInput ? await readInputValue(usernameInput) : '';
+    const p = passwordInput ? await readInputValue(passwordInput) : '';
+    if (!u || !p) {
+      if (username && password && refillTried < 2) {
+        refillTried += 1;
+        liveLog(`账号 #${accountId}：等待点击时输入被清空，自动补填（${refillTried}/2）`, 'warn', { accountId });
+        await fillLoginCredentials(page, username, password, { accountId, attempts: 2 });
+        await nudgeValidation();
+        continue;
+      }
+      liveLog(`账号 #${accountId}：等待点击时输入框仍空，停止空等`, 'warn', { accountId });
+      return { clicked: false, reason: '登录框内容被页面清空，无法点击 Log in' };
+    }
+
+    button = (await findLoginSubmitButton(page)) || button;
+    const enabled = await button.isEnabled().catch(() => false);
+    // aria-disabled / class 禁用（isEnabled 偶发不准）
+    const ariaDisabled = String(await button.getAttribute('aria-disabled').catch(() => '') || '').toLowerCase() === 'true';
+    const disabledAttr = await button.getAttribute('disabled').catch(() => null);
+    const reallyEnabled = enabled && !ariaDisabled && disabledAttr === null;
+    if (reallyEnabled) {
+      try {
+        await button.click({ timeout: 4000 });
+        return { clicked: true, reason: '' };
+      } catch (e) {
+        const msg = String(e.message || e);
+        if (/not enabled|disabled|Timeout/i.test(msg)) {
+          await page.waitForTimeout(400);
+          continue;
+        }
+        throw e;
+      }
+    }
+    await page.waitForTimeout(350);
+  }
+
+  // 仍禁用：不要硬点（Playwright 会卡 30s），返回明确原因
+  const stillDisabled = !(await button.isEnabled().catch(() => false));
+  liveLog(
+    `账号 #${accountId}：登录按钮仍为${stillDisabled ? '禁用' : '不可点'}，跳过自动点击（避免超时）`,
+    'warn',
+    { accountId }
+  );
+  return {
+    clicked: false,
+    reason: stillDisabled
+      ? '登录按钮仍为禁用（请确认账号密码已正确填入，或页面有验证码/风控）'
+      : '登录按钮不可点击',
+  };
+}
+
 async function firstVisibleText(page, texts) {
   for (const text of texts) {
     const locator = page.getByText(text, { exact: true }).first();
@@ -59,6 +222,58 @@ async function firstVisibleText(page, texts) {
 
 async function pageBodyText(page) {
   return page.locator('body').innerText().catch(() => '');
+}
+
+/** Chrome/比特网络错误页（如 ERR_SOCKS_CONNECTION_FAILED） */
+async function detectBrowserNetworkError(page) {
+  if (!page || page.isClosed?.()) return '';
+  const url = String(page.url() || '');
+  const title = String(await page.title().catch(() => '') || '');
+  const body = String(await pageBodyText(page) || '');
+  const blob = `${url}\n${title}\n${body}`;
+  const m = blob.match(
+    /ERR_SOCKS_CONNECTION_FAILED|ERR_PROXY_CONNECTION_FAILED|ERR_TUNNEL_CONNECTION_FAILED|ERR_CONNECTION_TIMED_OUT|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_NAME_NOT_RESOLVED|ERR_TIMED_OUT|ERR_SSL_PROTOCOL_ERROR|ERR_CERT_|ERR_NETWORK_CHANGED|ERR_EMPTY_RESPONSE|ERR_INTERNET_DISCONNECTED/i
+  );
+  if (m) return m[0].toUpperCase();
+  if (/无法访问此网站|This site can['’]?t be reached|网页可能暂时无法连接|不支持代理协议/i.test(blob)
+    && /ERR_|proxy|代理|SOCKS/i.test(blob)) {
+    return 'ERR_PROXY_OR_NETWORK';
+  }
+  return '';
+}
+
+function networkErrorMessage(code, proxyHint = '') {
+  const c = String(code || '').toUpperCase();
+  const proxyPart = proxyHint ? `（当前代理 ${proxyHint}）` : '';
+  if (/SOCKS|PROXY|TUNNEL/i.test(c)) {
+    return `无法打开 TikTok：代理连接失败 ${c}${proxyPart}。请到账号编辑更换可用代理，或在「代理IP」里检测该代理后再登录`;
+  }
+  if (/NAME_NOT_RESOLVED/i.test(c)) {
+    return `无法打开 TikTok：DNS 解析失败 ${c}${proxyPart}。请检查代理/网络`;
+  }
+  return `无法打开 TikTok：网络错误 ${c}${proxyPart}。请检查比特环境代理与本机网络后重试`;
+}
+
+async function assertPageNetworkOk(page, { accountId = 0, proxyHint = '' } = {}) {
+  const code = await detectBrowserNetworkError(page);
+  if (!code) return;
+  liveLog(`账号 #${accountId}：检测到浏览器网络错误 ${code}`, 'error', { accountId });
+  throw new Error(networkErrorMessage(code, proxyHint));
+}
+
+async function safeLoginGoto(page, url, { accountId = 0, proxyHint = '', timeout = 45000 } = {}) {
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+  } catch (e) {
+    const msg = String(e.message || e);
+    const code = (msg.match(/ERR_[A-Z0-9_]+/i) || [])[0]
+      || (await detectBrowserNetworkError(page))
+      || 'NAVIGATION_FAILED';
+    liveLog(`账号 #${accountId}：打开 ${url} 失败：${msg.slice(0, 160)}`, 'error', { accountId });
+    throw new Error(networkErrorMessage(code, proxyHint));
+  }
+  await page.waitForTimeout(400).catch(() => {});
+  await assertPageNetworkOk(page, { accountId, proxyHint });
 }
 
 /**
@@ -112,35 +327,156 @@ async function clearTikTokCookiesOnly(context) {
   }
 }
 
-async function fillAndVerify(locator, value) {
-  const expected = String(value ?? '');
-  if (!expected) return false;
-  // Skip rewrite when already correct — repeated fills can trip TikTok's attempt limit.
-  if ((await locator.inputValue().catch(() => '')) === expected) return true;
-  await locator.scrollIntoViewIfNeeded().catch(() => {});
-  await locator.click({ timeout: 5000 }).catch(() => {});
-  await locator.fill('').catch(() => {});
-  await locator.fill(expected).catch(() => {});
-  if ((await locator.inputValue().catch(() => '')) === expected) return true;
+async function readInputValue(locator) {
+  return String(await locator.inputValue().catch(() => '') || '');
+}
 
-  // TikTok uses React controlled inputs; Playwright fill() alone often does not stick.
-  const viaNative = await locator.evaluate((el, v) => {
+/** React 受控输入：必须清 _valueTracker，否则 UI 看起来没填上、Log in 一直 disabled */
+async function setReactInputValue(locator, value) {
+  return locator.evaluate((el, v) => {
+    if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return false;
     const proto = el instanceof HTMLTextAreaElement
       ? window.HTMLTextAreaElement.prototype
       : window.HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    const tracker = el._valueTracker;
+    if (tracker && typeof tracker.setValue === 'function') {
+      try { tracker.setValue(el.value === v ? `${v}\u200b` : el.value); } catch { /* ignore */ }
+    }
     if (setter) setter.call(el, v);
     else el.value = v;
-    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: v, inputType: 'insertText' }));
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: v, inputType: 'insertText' }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
     return el.value === v;
-  }, expected).catch(() => false);
-  if (viaNative || (await locator.inputValue().catch(() => '')) === expected) return true;
+  }, value).catch(() => false);
+}
 
-  // Last resort: type characters. Never press Enter (that submits the login form).
+async function fillAndVerify(locator, value) {
+  const expected = String(value ?? '');
+  if (!expected) return false;
+  // Skip rewrite when already correct — repeated fills can trip TikTok's attempt limit.
+  if ((await readInputValue(locator)) === expected) return true;
+  await locator.scrollIntoViewIfNeeded().catch(() => {});
+  await locator.click({ timeout: 5000 }).catch(() => {});
+
+  const page = locator.page();
+
+  // 1) 逐字输入（最稳，能触发 TikTok/React 校验并点亮 Log in）
   await locator.press('ControlOrMeta+A').catch(() => {});
-  await locator.pressSequentially(expected, { delay: 25 }).catch(() => {});
-  return (await locator.inputValue().catch(() => '')) === expected;
+  await locator.press('Backspace').catch(() => {});
+  await locator.pressSequentially(expected, { delay: 35 }).catch(() => {});
+  await page.waitForTimeout(150).catch(() => {});
+  if ((await readInputValue(locator)) === expected) return true;
+
+  // 2) Playwright fill
+  await locator.fill('').catch(() => {});
+  await locator.fill(expected).catch(() => {});
+  await page.waitForTimeout(120).catch(() => {});
+  if ((await readInputValue(locator)) === expected) return true;
+
+  // 3) 原生 setter + React _valueTracker
+  if (await setReactInputValue(locator, expected)) {
+    await page.waitForTimeout(120).catch(() => {});
+    if ((await readInputValue(locator)) === expected) return true;
+  }
+
+  // 4) keyboard.type（部分比特环境 pressSequentially 不生效）
+  await locator.click({ timeout: 3000 }).catch(() => {});
+  await locator.press('ControlOrMeta+A').catch(() => {});
+  await locator.press('Backspace').catch(() => {});
+  await page.keyboard.type(expected, { delay: 40 }).catch(() => {});
+  await page.waitForTimeout(200).catch(() => {});
+  return (await readInputValue(locator)) === expected;
+}
+
+/** 定位邮箱/用户名 + 密码框（优先 placeholder / autocomplete，避免误填隐藏 input） */
+async function resolveCredentialInputs(page) {
+  const userCandidates = [
+    page.getByPlaceholder(/Email or username|email or username|Phone|手机|邮箱|用户名/i).first(),
+    page.locator('input[name="username"]').first(),
+    page.locator('input[autocomplete="username"]').first(),
+    page.locator('input[placeholder*="Email or username"]').first(),
+    page.locator('input[placeholder*="email or username"]').first(),
+    page.locator('input[placeholder*="Username"]').first(),
+    page.locator('input[placeholder*="username"]').first(),
+    page.locator('input[placeholder*="Email"]').first(),
+    page.locator('input[placeholder*="邮箱"]').first(),
+    page.locator('input[placeholder*="用户名"]').first(),
+  ];
+  const passCandidates = [
+    page.locator('input[type="password"]').first(),
+    page.locator('input[autocomplete="current-password"]').first(),
+    page.getByPlaceholder(/^Password$|密码/i).first(),
+  ];
+
+  let usernameInput = null;
+  for (const loc of userCandidates) {
+    if (await loc.count().catch(() => 0) && await loc.isVisible().catch(() => false) && await loc.isEditable().catch(() => true)) {
+      usernameInput = loc;
+      break;
+    }
+  }
+  let passwordInput = null;
+  for (const loc of passCandidates) {
+    if (await loc.count().catch(() => 0) && await loc.isVisible().catch(() => false) && await loc.isEditable().catch(() => true)) {
+      passwordInput = loc;
+      break;
+    }
+  }
+
+  // 仍缺用户名：在含密码的 form 内找第一个可见文本框
+  if (!usernameInput && passwordInput) {
+    const form = page.locator('form').filter({ has: page.locator('input[type="password"]') }).first();
+    const scope = (await form.count().catch(() => 0)) ? form : page;
+    const fallback = await firstVisible(scope, ['input[type="text"]', 'input:not([type])']);
+    if (fallback && await fallback.isEditable().catch(() => true)) usernameInput = fallback;
+  }
+  return { usernameInput, passwordInput };
+}
+
+/** 填账号密码并确认值仍留在 DOM（防止 React 重渲染清空后误以为已填） */
+async function fillLoginCredentials(page, username, password, { accountId = 0, attempts = 3 } = {}) {
+  const user = String(username || '').replace(/^@+/, '').trim();
+  const pass = String(password || '');
+  if (!user || !pass) return { ok: false, usernameFilled: false, passwordFilled: false, message: '账号或密码为空' };
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const { usernameInput, passwordInput } = await resolveCredentialInputs(page);
+    if (!usernameInput || !passwordInput) {
+      liveLog(`账号 #${accountId}：第 ${attempt}/${attempts} 次未找到登录输入框`, 'warn', { accountId });
+      await page.waitForTimeout(600);
+      continue;
+    }
+    liveLog(`账号 #${accountId}：填写登录表（第 ${attempt}/${attempts} 次）用户名 ${user}`, 'info', { accountId });
+    const usernameFilled = await fillAndVerify(usernameInput, user);
+    const passwordFilled = await fillAndVerify(passwordInput, pass);
+
+    // 失焦触发校验，给 React 一点时间；再读一次确认没有被清空
+    await passwordInput.blur().catch(() => {});
+    await page.waitForTimeout(350);
+    const userNow = await readInputValue(usernameInput);
+    const passNow = await readInputValue(passwordInput);
+    const userOk = userNow === user;
+    const passOk = passNow === pass;
+    liveLog(
+      `账号 #${accountId}：填表校验 用户名=${userOk ? 'OK' : `空/错(${userNow.length}字)`} 密码=${passOk ? 'OK' : `空/错(${passNow.length}字)`}`,
+      userOk && passOk ? 'info' : 'warn',
+      { accountId }
+    );
+    if (userOk && passOk) {
+      return { ok: true, usernameFilled: true, passwordFilled: true, message: '' };
+    }
+    // 被清空则再点一下输入框重试
+    await usernameInput.click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+  return {
+    ok: false,
+    usernameFilled: false,
+    passwordFilled: false,
+    message: 'TikTok 登录框未保持填写（页面可能拦截了自动输入）。请在比特窗口手动输入后点 Log in，或关闭环境后重试',
+  };
 }
 
 async function fillTotpCode(page, selectors, code) {
@@ -212,14 +548,26 @@ async function fillTwoStepVerification(page, account, totpSecret, submitAfterTot
   if (!codeVisible) throw new Error('已生成 2FA 验证码，但 TikTok 输入框未保持填写状态');
   const preparedScreenshot = path.join(screenshotDir, `login-${account.id}-${Date.now()}-2sv-prepared.png`);
   await page.screenshot({ path: preparedScreenshot, fullPage: false }).catch(() => {});
-  const next = submitAfterTotp
-    ? await firstVisible(page, ['button[type="submit"]', 'button:has-text("Next")', 'button:has-text("下一步")']) : null;
-  if (next) { await next.click(); await page.waitForTimeout(2500); }
+  let nextClicked = false;
+  if (submitAfterTotp) {
+    const next = await firstVisible(page, [
+      'button[type="submit"]:not([disabled])',
+      'button:has-text("Next")',
+      'button:has-text("下一步")',
+      'button:has-text("Verify")',
+      'button:has-text("验证")',
+    ]);
+    if (next && await next.isEnabled().catch(() => false)) {
+      await next.click({ timeout: 5000 }).catch(() => {});
+      nextClicked = true;
+      await page.waitForTimeout(2500);
+    }
+  }
   return {
-    accountId: account.id, username: account.username, filled: true, submitted: Boolean(next),
+    accountId: account.id, username: account.username, filled: true, submitted: nextClicked,
     twoFactorRequired: true, totpFilled: true, captcha: false, screenshot: preparedScreenshot,
     currentUrl: page.url(), pageTitle: await page.title(),
-    message: next ? '已在 2-step 页面填入并提交 TOTP 验证码' : '已自动填入 2FA 6 位验证码，请手动点击 Next（不会自动点）',
+    message: nextClicked ? '已在 2-step 页面填入并提交验证码' : '已自动填入 2FA 验证码（未点确认）',
   };
 }
 
@@ -257,8 +605,12 @@ async function clickSafeLoginMethod(page, pattern) {
 
 async function clickPhoneEmailUsernameEntry(page) {
   const exactTexts = [
+    'Use phone or email',
+    'Use phone / email',
     'Use phone / email / username',
     'Use phone/email/username',
+    '使用手机号或邮箱',
+    '使用手机号 / 邮箱',
     '使用手机号 / 邮箱 / 用户名',
     '使用手机号/邮箱/用户名',
     '使用电话 / 邮箱 / 用户名',
@@ -270,42 +622,47 @@ async function clickPhoneEmailUsernameEntry(page) {
     await loc.click({ timeout: 5000 }).catch(async () => {
       const clickable = loc.locator('xpath=ancestor-or-self::*[self::a or self::button or @role="button" or @role="link" or self::div][1]');
       if (await clickable.count()) await clickable.click({ timeout: 5000 });
-      else throw new Error('无法点击手机/邮箱/用户名入口');
+      else throw new Error('无法点击手机/邮箱入口');
+    });
+    return true;
+  }
+  // 模糊匹配（含 Last used 角标的那一行）
+  const fuzzy = page.locator('div, button, a, span').filter({
+    hasText: /Use phone\s*(or|\/)\s*email|使用手机号.*邮箱/i,
+  }).first();
+  if (await fuzzy.count() && await fuzzy.isVisible().catch(() => false)) {
+    await fuzzy.scrollIntoViewIfNeeded().catch(() => {});
+    await fuzzy.click({ timeout: 5000 }).catch(async () => {
+      const clickable = fuzzy.locator('xpath=ancestor-or-self::*[self::a or self::button or @role="button" or @role="link" or self::div][1]');
+      if (await clickable.count()) await clickable.click({ timeout: 5000 });
     });
     return true;
   }
   return clickSafeLoginMethod(page,
-    /Use phone\s*\/\s*email\s*\/\s*username|phone\s*\/\s*email\s*\/\s*username|使用.*(?:手机号|电话).*邮箱.*用户名/i);
+    /Use phone\s*(or|\/)\s*email(?:\s*\/\s*username)?|phone\s*\/\s*email|使用.*(?:手机号|电话).*邮箱/i);
 }
 
 async function hasCredentialForm(page) {
-  const passwordReady = await firstVisible(page, ['input[type="password"]', 'input[autocomplete="current-password"]']);
-  if (!passwordReady) return false;
-  const usernameReady = await firstVisible(page, [
-    'input[name="username"]', 'input[autocomplete="username"]',
-    'input[placeholder*="Email or username"]', 'input[placeholder*="email or username"]',
-    'input[placeholder*="Email"]', 'input[placeholder*="email"]',
-    'input[placeholder*="Username"]', 'input[placeholder*="username"]',
-    'input[placeholder*="用户名"]', 'input[placeholder*="邮箱"]',
-  ]);
-  return Boolean(usernameReady);
+  const { usernameInput, passwordInput } = await resolveCredentialInputs(page);
+  return Boolean(usernameInput && passwordInput);
 }
 
 async function isLoginMethodHub(page) {
   if (await hasCredentialForm(page)) return false;
   if (await isTwoStepVerificationPage(page)) return false;
   const text = await pageBodyText(page);
-  return /Use phone\s*\/\s*email\s*\/\s*username|使用手机号.*邮箱.*用户名|Continue with Google|Continue with Facebook|Use QR code|使用二维码/i.test(text);
+  return /Log in to TikTok|登录到 TikTok|Use phone\s*(or|\/)\s*email|Use phone\s*\/\s*email\s*\/\s*username|使用手机号.*邮箱|Continue with Google|Continue with Facebook|Use QR code|使用二维码/i.test(text);
 }
 
-async function openEmailCredentialForm(page, accountId) {
+async function openEmailCredentialForm(page, accountId, proxyHint = '') {
+  await assertPageNetworkOk(page, { accountId, proxyHint });
   if (await hasCredentialForm(page)) return true;
 
   // Hub page (QR / Google / Apple / phone-email-username). Prefer a direct
   // deep-link; TikTok often redirects back to the hub, so also click the tile.
   if (await isLoginMethodHub(page) || !/\/login\/phone-or-email\/email/i.test(page.url())) {
     liveLog(`账号 #${accountId}：打开邮箱/用户名登录表单`,'info',{accountId});
-    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await safeLoginGoto(page, 'https://www.tiktok.com/login/phone-or-email/email', { accountId, proxyHint });
     await page.waitForTimeout(900);
   }
   if (await hasCredentialForm(page)) return true;
@@ -315,6 +672,7 @@ async function openEmailCredentialForm(page, accountId) {
     const clicked = await clickPhoneEmailUsernameEntry(page);
     if (clicked) await page.waitForTimeout(1200);
   }
+  await assertPageNetworkOk(page, { accountId, proxyHint });
   if (await hasCredentialForm(page)) return true;
 
   // Intermediate "phone or email" chooser — pick email/username.
@@ -327,7 +685,7 @@ async function openEmailCredentialForm(page, accountId) {
   if (await hasCredentialForm(page)) return true;
 
   // Last attempt: deep-link again after the hub click path.
-  await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+  await safeLoginGoto(page, 'https://www.tiktok.com/login/phone-or-email/email', { accountId, proxyHint });
   await page.waitForTimeout(900);
   return hasCredentialForm(page);
 }
@@ -354,13 +712,19 @@ function assertNotCancelled(run) {
   if (run?.cancelled) throw new Error('登录辅助已取消或超时，已停止操作');
 }
 
-async function getSession(profileId, provider) {
+async function getSession(profileId, provider, { forceOpen = false, forceVisible = false } = {}) {
   const existing = sessions.get(profileId);
-  if (existing && existing.browser.isConnected() && !existing.page.isClosed()) return existing;
-  if (existing) { await existing.browser.close().catch(() => {}); sessions.delete(profileId); }
-  // Reuse an already connected CDP session. Calling BitBrowser open again can
-  // reactivate/reload the profile and races the user's manual Log in click.
-  const opened = await provider.open(profileId, { headless: isHeadless('login') });
+  // 一键登录必须重新调比特 open，否则窗口可能不弹出来（仅复用了内存里的 CDP）
+  if (!forceOpen && existing && existing.browser.isConnected() && !existing.page.isClosed()) {
+    return existing;
+  }
+  if (existing) {
+    await existing.browser.close().catch(() => {});
+    sessions.delete(profileId);
+  }
+  const headless = forceVisible ? false : isHeadless('login');
+  liveLog(`打开比特环境 ${String(profileId).slice(0, 8)}…（${headless ? '无头' : '可见'}）`, 'info');
+  const opened = await provider.open(profileId, { headless });
   if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
   const browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
   const context = browser.contexts()[0] || await browser.newContext();
@@ -377,26 +741,31 @@ async function getSession(profileId, provider) {
   return session;
 }
 
-async function loginAssist(accountId, { autoSubmit = false, submitAfterTotp = true } = {}) {
+async function loginAssist(accountId, { autoSubmit = true, submitAfterTotp = true } = {}) {
+  // 先清掉可能残留的锁，避免上次超时后「点了没反应」
+  activeLogins.delete(String(accountId));
   const lockKey = acquireLoginLock(accountId);
   const run = { cancelled: false };
-  liveLog(`账号 #${accountId}：开始登录辅助`,'info',{accountId});
+  liveLog(`账号 #${accountId}：开始一键登录`,'info',{accountId});
   try {
-    return await withTimeout(
+    const result = await withTimeout(
       runLoginAssist(accountId, { autoSubmit, submitAfterTotp, run }),
       LOGIN_LOCK_TTL_MS,
-      '登录辅助超时（90 秒）。请确认比特环境已打开且页面可操作后重试'
+      '登录超时（120 秒）。请确认比特环境已打开且页面可操作后重试'
     );
+    // 无论成功失败，按实际结果回调同步账号登录状态
+    return await callbackLoginStatus(accountId, result || { loginOk: false });
   } catch (error) {
     run.cancelled = true;
+    await callbackLoginStatus(accountId, { loginOk: false, message: error.message }).catch(() => {});
     throw error;
   } finally {
-    liveLog(`账号 #${accountId}：登录辅助结束`,'info',{accountId});
+    liveLog(`账号 #${accountId}：登录流程结束`,'info',{accountId});
     releaseLoginLock(lockKey);
   }
 }
 
-async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp = true, run } = {}) {
+async function runLoginAssist(accountId, { autoSubmit = true, submitAfterTotp = true, run } = {}) {
   const bundle = await dataStore.getAccountBundle(accountId);
   assertNotCancelled(run);
   if (!bundle) throw new Error('账号不存在');
@@ -417,33 +786,124 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   };
   if (!account.username) throw new Error('账号用户名为空，无法填写登录表');
 
+  const proxyHint = bundle.proxy_host
+    ? `${bundle.proxy_protocol || 'proxy'}://${bundle.proxy_host}:${bundle.proxy_port || ''}`
+    : '';
+
+  // 登录前代理预检（兼容）：SOCKS 只因「端口不通 / 明确鉴权失败」拦截；
+  // 握手超时等差异不拦，交给比特打开后再用 ERR_SOCKS 页面判定。
+  if (bundle.proxy_host && bundle.proxy_port) {
+    try {
+      const { probeProxyObject } = require('../proxy-probe');
+      liveLog(`账号 #${accountId}：登录前检测代理 ${proxyHint}`, 'info', { accountId });
+      const probe = await probeProxyObject({
+        protocol: bundle.proxy_protocol || 'socks5',
+        host: bundle.proxy_host,
+        port: bundle.proxy_port,
+        username: bundle.proxy_username || '',
+        password: bundle.proxy_password || '',
+      }, { detectCountry: false, strictSocks: false });
+      if (!probe.available || probe.hardFail) {
+        throw new Error(
+          `账号绑定的代理不可用${proxyHint ? `（${proxyHint}）` : ''}：${probe.detail || '连接失败'}。请更换代理或到「代理IP」检测通过后再登录`
+        );
+      }
+      if (probe.softWarning) {
+        liveLog(`账号 #${accountId}：代理预检告警（仍继续登录）：${probe.detail || ''}`, 'warn', { accountId });
+      } else {
+        liveLog(`账号 #${accountId}：代理检测通过 ${probe.detail || ''}`.trim(), 'info', { accountId });
+      }
+    } catch (e) {
+      if (/代理不可用/i.test(String(e.message || e))) throw e;
+      liveLog(`账号 #${accountId}：代理预检异常（继续尝试打开）：${e.message || e}`, 'warn', { accountId });
+    }
+  }
+
   const provider = new BitBrowserProvider();
-  await dataStore.updateLoginStatus(accountId, 'checking');
+  // 打开前把账号代理同步进比特环境，避免环境里仍是失效 SOCKS（ERR_SOCKS_CONNECTION_FAILED）
+  const syncProxy = bundle.proxy_host && bundle.proxy_port
+    ? {
+      protocol: bundle.proxy_protocol || 'socks5',
+      host: bundle.proxy_host,
+      port: bundle.proxy_port,
+      username: bundle.proxy_username || '',
+      password: bundle.proxy_password || '',
+    }
+    : null;
+  liveLog(
+    `账号 #${accountId}：同步代理到比特环境 ${syncProxy ? proxyHint : '（清空/直连）'}`,
+    'info',
+    { accountId }
+  );
+  // 若窗口已开着，先关掉再改代理，否则比特可能继续用旧 SOCKS
+  const profileId = String(account.browser_profile_id);
+  const old = sessions.get(profileId);
+  if (old) {
+    await old.browser.close().catch(() => {});
+    sessions.delete(profileId);
+  }
+  await provider.close(profileId).catch(() => {});
+  try {
+    await provider.updateProxy(profileId, syncProxy);
+    liveLog(`账号 #${accountId}：比特环境代理已写入并校验`, 'info', { accountId });
+  } catch (e) {
+    // 同步失败仍打开会继续 ERR_SOCKS，直接中断并提示换代理
+    throw new Error(
+      `无法把代理写入比特环境：${e.message || e}。请在比特客户端核对该窗口代理，或更换账号代理后重试`
+    );
+  }
+  // 先打开比特窗口，再回写状态，避免卡在 PHP 状态接口时用户看不到任何反应
   liveLog(`账号 #${accountId}：打开绑定浏览器环境`,'info',{accountId});
-  const session = await getSession(account.browser_profile_id, provider);
+  const session = await getSession(account.browser_profile_id, provider, { forceOpen: true, forceVisible: true });
   assertNotCancelled(run);
+  dataStore.updateLoginStatus(accountId, 'checking').catch(() => {});
   liveLog(`账号 #${accountId}：当前页面 ${session.page.url()}`,'info',{accountId});
   // BitBrowser may add its own workbench tab after the TikTok tab. Always target
   // the active TikTok 2FA/login page rather than relying on the first cached tab.
   const openPages = session.context.pages().filter(item => !item.isClosed());
-  const page = openPages.find(item => /tiktok\.com\/login\/2sv\//i.test(item.url()))
+  let page = openPages.find(item => /tiktok\.com\/login\/2sv\//i.test(item.url()))
     || openPages.find(item => /tiktok\.com/i.test(item.url()))
     || session.page;
   session.page = page;
   await page.bringToFront().catch(() => {});
-  // Cookies are stored in the BitBrowser profile, not in TkSwarm memory. Check
-  // them before starting a new login so a later click does not log in again.
-  const existingSession = await inspectTikTokSession(session.ws);
+
+  // 已停在 Chrome 错误页（如 ERR_SOCKS_CONNECTION_FAILED）时直接报代理问题
+  await assertPageNetworkOk(page, { accountId, proxyHint });
+
+  // 先落到 TikTok 主站，才能用页面上的登录墙交叉验证（只看 Cookie 会误判）
+  if (!/tiktok\.com/i.test(String(page.url() || '')) || await detectBrowserNetworkError(page)) {
+    await safeLoginGoto(page, 'https://www.tiktok.com/', { accountId, proxyHint });
+    await page.waitForTimeout(1500);
+    page = session.page;
+  }
+
+  const existingSession = await inspectTikTokSession(session.ws, page);
   assertNotCancelled(run);
-  if (existingSession.loggedIn) {
-    await dataStore.updateLoginStatus(accountId, 'online');
-    return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha: false, alreadyLoggedIn: true, screenshot: '', currentUrl: page.url(), pageTitle: await page.title(), message: '检测到已有有效 TikTok 登录状态，无需重复登录' };
+
+  // 用户主动点登录：只要出现登录弹窗/Log in，一律不算已登录，清掉失效 Cookie 继续填表
+  const onLoginWall = existingSession.uiLoggedOut || await isLoginMethodHub(page);
+  if (onLoginWall) {
+    if (existingSession.hasSessionCookie) {
+      liveLog(`账号 #${accountId}：页面仍是登录墙（Log in to TikTok），忽略失效 Cookie，继续登录`, 'warn', { accountId });
+      await clearTikTokCookiesOnly(session.context);
+    }
+    await dataStore.updateLoginStatus(accountId, 'offline').catch(() => {});
+  } else if (existingSession.loggedIn) {
+    await dataStore.updateLoginStatus(accountId, 'online').catch(() => {});
+    return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha: false, alreadyLoggedIn: true, loginOk: true, screenshot: '', currentUrl: page.url(), pageTitle: await page.title(), message: '检测到已有有效 TikTok 登录状态，无需重复登录（比特窗口已打开）' };
+  }
+
+  // 登录方式弹窗：先点 Use phone or email，再进邮箱密码表
+  if (await isLoginMethodHub(page) && !(await hasCredentialForm(page))) {
+    liveLog(`账号 #${accountId}：检测到登录方式弹窗，点击 Use phone or email`, 'info', { accountId });
+    await clickPhoneEmailUsernameEntry(page);
+    await page.waitForTimeout(1200);
   }
 
   // Handle 2-step FIRST. Never clear cookies / navigate away while the user is
   // already on the authenticator page — that would kill the login session.
   if (await isTwoStepVerificationPage(page)) {
-    return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+    return finalizeAfterLogin(accountId, session.ws, await fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run), page);
   }
 
   // If a previous failed attempt left the rate-limit banner on this profile,
@@ -453,10 +913,10 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   if (limitedMsg) {
     liveLog(`账号 #${accountId}：检测到限流文案，清理 TikTok Cookie 并重新打开登录页`,'warn',{accountId});
     await clearTikTokCookiesOnly(session.context);
-    await page.goto('https://www.tiktok.com/login/phone-or-email/email', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await safeLoginGoto(page, 'https://www.tiktok.com/login/phone-or-email/email', { accountId, proxyHint });
     await page.waitForTimeout(1000);
     if (await isTwoStepVerificationPage(page)) {
-      return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+      return finalizeAfterLogin(accountId, session.ws, await fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run), page);
     }
     limitedMsg = await findAttemptLimitMessage(page);
     if (limitedMsg) {
@@ -473,26 +933,28 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   // (QR / Google / Apple / phone-email-username) is NOT the credential form —
   // staying there was why users only saw "Log in to TikTok" method tiles.
   const currentUrl = page.url();
-  liveLog(`账号 #${accountId}：登录辅助选定页面 ${currentUrl}`,'info',{accountId});
+  liveLog(`账号 #${accountId}：登录选定页面 ${currentUrl}`,'info',{accountId});
   assertNotCancelled(run);
-  const openedForm = await openEmailCredentialForm(page, accountId);
+  const openedForm = await openEmailCredentialForm(page, accountId, proxyHint);
   if (!openedForm) {
     await dataStore.updateLoginStatus(accountId, 'offline');
+    // 若其实是代理错误页，优先报网络原因
+    await assertPageNetworkOk(page, { accountId, proxyHint });
     return {
-      accountId, username: account.username, filled: false, submitted: false, captcha: false,
+      accountId, username: account.username, filled: false, submitted: false, captcha: false, loginOk: false,
       screenshot: '', currentUrl: page.url(), pageTitle: await page.title().catch(() => ''),
-      message: '仍停留在登录方式选择页（QR/Google/Apple）。请手动点「Use phone / email / username」，进入邮箱登录表后再点登录辅助',
+      message: '仍停留在登录方式选择页（QR/Google/Apple）。请手动点「Use phone / email / username」后重试一键登录',
     };
   }
   assertNotCancelled(run);
   if (await isTwoStepVerificationPage(page)) {
-    return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+    return finalizeAfterLogin(accountId, session.ws, await fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run), page);
   }
   limitedMsg = await findAttemptLimitMessage(page);
   if (limitedMsg) {
     liveLog(`账号 #${accountId}：登录页仍有限流文案，清理后重开一次`,'warn',{accountId});
     await clearTikTokCookiesOnly(session.context);
-    await openEmailCredentialForm(page, accountId);
+    await openEmailCredentialForm(page, accountId, proxyHint);
     limitedMsg = await findAttemptLimitMessage(page);
     if (limitedMsg) {
       await dataStore.updateLoginStatus(accountId, 'offline');
@@ -506,26 +968,19 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
   const hasCaptcha = async () => /(captcha|verify you are human|人机验证|滑块|security check)/i.test(await pageBodyText(page));
   let captcha = await hasCaptcha();
   // Form should already be open; wait briefly if TikTok is still rendering inputs.
-  const usernameSelectors = [
-    'input[name="username"]', 'input[autocomplete="username"]',
-    'input[placeholder*="Email or username"]', 'input[placeholder*="email or username"]',
-    'input[placeholder*="Email"]', 'input[placeholder*="email"]',
-    'input[placeholder*="Username"]', 'input[placeholder*="username"]',
-    'input[placeholder*="用户名"]', 'input[placeholder*="邮箱"]',
-  ];
-  const passwordSelectors = ['input[type="password"]', 'input[autocomplete="current-password"]'];
   for (let i = 0; !captcha && i < 10; i += 1) {
     assertNotCancelled(run);
     if (await findAttemptLimitMessage(page)) break;
     if (await isTwoStepVerificationPage(page)) {
-      return fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
+      return finalizeAfterLogin(accountId, session.ws, await fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run), page);
     }
     if (await hasCredentialForm(page)) break;
     if (await isLoginMethodHub(page)) {
-      await openEmailCredentialForm(page, accountId);
+      await openEmailCredentialForm(page, accountId, proxyHint);
     } else {
       await selectUsernameLogin(page);
     }
+    await assertPageNetworkOk(page, { accountId, proxyHint });
     await page.waitForTimeout(500);
     captcha = await hasCaptcha();
   }
@@ -542,29 +997,17 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
 
-  // Prefer inputs inside the password form so we do not fill a header search box.
-  const loginForm = page.locator('form').filter({ has: page.locator('input[type="password"]') }).first();
-  const inputScope = (await loginForm.count()) ? loginForm : page;
-  let usernameInput = await firstVisible(inputScope, usernameSelectors);
-  if (!usernameInput) {
-    usernameInput = await firstVisible(inputScope, ['input[type="text"]', 'input:not([type])', 'input:not([type="password"])']);
-  }
-  const passwordInput = await firstVisible(inputScope, passwordSelectors);
-  if (!usernameInput || !passwordInput) {
-    await dataStore.updateLoginStatus(accountId, 'offline');
-    return { accountId, username: account.username, filled: false, submitted: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: '未找到登录表单，请在浏览器中人工确认页面状态' };
+  // 等输入框真正可编辑（页面已渲染到邮箱密码表，但 input 偶发晚挂载）
+  for (let i = 0; i < 15; i += 1) {
+    assertNotCancelled(run);
+    const ready = await resolveCredentialInputs(page);
+    if (ready.usernameInput && ready.passwordInput) break;
+    await page.waitForTimeout(400);
   }
   assertNotCancelled(run);
-  liveLog(`账号 #${accountId}：准备填写用户名 ${account.username}`,'info',{accountId});
-  let usernameFilled = await fillAndVerify(usernameInput, account.username);
-  if (!usernameFilled) {
-    // Re-query after a possible React/Vue DOM replacement.
-    usernameInput = await firstVisible(inputScope, [...usernameSelectors, 'input[type="text"]', 'input:not([type="password"])']);
-    usernameFilled = usernameInput ? await fillAndVerify(usernameInput, account.username) : false;
-  }
-  assertNotCancelled(run);
-  const passwordFilled = await fillAndVerify(passwordInput, password);
-  liveLog(`账号 #${accountId}：用户名${usernameFilled?'已':'未'}填写，密码${passwordFilled?'已':'未'}填写` , usernameFilled && passwordFilled ? 'info' : 'error', { accountId });
+  const fillRes = await fillLoginCredentials(page, account.username, password, { accountId, attempts: 3 });
+  const usernameFilled = Boolean(fillRes.usernameFilled);
+  const passwordFilled = Boolean(fillRes.passwordFilled);
   limitedMsg = await findAttemptLimitMessage(page);
   if (limitedMsg) {
     await dataStore.updateLoginStatus(accountId, 'offline');
@@ -572,22 +1015,42 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     result.pageTitle = await page.title().catch(() => '');
     return result;
   }
-  // Capture the actual prepared form for diagnosis without including secret
-  // values in API responses or logs.
-  if (!usernameFilled || !passwordFilled) {
+  if (!fillRes.ok) {
     await dataStore.updateLoginStatus(accountId, 'offline');
-    return { accountId, username: account.username, filled: false, submitted: false, twoFactorRequired: false, totpFilled: false, captcha, screenshot, currentUrl: page.url(), pageTitle: await page.title(), message: !usernameFilled ? 'TikTok 用户名输入框未接受填写，请检查页面后重试' : 'TikTok 密码输入框未接受填写，请检查页面后重试' };
+    screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}-fill-fail.png`);
+    await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
+    return {
+      accountId, username: account.username, filled: false, submitted: false,
+      twoFactorRequired: false, totpFilled: false, captcha, screenshot,
+      currentUrl: page.url(), pageTitle: await page.title(),
+      message: fillRes.message || '未能填写账号密码',
+    };
   }
   let totpFilled = false;
   let submitted = false;
   let twoFactorRequired = false;
-  // Default path never auto-clicks "Log in". After you click Log in and land on
-  // 2-step verification, click「登录辅助」again — that pass auto-fills the 6-digit code.
+  // 一键登录：等 Log in 启用后再点，进入 2FA 后自动填码并确认
+  let submitBlockReason = '';
   if (autoSubmit && !captcha && !(await findAttemptLimitMessage(page))) {
     assertNotCancelled(run);
-    const button = await firstVisible(page, ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("登录")']);
-    if (button) {
-      await button.click();
+    // 点登录前再确认一次值还在；被清空则补填
+    const preClick = await resolveCredentialInputs(page);
+    if (preClick.usernameInput && preClick.passwordInput) {
+      const u = await readInputValue(preClick.usernameInput);
+      const p = await readInputValue(preClick.passwordInput);
+      if (u !== account.username || p !== password) {
+        liveLog(`账号 #${accountId}：点击前发现输入被清空，重新填写`, 'warn', { accountId });
+        await fillLoginCredentials(page, account.username, password, { accountId, attempts: 2 });
+      }
+    }
+    liveLog(`账号 #${accountId}：等待登录按钮启用并点击…`, 'info', { accountId });
+    const clickRes = await clickLoginSubmitWhenEnabled(page, {
+      timeoutMs: 18000,
+      accountId,
+      username: account.username,
+      password,
+    });
+    if (clickRes.clicked) {
       submitted = true;
       for (let i = 0; i < 80; i += 1) {
         assertNotCancelled(run);
@@ -598,11 +1061,23 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
           twoFactorRequired = true;
           if (totpSecret) {
             const step = await fillTwoStepVerification(page, account, totpSecret, submitAfterTotp, run);
-            return { ...step, submitted: true, usernameFilled, passwordFilled };
+            return finalizeAfterLogin(accountId, session.ws, { ...step, submitted: true, usernameFilled, passwordFilled }, page);
           }
           break;
         }
+        try {
+          const mid = await inspectTikTokSession(session.ws, page);
+          if (mid?.loggedIn) {
+            return finalizeAfterLogin(accountId, session.ws, {
+              accountId, username: account.username, filled: true, usernameFilled, passwordFilled,
+              submitted: true, twoFactorRequired: false, totpFilled: false, captcha: false,
+              message: '登录成功',
+            }, page);
+          }
+        } catch { /* continue waiting */ }
       }
+    } else {
+      submitBlockReason = clickRes.reason || '未能自动点击登录按钮';
     }
   }
   if (captcha && !screenshot) {
@@ -615,12 +1090,14 @@ async function runLoginAssist(accountId, { autoSubmit = false, submitAfterTotp =
     attemptLimited: limitedNow, screenshot, currentUrl: page.url(), pageTitle: await page.title(),
     message: limitedNow
       ? 'TikTok 页面显示登录次数已达上限。请关闭该比特环境后换新代理，或新建浏览器环境再试'
-      : (captcha ? '检测到安全验证，已暂停自动提交，请人工处理'
-        : (submitted ? '已提交登录表单，请稍后检测登录状态'
-          : '账号和密码已填充（未自动点 Log in）。请手动点 Log in；进入 2-step 后再点一次「登录辅助」自动填 6 位验证码')),
+      : (captcha ? '检测到安全验证（滑块/人机），已暂停自动提交，请在比特窗口人工完成后再点「检测登录」'
+        : (submitted
+          ? (twoFactorRequired && !totpSecret
+            ? '已提交登录，但缺少 2FA 密钥，请在「密码/2FA」补填后重试'
+            : '已自动提交登录，正在确认会话')
+          : (submitBlockReason || '账号和密码已填充，但未能自动点击登录按钮，请检查页面后重试'))),
   };
-  if (!submitted) await dataStore.updateLoginStatus(accountId, 'checking');
-  return result;
+  return finalizeAfterLogin(accountId, session.ws, result, page);
 }
 
 async function closeSession(profileId) {
@@ -633,4 +1110,4 @@ async function closeSession(profileId) {
   await provider.close(profileId).catch(() => {});
 }
 
-module.exports = { loginAssist, closeSession };
+module.exports = { loginAssist, fullLogin, closeSession };

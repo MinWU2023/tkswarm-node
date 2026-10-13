@@ -49,6 +49,33 @@ function nestErrCode(error) {
   return '';
 }
 
+function friendlyBitBusinessError(raw, endpoint = '') {
+  const msg = String(raw || '').trim();
+  if (!msg) return '比特浏览器请求失败';
+  // 比特客户端主账号已退出 / 本地 API token 失效：health 仍可能成功，但 list/open 失败
+  if (/login\s*out/i.test(msg) || /token\s*(失效|无效|过期|invalid|expire)/i.test(msg) || /请.*登录状态|重新登录|未登录/.test(msg)) {
+    return [
+      '比特浏览器账号未登录或本地 API Token 已失效。',
+      '本地服务虽在运行，但无法打开环境窗口。',
+      '请打开比特客户端重新登录主账号；若设置了 API Token，请到「设置」核对与比特本地服务一致。',
+      endpoint ? `（接口：${endpoint}）` : '',
+    ].filter(Boolean).join('');
+  }
+  if (/权限不足|无权|无权限|not\s*allow|permission|forbidden/i.test(msg)) {
+    return [
+      '比特浏览器拒绝操作：当前登录的比特账号无权打开/管理该窗口。',
+      '请检查：1) 比特客户端已用有权限的主账号登录；',
+      '2) 该窗口是否属于当前比特账号（员工账号需在「员工管理→角色管理」开通浏览器窗口权限）；',
+      '3) 若窗口是别人创建的，请解绑后重新「创建环境」，或让管理员把窗口授权给你。',
+      endpoint ? `（接口：${endpoint}）` : '',
+    ].filter(Boolean).join('');
+  }
+  if (/不存在|not\s*found|已删除|找不到/i.test(msg) && /browser|窗口|环境|profile/i.test(`${msg} ${endpoint}`)) {
+    return `比特环境不存在或已删除。请在账号里解绑后重新「创建环境」。原错误：${msg}`;
+  }
+  return msg;
+}
+
 function friendlyBitConnectError(error, baseUrl) {
   const code = nestErrCode(error);
   const msg = String(error?.message || '');
@@ -120,13 +147,14 @@ class BitBrowserProvider {
         throw new Error(`比特浏览器返回了非 JSON 数据（HTTP ${response.status}）`);
       }
       if (!response.ok || !isBitSuccess(result)) {
-        throw new Error(result.msg || result.message || result.error || `比特浏览器请求失败（HTTP ${response.status}）`);
+        const raw = result.msg || result.message || result.error || `比特浏览器请求失败（HTTP ${response.status}）`;
+        throw new Error(friendlyBitBusinessError(raw, endpoint));
       }
       return result.data;
     } catch (error) {
       if (error.name === 'AbortError') throw new Error(`比特浏览器请求超时：${endpoint}`);
       // 已是友好中文业务错误则原样抛出
-      if (error && error.message && /比特|BitBrowser|本地 API/i.test(error.message) && !/fetch failed/i.test(error.message)) {
+      if (error && error.message && /比特|BitBrowser|本地 API|比特浏览器拒绝/i.test(error.message) && !/fetch failed/i.test(error.message)) {
         throw error;
       }
       throw new Error(friendlyBitConnectError(error, this.baseUrl));
@@ -152,19 +180,80 @@ class BitBrowserProvider {
         ? options.args
         : ['--headless=new', '--disable-gpu'];
     }
-    const data = normalizeOpenData(await this.request('browser/open', payload, 60000));
-    if (!data?.ws) {
-      throw new Error('比特浏览器已响应，但未返回 CDP WebSocket 地址。请升级比特或在比特设置中确认本地 API 正常');
+    try {
+      const data = normalizeOpenData(await this.request('browser/open', payload, 60000));
+      if (!data?.ws) {
+        throw new Error('比特浏览器已响应，但未返回 CDP WebSocket 地址。请升级比特或在比特设置中确认本地 API 正常');
+      }
+      return data;
+    } catch (error) {
+      const msg = String(error?.message || '');
+      if (/权限不足|无权|拒绝操作/i.test(msg)) {
+        throw new Error(`${msg}（环境ID：${profileId.slice(0, 8)}…）`);
+      }
+      throw error;
     }
-    return data;
   }
 
   close(id) { return this.request('browser/close', { id: String(id || '') }, 30000); }
   delete(id) { return this.request('browser/delete', { id: String(id || '') }, 30000); }
   detail(id) { return this.request('browser/detail', { id: String(id || '') }); }
 
+  /** 比特 proxyType：http / https / socks5 / noproxy */
+  normalizeProxyType(protocol) {
+    const p = String(protocol || '').trim().toLowerCase();
+    if (!p || p === 'noproxy' || p === 'none') return 'noproxy';
+    if (p === 'socks' || p === 'socks5' || p === 'socks5h') return 'socks5';
+    if (p === 'https' || p === 'http') return p;
+    return 'http';
+  }
+
+  /**
+   * 把账号绑定的代理写入已有比特环境（登录前同步，避免环境里还是失效 SOCKS）
+   * 优先走专用接口 /browser/proxy/update；勿用 /browser/update 只改代理（指纹对象必传，容易改失败）。
+   * 须在 browser/open 之前调用。
+   */
+  async updateProxy(id, proxy = null) {
+    const profileId = String(id || '').trim();
+    if (!profileId) throw new Error('缺少比特环境 ID，无法同步代理');
+    const hasProxy = Boolean(proxy?.host && proxy?.port);
+    const proxyType = hasProxy ? this.normalizeProxyType(proxy.protocol) : 'noproxy';
+    const portNum = hasProxy ? Number(proxy.port) : 0;
+    // 专用批量改代理接口（官方推荐），不碰指纹
+    await this.request('browser/proxy/update', {
+      ids: [profileId],
+      ipCheckService: 'ip-api',
+      proxyMethod: 2,
+      proxyType,
+      host: hasProxy ? String(proxy.host) : '',
+      port: hasProxy ? portNum : 0,
+      proxyUserName: hasProxy ? String(proxy.username || '') : '',
+      proxyPassword: hasProxy ? String(proxy.password || '') : '',
+    }, 30000);
+
+    // 回读确认，避免「同步成功」但窗口仍是旧 SOCKS
+    const detail = await this.detail(profileId).catch(() => null);
+    if (!detail) return detail;
+    const gotType = String(detail.proxyType || '').toLowerCase();
+    const gotHost = String(detail.host || '');
+    const gotPort = Number(detail.port || 0);
+    if (!hasProxy) {
+      if (gotType && gotType !== 'noproxy' && gotHost) {
+        throw new Error(`比特环境代理未清空（仍为 ${gotType} ${gotHost}:${gotPort}）`);
+      }
+      return detail;
+    }
+    if (gotType !== proxyType || gotHost !== String(proxy.host) || gotPort !== portNum) {
+      throw new Error(
+        `比特环境代理未写入成功：期望 ${proxyType}://${proxy.host}:${portNum}，实际 ${gotType}://${gotHost}:${gotPort || '-'}`
+      );
+    }
+    return detail;
+  }
+
   create({ name, username = '', remark = '', proxy = null, language = 'en-US' }) {
     const hasProxy = Boolean(proxy?.host && proxy?.port);
+    const proxyType = hasProxy ? this.normalizeProxyType(proxy.protocol) : 'noproxy';
     return this.request('browser/update', {
       platform: 'https://www.tiktok.com',
       platformIcon: 'other',
@@ -179,7 +268,7 @@ class BitBrowserProvider {
       otherCookie: '',
       isGlobalProxyInfo: false,
       proxyMethod: 2,
-      proxyType: hasProxy ? proxy.protocol : 'noproxy',
+      proxyType,
       host: hasProxy ? proxy.host : '',
       port: hasProxy ? proxy.port : '',
       proxyUserName: hasProxy ? proxy.username : '',

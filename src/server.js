@@ -8,6 +8,7 @@ const { dataPath, dbAvailable, dbError, dataSource, apiBase, mode } = require('.
 const { ok, fail } = require('./http');
 const { attach } = require('./services/live-log');
 const { attachChat } = require('./services/chat-hub');
+const { attachExecutor, handleMessage: handleExecutorMessage } = require('./services/executor-hub');
 const { notFound, errorHandler } = require('./middleware/error-handler');
 const phpApi = require('./services/php-api');
 
@@ -49,6 +50,7 @@ app.get('/api/system/info', (req, res) => ok(res, {
 
 // —— 本机能力（比特 / 文件）——
 app.use('/api/browser', require('./routes/browser'));
+app.use('/api/executor', require('./routes/executor'));
 app.use('/api/audio', require('./routes/audio'));
 const uploads = require('./routes/uploads');
 app.use('/api/uploads', uploads.router);
@@ -106,10 +108,12 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (socket) => {
   attach(socket);
   attachChat(socket);
+  attachExecutor(socket);
   socket.send(JSON.stringify({ type: 'connected', data: { time: new Date().toISOString(), mode: 'php-only' } }));
   socket.on('message', (raw) => {
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return socket.send(JSON.stringify({ type: 'error', message: '消息必须是 JSON' })); }
+    if (handleExecutorMessage(socket, message)) return;
     if (message.type === 'ping') socket.send(JSON.stringify({ type: 'pong', data: { time: new Date().toISOString() } }));
     if (message.type === 'heartbeat') socket.send(JSON.stringify({ type: 'heartbeat', data: { time: new Date().toISOString() } }));
   });

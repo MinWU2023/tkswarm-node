@@ -30,6 +30,7 @@ const ACTION_KEYS = {
   scan: 'headlessScan',
   capcut: 'headlessCapcut',
   warm: 'headlessWarm',
+  diagnose: 'headlessProfile',
 };
 
 function browserWindowMode() {

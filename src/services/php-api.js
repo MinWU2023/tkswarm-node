@@ -85,6 +85,7 @@ async function request(method, apiPath, body) {
     const err = new Error(json.message || `PHP API ${res.status}`);
     err.status = res.status;
     err.payload = json;
+    console.error(`[php-api] ${method} ${apiPath} => ${res.status}`, json.message || json);
     throw err;
   }
   return json.data;

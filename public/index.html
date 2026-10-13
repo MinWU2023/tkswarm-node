@@ -5,22 +5,25 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#ffffff">
   <title>TKSwarm</title>
-  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
-  <link rel="shortcut icon" href="/images/favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/images/favicon.svg">
-  <link rel="stylesheet" href="/styles.css?v=5.4">
-  <link rel="stylesheet" href="/ui.css?v=5.0">
-  <link rel="stylesheet" href="/theme-tech.css?v=5.3">
-  <link rel="stylesheet" href="/theme-ep.css?v=5.3">
+  <link rel="icon" href="/images/favicon.png?v=2" type="image/png" sizes="64x64">
+  <link rel="icon" href="/images/icon.png?v=2" type="image/png" sizes="256x256">
+  <link rel="shortcut icon" href="/images/favicon.png?v=2" type="image/png">
+  <link rel="apple-touch-icon" href="/images/apple-touch-icon.png?v=2" sizes="180x180">
+  <link rel="stylesheet" href="/styles.css?v=6.38">
+  <link rel="stylesheet" href="/ui.css?v=5.11">
+  <link rel="stylesheet" href="/theme-tech.css?v=5.24">
+  <link rel="stylesheet" href="/theme-ep.css?v=5.36">
+  <link rel="stylesheet" href="/material-picker.css?v=1.16">
   <script src="/config.js?v=6.0"></script>
 </head>
 <body>
   <div class="app-container">
     <header class="navbar">
-      <a class="logo" href="/" title="Dyy TkSwarm"><span class="logo-mark">Dyy</span><span class="logo-name">TkSwarm</span></a>
+      <a class="logo" href="/" title="第一页科技 · TkSwarm">
+        <img class="brand-logo" src="/images/logo.png?v=2" alt="第一页科技 TkSwarm" width="140" height="54">
+      </a>
       <nav id="nav" class="nav-menu">
         <button class="active" data-view="accounts">账号管理</button>
-        <button data-view="proxies">代理IP</button>
         <button data-view="agent">AI机器人</button>
         <button data-view="publish">AI矩阵</button>
         <button data-view="chat">客服聊天</button>
@@ -81,7 +84,16 @@
     </div>
   </div>
   <div id="scope-switcher" class="scope-switcher hidden" aria-live="polite"></div>
-  <script src="/ui.js?v=5.1"></script>
-  <script src="/app.js?v=7.6"></script>
+  <script src="/ui.js?v=5.17"></script>
+  <script src="/vendor/lucide.min.js?v=0.468"></script>
+  <script src="/vendor/tk-icons.js?v=1.0"></script>
+  <script src="/js/app-core.js?v=10.18"></script>
+  <script src="/js/router.js?v=10.42"></script>
+  <script>
+    TkRouter.start().catch(function (e) {
+      console.error(e);
+      if (window.UI) UI.notify({ type: 'error', title: '启动失败', message: String(e && e.message || e), duration: 5000 });
+    });
+  </script>
 </body>
 </html>

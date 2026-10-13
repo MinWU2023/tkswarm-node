@@ -52,10 +52,11 @@ async function getAccountBundle(accountId) {
   return phpApi.get(`/node/accounts/${accountId}/bundle`);
 }
 
-async function updateBrowserBinding(accountId, profileId, clear = false) {
+async function updateBrowserBinding(accountId, profileId, clear = false, asPrimary = false) {
   return phpApi.post(`/node/accounts/${accountId}/browser-binding`, {
     profileId: profileId || '',
     clear: Boolean(clear),
+    asPrimary: Boolean(asPrimary),
   });
 }
 
@@ -73,6 +74,10 @@ async function saveFingerprint(accountId, fingerprint) {
 
 async function tiktokSync(accountId, payload) {
   return phpApi.post(`/node/accounts/${accountId}/tiktok-sync`, payload);
+}
+
+async function tiktokAnalyticsSync(accountId, payload) {
+  return phpApi.post(`/node/accounts/${accountId}/tiktok-analytics-sync`, payload);
 }
 
 async function qrComplete(payload) {
@@ -97,6 +102,7 @@ module.exports = {
   saveSession,
   saveFingerprint,
   tiktokSync,
+  tiktokAnalyticsSync,
   qrComplete,
   saveMonitorResult,
   dmIngest,

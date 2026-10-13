@@ -4,6 +4,7 @@ const path = require('node:path');
 const SECURITY_PATTERNS = [
   /captcha/i, /verify/i, /verification/i, /人机验证/, /安全验证/, /设备验证/, /滑块/, /slider/i,
   /unusual activity/i, /suspicious/i, /maximum number of attempts/i, /too many attempts/i,
+  /oops!?\s*something went wrong/i, /something went wrong/i, /please contact your administrator/i,
 ];
 
 function automationDir() {

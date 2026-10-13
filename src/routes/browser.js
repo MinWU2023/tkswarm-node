@@ -9,14 +9,14 @@ const { ok, fail } = require('../http');
 const { BitBrowserProvider } = require('../services/browser/bit-browser-provider');
 const { getProvider, listProviders } = require('../services/browser/providers');
 const { inspectTikTokSession } = require('../services/browser/cdp-client');
-const { loginAssist, closeSession } = require('../services/browser/tiktok-login');
+const { loginAssist, fullLogin, closeSession } = require('../services/browser/tiktok-login');
 const { syncProfile, getProfile, syncVideos, getVideos, getStats } = require('../services/browser/tiktok-data');
 const { preparePublish, prepareMessage } = require('../services/browser/tiktok-actions');
 const { createQrSession, checkQrSession, closeQrSession } = require('../services/browser/qr-login');
 const { assertPublishGate } = require('../services/account-gates');
 const dataStore = require('../services/data-store');
 const phpApi = require('../services/php-api');
-const { probeProxyObject } = require('../services/proxy-probe');
+const { probeProxyObject, batchDetectCountries } = require('../services/proxy-probe');
 
 const router = express.Router();
 
@@ -24,6 +24,12 @@ const languageByCountry = {
   CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK', US: 'en-US', GB: 'en-GB', CA: 'en-CA', AU: 'en-AU',
   JP: 'ja-JP', KR: 'ko-KR', DE: 'de-DE', FR: 'fr-FR', ES: 'es-ES', IT: 'it-IT', BR: 'pt-BR',
   PT: 'pt-PT', RU: 'ru-RU', TH: 'th-TH', VN: 'vi-VN', ID: 'id-ID', MY: 'ms-MY', PH: 'en-PH',
+  // 中文国名（detect-proxy-countries.php / ip-api lang=zh-CN）
+  '中国': 'zh-CN', '台湾': 'zh-TW', '香港': 'zh-HK', '美国': 'en-US', '英国': 'en-GB',
+  '加拿大': 'en-CA', '澳大利亚': 'en-AU', '日本': 'ja-JP', '韩国': 'ko-KR', '德国': 'de-DE',
+  '法国': 'fr-FR', '西班牙': 'es-ES', '意大利': 'it-IT', '巴西': 'pt-BR', '葡萄牙': 'pt-PT',
+  '俄罗斯': 'ru-RU', '泰国': 'th-TH', '越南': 'vi-VN', '印度尼西亚': 'id-ID', '马来西亚': 'ms-MY',
+  '菲律宾': 'en-PH',
 };
 
 async function loadAccount(accountId) {
@@ -32,9 +38,9 @@ async function loadAccount(accountId) {
   return account;
 }
 
-async function createProfileForAccount(provider, account) {
+async function createProfileForAccount(provider, account, { asPrimary = true } = {}) {
   if (!account) throw new Error('账号不存在');
-  if (account.browser_profile_id) throw new Error('账号已经绑定浏览器环境');
+  // 允许一账号绑定多个环境；创建/再绑默认设为主环境（换比特账号后必须切主绑定才生效）
   const proxy = account.proxy_host ? {
     protocol: account.proxy_protocol,
     host: account.proxy_host,
@@ -42,16 +48,21 @@ async function createProfileForAccount(provider, account) {
     username: account.proxy_username,
     password: account.proxy_password,
   } : null;
-  const country = String(account.country || account.proxy_country || '').toUpperCase();
+  const countryRaw = String(account.country || account.proxy_country || '').trim();
+  const countryKey = /[\u4e00-\u9fff]/.test(countryRaw) ? countryRaw : countryRaw.toUpperCase();
+  const envCount = Number(account.env_count || account.envCount || 0);
+  const hasBound = String(account.browser_profile_id || '').trim() !== '';
+  const suffix = (envCount > 0 || hasBound) ? `#${Math.max(envCount, 0) + 1}` : '';
   const profile = await provider.create({
-    name: `TK-${account.username}`.slice(0, 100),
+    name: `TK-${account.username}${suffix}`.slice(0, 100),
     username: account.username,
-    remark: `TkSwarm account #${account.id}`,
+    remark: `TkSwarm account #${account.id}${suffix}`,
     proxy,
-    language: languageByCountry[country] || 'en-US',
+    language: languageByCountry[countryKey] || 'en-US',
   });
+  if (!profile?.id) throw new Error('比特未返回新环境 ID，请确认已登录比特主账号且有创建窗口权限');
   try {
-    await dataStore.updateBrowserBinding(account.id, profile.id, false);
+    await dataStore.updateBrowserBinding(account.id, profile.id, false, asPrimary);
   } catch (error) {
     try { await provider.delete(profile.id); } catch { /* best-effort */ }
     throw error;
@@ -247,6 +258,9 @@ router.post('/accounts/:accountId/delete-video', async (req, res) => {
   const body = z.object({
     videoId: z.string().trim().min(1).max(80).optional(),
     videoUrl: z.string().trim().max(500).optional().default(''),
+    searchTitle: z.string().trim().max(300).optional().default(''),
+    materialName: z.string().trim().max(300).optional().default(''),
+    description: z.string().trim().max(1000).optional().default(''),
     localOnly: z.boolean().optional().default(false),
   }).parse(req.body || {});
   const accountId = Number(req.params.accountId);
@@ -255,7 +269,9 @@ router.post('/accounts/:accountId/delete-video', async (req, res) => {
   } catch (e) {
     return fail(res, e.message, e.status || 404);
   }
-  if (!body.videoId && !body.videoUrl) return fail(res, '请提供 videoId 或 videoUrl', 400);
+  if (!body.videoId && !body.videoUrl && !body.searchTitle && !body.materialName && !body.description) {
+    return fail(res, '请提供 videoId、videoUrl 或标题（searchTitle）', 400);
+  }
 
   if (body.localOnly) {
     await phpApi.post(`/node/accounts/${accountId}/tiktok-videos/delete`, body);
@@ -286,6 +302,99 @@ router.post('/accounts/:accountId/modify-profile', async (req, res) => {
   } catch (error) {
     return fail(res, error.message || '修改资料失败', 422);
   }
+});
+
+/**
+ * 拓客「查数据账号」预检：比特本地在线 + 环境存在 + 代理可连通。
+ * 不真正 open 窗口，避免打扰正在使用的环境。
+ */
+router.post('/accounts/:accountId/env-check', async (req, res) => {
+  const accountId = Number(req.params.accountId || 0);
+  if (!accountId) return fail(res, '缺少账号 ID', 422);
+  let account;
+  try {
+    account = await loadAccount(accountId);
+  } catch {
+    return fail(res, '账号不存在', 404);
+  }
+  const profileId = String(account.browser_profile_id || account.browserProfileId || '').trim();
+  const proxyId = Number(account.proxy_id || account.proxyId || 0);
+  const checks = {
+    accountId,
+    username: account.username || '',
+    bitOnline: false,
+    bitLoggedIn: false,
+    profileOk: false,
+    profileId,
+    proxyOk: false,
+    proxyId,
+    proxyIp: '',
+    proxyCountry: '',
+    ok: false,
+    message: '',
+  };
+  const provider = new BitBrowserProvider();
+  try {
+    await provider.health();
+    checks.bitOnline = true;
+    try {
+      await provider.profiles(0, 1);
+      checks.bitLoggedIn = true;
+    } catch (authErr) {
+      const tip = String(authErr.message || '');
+      checks.message = tip || '比特本地 API 未登录';
+      return ok(res, checks, checks.message);
+    }
+  } catch (error) {
+    checks.message = error.message || '无法连接比特本地 API';
+    return ok(res, checks, checks.message);
+  }
+  if (!profileId) {
+    checks.message = '账号未绑定比特浏览器环境';
+    return ok(res, checks, checks.message);
+  }
+  try {
+    const detail = await provider.detail(profileId);
+    checks.profileOk = !!(detail && (detail.id || detail.name || Object.keys(detail).length));
+    if (!checks.profileOk) {
+      checks.message = '比特环境详情为空，请重新绑定环境';
+      return ok(res, checks, checks.message);
+    }
+  } catch (error) {
+    checks.message = error.message || '比特环境不可用';
+    return ok(res, checks, checks.message);
+  }
+  if (!account.proxy_host && !proxyId) {
+    checks.message = '账号未绑定代理';
+    return ok(res, checks, checks.message);
+  }
+  try {
+    const proxy = {
+      id: proxyId,
+      protocol: account.proxy_protocol || 'http',
+      host: account.proxy_host,
+      port: account.proxy_port,
+      username: account.proxy_username,
+      password: account.proxy_password,
+    };
+    const result = await probeProxyObject(proxy);
+    if (proxyId) {
+      await phpApi.post(`/node/proxies/${proxyId}/probe-result`, result).catch(() => {});
+    }
+    checks.proxyOk = !!result?.available;
+    checks.proxyIp = String(result?.egressIp || result?.ip || result?.query || '');
+    checks.proxyCountry = String(result?.country || result?.countryCode || '');
+    if (!checks.proxyOk) {
+      checks.message = result?.detail || result?.reason || result?.error || '代理检测失败';
+      return ok(res, checks, checks.message);
+    }
+  } catch (error) {
+    checks.message = error.message || '代理检测异常';
+    return ok(res, checks, checks.message);
+  }
+  checks.ok = true;
+  checks.message = `环境与代理正常${checks.proxyIp ? ` · IP ${checks.proxyIp}` : ''}${checks.proxyCountry ? ` · ${checks.proxyCountry}` : ''}`;
+  return ok(res, checks, checks.message);
 });
 
 router.post('/accounts/batch-check-ip', async (req, res) => {
@@ -322,6 +431,22 @@ router.post('/accounts/batch-check-ip', async (req, res) => {
     }
   }
   return ok(res, { items, available: items.filter((x) => x.available).length }, '批量 IP 检测完成');
+});
+
+router.post('/proxies/batch-detect-country', async (req, res) => {
+  const body = z.object({
+    proxyIds: z.array(z.coerce.number().int().positive()).min(1).max(200),
+  }).parse(req.body || {});
+  try {
+    const data = await batchDetectCountries(body.proxyIds);
+    return ok(
+      res,
+      data,
+      data.updated ? `已检测并写入国家 ${data.updated}/${data.total}` : '未能识别国家（需可连的代理或主机为公网 IP）'
+    );
+  } catch (error) {
+    return fail(res, error.message || '检测国家失败', 422);
+  }
 });
 
 router.get('/accounts/:accountId/session', async (req, res) => {
@@ -430,20 +555,39 @@ router.post('/accounts/batch-login', async (req, res) => {
       continue;
     }
     try {
-      const result = await loginAssist(id, { autoSubmit: false, submitAfterTotp: false });
-      if (result?.attemptLimited) {
-        items.push({ accountId: id, username: account.username, ok: false, reason: result.message || 'TikTok 限制登录尝试' });
-      } else if (result?.filled || result?.alreadyLoggedIn) {
-        items.push({ accountId: id, username: account.username, ok: true, status: result?.alreadyLoggedIn ? 'online' : 'prepared', message: result?.message });
+      const result = await fullLogin(id);
+      if (result?.attemptLimited || result?.captcha) {
+        items.push({
+          accountId: id,
+          username: account.username,
+          ok: false,
+          reason: result.message || (result.captcha ? '需要人工完成安全验证' : 'TikTok 限制登录尝试'),
+        });
+      } else if (result?.loginOk || result?.alreadyLoggedIn) {
+        items.push({
+          accountId: id,
+          username: account.username,
+          ok: true,
+          status: 'online',
+          message: result?.message || '登录成功',
+        });
+      } else if (result?.submitted) {
+        items.push({
+          accountId: id,
+          username: account.username,
+          ok: true,
+          status: 'submitted',
+          message: result?.message || '已提交登录，请稍后检测',
+        });
       } else {
-        items.push({ accountId: id, username: account.username, ok: false, reason: result?.message || '未完成填写' });
+        items.push({ accountId: id, username: account.username, ok: false, reason: result?.message || '登录未完成' });
       }
     } catch (error) {
       items.push({ accountId: id, username: account.username, ok: false, reason: error.message });
     }
   }
   const prepared = items.filter((item) => item.ok).length;
-  return ok(res, { items, prepared, failed: items.length - prepared }, `登录辅助完成：成功 ${prepared}，失败 ${items.length - prepared}`);
+  return ok(res, { items, prepared, failed: items.length - prepared }, `一键登录完成：成功 ${prepared}，失败 ${items.length - prepared}`);
 });
 
 router.post('/accounts/:accountId/socks', async (req, res) => {
@@ -468,15 +612,40 @@ router.get('/status', async (req, res) => {
   const provider = new BitBrowserProvider();
   try {
     const message = await provider.health();
-    return ok(res, {
-      online: true,
-      provider: 'bit',
-      apiUrl: provider.baseUrl,
-      message: message == null ? 'ok' : message,
-    });
+    // health 只表示本地服务进程在；还需确认比特主账号已登录，否则 open/list 会报 Login out!
+    try {
+      await provider.profiles(0, 1);
+      return ok(res, {
+        online: true,
+        bitLoggedIn: true,
+        provider: 'bit',
+        apiUrl: provider.baseUrl,
+        message: message == null ? 'ok' : message,
+      });
+    } catch (authErr) {
+      const tip = String(authErr.message || '');
+      if (/login\s*out|比特浏览器账号未登录|token.*失效|token.*无效/i.test(tip)) {
+        return ok(res, {
+          online: false,
+          bitLoggedIn: false,
+          provider: 'bit',
+          apiUrl: provider.baseUrl,
+          message: tip,
+        });
+      }
+      return ok(res, {
+        online: true,
+        bitLoggedIn: null,
+        provider: 'bit',
+        apiUrl: provider.baseUrl,
+        message: message == null ? 'ok' : message,
+        warn: tip,
+      });
+    }
   } catch (error) {
     return ok(res, {
       online: false,
+      bitLoggedIn: false,
       provider: 'bit',
       apiUrl: provider.baseUrl,
       message: error.message || '无法连接比特本地 API',
@@ -555,7 +724,14 @@ router.get('/accounts/:accountId/tiktok-profile', async (req, res) => {
 
 router.post('/accounts/:accountId/sync-profile', async (req, res) => {
   try {
-    return ok(res, await syncProfile(req.params.accountId), 'TikTok 资料同步完成');
+    const body = req.body || {};
+    const result = await syncProfile(req.params.accountId, {
+      nickname: body.nickname || body.displayName || '',
+      signature: body.signature || body.bio || '',
+      avatarPath: body.avatarPath || body.avatarUrl || '',
+      avatarUrl: body.avatarUrl || '',
+    });
+    return ok(res, result, result.message || '系统资料已同步到 TikTok');
   } catch (error) {
     return fail(res, error.message, 422);
   }
@@ -573,14 +749,32 @@ router.post('/accounts/:accountId/sync-videos', async (req, res) => {
   }
 });
 
-router.post('/accounts/:accountId/login-assist', async (req, res) => {
-  const body = z.object({ autoSubmit: z.boolean().default(false), submitAfterTotp: z.boolean().default(true) }).parse(req.body || {});
+router.post('/accounts/:accountId/login', async (req, res) => {
   try {
-    const result = await loginAssist(req.params.accountId, body);
-    return ok(res, result, result.message);
+    const result = await fullLogin(req.params.accountId);
+    const okLogin = Boolean(result?.loginOk || result?.alreadyLoggedIn);
+    return ok(res, result, result?.message || (okLogin ? '登录成功，状态已更新' : '登录未完成，状态已更新为未登录'));
   } catch (error) {
     await dataStore.updateLoginStatus(Number(req.params.accountId), 'offline').catch(() => {});
-    return fail(res, error.message || '登录辅助失败', 422);
+    return fail(res, error.message || '一键登录失败', 422);
+  }
+});
+
+router.post('/accounts/:accountId/login-assist', async (req, res) => {
+  // 兼容旧接口：默认走一键登录（填表 + 提交 + 2FA）
+  const body = z.object({
+    autoSubmit: z.boolean().default(true),
+    submitAfterTotp: z.boolean().default(true),
+  }).parse(req.body || {});
+  try {
+    const result = body.autoSubmit && body.submitAfterTotp
+      ? await fullLogin(req.params.accountId)
+      : await loginAssist(req.params.accountId, body);
+    const okLogin = Boolean(result?.loginOk || result?.alreadyLoggedIn);
+    return ok(res, result, result?.message || (okLogin ? '登录成功，状态已更新' : '登录未完成，状态已更新为未登录'));
+  } catch (error) {
+    await dataStore.updateLoginStatus(Number(req.params.accountId), 'offline').catch(() => {});
+    return fail(res, error.message || '登录失败', 422);
   }
 });
 
@@ -630,8 +824,9 @@ router.post('/accounts/:accountId/create', async (req, res) => {
   try {
     const provider = new BitBrowserProvider();
     const account = await loadAccount(Number(req.params.accountId));
-    const result = await createProfileForAccount(provider, account);
-    return ok(res, result, '浏览器环境已创建并绑定', 201);
+    const asPrimary = req.body?.asPrimary !== false && req.body?.as_primary !== false;
+    const result = await createProfileForAccount(provider, account, { asPrimary });
+    return ok(res, result, asPrimary ? '已新建环境并设为主绑定' : '浏览器环境已创建并绑定', 201);
   } catch (error) {
     return fail(res, error.message || '创建失败', error.status || 422);
   }
@@ -661,7 +856,7 @@ router.post('/accounts/batch-create', async (req, res) => {
   for (const id of accountIds) {
     try {
       const account = await loadAccount(id);
-      await createProfileForAccount(provider, account);
+      await createProfileForAccount(provider, account, { asPrimary: true });
       result.created += 1;
     } catch (error) {
       result.failed += 1;
@@ -676,8 +871,9 @@ router.post('/bind', async (req, res) => {
     const body = z.object({
       accountId: z.coerce.number().int().positive(),
       profileId: z.string().trim().min(1).max(150),
+      asPrimary: z.boolean().optional().default(true),
     }).parse(req.body || {});
-    await dataStore.updateBrowserBinding(body.accountId, body.profileId, false);
+    await dataStore.updateBrowserBinding(body.accountId, body.profileId, false, body.asPrimary);
     return ok(res, body, '环境已绑定');
   } catch (error) {
     return fail(res, error.message, error.status || 422);
@@ -686,8 +882,12 @@ router.post('/bind', async (req, res) => {
 
 router.post('/unbind', async (req, res) => {
   try {
-    const body = z.object({ accountId: z.coerce.number().int().positive() }).parse(req.body || {});
-    await dataStore.updateBrowserBinding(body.accountId, '', true);
+    const body = z.object({
+      accountId: z.coerce.number().int().positive(),
+      profileId: z.string().trim().max(150).optional().default(''),
+      clear: z.boolean().optional().default(true),
+    }).parse(req.body || {});
+    await dataStore.updateBrowserBinding(body.accountId, body.profileId || '', true);
     return ok(res, body, '已解除绑定');
   } catch (error) {
     return fail(res, error.message, error.status || 422);

@@ -202,6 +202,46 @@ CREATE INDEX IF NOT EXISTS idx_tiktok_profiles_sync ON tiktok_profiles(sync_stat
 CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account ON tiktok_videos(account_id, last_synced_at);
 CREATE INDEX IF NOT EXISTS idx_tiktok_stats_account ON tiktok_stat_snapshots(account_id, captured_at);
 
+-- 账号浏览器会话总任务（与 PHP 中心库 account_work_* 对齐；Node 侧仅作文档/本地参考）
+CREATE TABLE IF NOT EXISTS account_work_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL,
+  owner_id INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  locked_by TEXT NOT NULL DEFAULT '',
+  lease_until TEXT,
+  item_total INTEGER NOT NULL DEFAULT 0,
+  item_success INTEGER NOT NULL DEFAULT 0,
+  item_fail INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  heartbeat_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS account_work_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  account_id INTEGER NOT NULL,
+  owner_id INTEGER NOT NULL DEFAULT 0,
+  task_type TEXT NOT NULL,
+  task_ref_id INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 100,
+  seq INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payload_json TEXT,
+  result_json TEXT,
+  error_message TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_awb_account_status ON account_work_batches(account_id, status);
+CREATE INDEX IF NOT EXISTS idx_awi_batch_status ON account_work_items(batch_id, status, priority, seq, id);
+CREATE INDEX IF NOT EXISTS idx_awi_task_ref ON account_work_items(task_type, task_ref_id);
+
 CREATE TABLE IF NOT EXISTS task_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
