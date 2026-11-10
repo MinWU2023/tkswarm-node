@@ -715,19 +715,28 @@ async function executeWorkItem(item) {
     const { runCsLogout } = require('./browser/seat-tasks');
     return runCsLogout(accountId, payload);
   }
+  if (type === 'fetch_lang') {
+    const { runFetchLang } = require('./browser/seat-tasks');
+    return runFetchLang(accountId, payload);
+  }
+  if (type === 'search_users') {
+    const { runSearchUsers } = require('./browser/seat-tasks');
+    return runSearchUsers(accountId, payload);
+  }
 
   if (type === 'message' || type === 'dm_reply') {
     const seatSend = String(payload.source || '') === 'chat.seat' || payload.autoSend === true;
     const originalText = payload.content || payload.publishCaption || payload.reply || '';
     let deliverText = originalText;
     let translated = String(payload.translated || '');
-    // 坐席发信：用本机翻译接口实时把中文翻成对方语种，投递译文
+    // 坐席发信：用中心库的即时翻译（/translate/instant，免费公共接口，无需配置）把中文翻成对方语种，投递译文
     if (seatSend && payload.needTranslate === true && deliverText) {
       const targetLang = String(payload.peerLang || 'en').toLowerCase();
-      const sourceLang = String(payload.sourceLang || 'zh').toLowerCase();
       try {
-        const { translateForced } = require('./translator');
-        const tr = await translateForced(originalText, { from: sourceLang, to: targetLang });
+        const tr = await phpApi.post('/translate/instant', {
+          text: originalText,
+          to: ['zh', 'en', 'ja', 'ko', 'es'].includes(targetLang) ? targetLang : 'en',
+        });
         translated = String(tr?.text || '').trim();
         if (!translated) throw new Error('翻译接口未返回文本');
         deliverText = translated;

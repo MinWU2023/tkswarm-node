@@ -209,7 +209,7 @@
             <button type="button" class="${friendTab==='following'?'active':''}" onclick="app.setChatFriendTab('following')">关注</button>
             <button type="button" class="${friendTab==='search'?'active':''}" onclick="app.setChatFriendTab('search')">搜索</button>
           </div>
-          ${friendTab==='search'?`<div class="chat-search-inline"><div class="filters"><input id="chat-search-keyword-inline" class="input" style="flex:1" placeholder="搜索词（至少 6 个字符）" value="${this.esc(this.chatSearchKeyword||'')}" oninput="app.chatSearchKeyword=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();app.runChatUserSearch(this.value)}"><button class="primary" type="button" onclick="app.runChatUserSearch(document.querySelector('#chat-search-keyword-inline')?.value)">搜索</button></div><div class="muted" style="margin-top:8px;font-size:12px">通过服务器浏览器在 TikTok 搜索用户。结果仅临时展示、不写入好友列表，下次搜索会覆盖。</div></div><div id="chat-search-results-inline" class="chat-search-results">${this.chatSearchResultsHtml||''}</div>`:`${friendTab==='dm'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatDm()">刷新私信</button>`:''}<span class="muted">从 TikTok 收件箱拉取私信用户列表</span></div>`:''}${friendTab==='follower'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFans()">刷新粉丝</button>`:''}<span class="muted">从 TikTok 拉取最新粉丝列表</span></div>`:''}${friendTab==='following'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFollowing()">刷新关注</button>`:''}<span class="muted">从 TikTok 拉取最新关注列表</span></div>`:''}<div class="filters" style="padding:8px 12px;border-bottom:1px solid var(--line)"><input id="chat-friend-search" class="input" style="flex:1" placeholder="搜索${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}" value="${this.esc(this.chatKeyword||'')}" oninput="app.chatKeyword=this.value" onkeydown="if(event.key==='Enter')app.searchChatFriends()"><button class="ghost" onclick="app.searchChatFriends()">查询</button></div><div class="chat-list">${!account?'<div class="shell-note">请先选择账号并登录客服</div>':(friendsPack.items.length?friendsPack.items.map(f=>`<div class="chat-friend ${Number(f.id)===Number(this.chatFriendId)?'active':''}" onclick="app.selectChatFriend(${f.id},${f.account_id})"><div class="chat-avatar">${this.esc(((f.nickname||f.username||'?')[0]||'?').toUpperCase())}</div><div class="chat-meta"><b class="chat-name">${f.is_pinned?'📌 ':''}${this.esc(f.nickname||f.username||f.friend_uid)}</b>${this.chatLangTag(f.lang)}${(f.tags||[]).length?` <span class="muted">${(f.tags||[]).map(t=>this.esc(t)).join(' ')}</span>`:''}${f.unread_count?` <span class="badge failed">${f.unread_count}</span>`:''}</b><small>${this.esc(f.last_message||'暂无消息')}</small></div></div>`).join(''):`<div class="shell-note">暂无${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}</div>`)}</div>`}
+          ${friendTab==='search'?`<div class="chat-search-inline"><div class="filters"><input id="chat-search-keyword-inline" class="input" style="flex:1" placeholder="搜索词（至少 6 个字符）" value="${this.esc(this.chatSearchKeyword||'')}" oninput="app.chatSearchKeyword=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();app.runChatUserSearch(this.value)}"><button class="primary" type="button" onclick="app.runChatUserSearch(document.querySelector('#chat-search-keyword-inline')?.value)">搜索</button></div><div class="muted" style="margin-top:8px;font-size:12px">通过服务器浏览器在 TikTok 搜索用户。点击搜索到的用户即可直接发私信，下次搜索会覆盖结果列表。</div></div><div id="chat-search-results-inline" class="chat-search-results">${this.chatSearchPanelHtml()}</div>`:`${friendTab==='dm'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatDm()">刷新私信</button>`:''}<span class="muted">从 TikTok 收件箱拉取私信用户列表</span></div>`:''}${friendTab==='follower'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFans()">刷新粉丝</button>`:''}<span class="muted">从 TikTok 拉取最新粉丝列表</span></div>`:''}${friendTab==='following'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFollowing()">刷新关注</button>`:''}<span class="muted">从 TikTok 拉取最新关注列表</span></div>`:''}<div class="filters" style="padding:8px 12px;border-bottom:1px solid var(--line)"><input id="chat-friend-search" class="input" style="flex:1" placeholder="搜索${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}" value="${this.esc(this.chatKeyword||'')}" oninput="app.chatKeyword=this.value" onkeydown="if(event.key==='Enter')app.searchChatFriends()"><button class="ghost" onclick="app.searchChatFriends()">查询</button></div><div class="chat-list">${!account?'<div class="shell-note">请先选择账号并登录客服</div>':(friendsPack.items.length?friendsPack.items.map(f=>`<div class="chat-friend ${Number(f.id)===Number(this.chatFriendId)?'active':''}" onclick="app.selectChatFriend(${f.id},${f.account_id})"><div class="chat-avatar">${this.esc(((f.nickname||f.username||'?')[0]||'?').toUpperCase())}</div><div class="chat-meta"><b class="chat-name">${f.is_pinned?'📌 ':''}${this.esc(f.nickname||f.username||f.friend_uid)}</b>${this.chatLangTag(f.lang)}${(f.tags||[]).length?` <span class="muted">${(f.tags||[]).map(t=>this.esc(t)).join(' ')}</span>`:''}${f.unread_count?` <span class="badge failed">${f.unread_count}</span>`:''}</b><small>${this.esc(f.last_message||'暂无消息')}</small></div></div>`).join(''):`<div class="shell-note">暂无${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}</div>`)}</div>`}
         </aside>
         <section class="chat-col">
           <div class="chat-col-head"><div><h3>${messagesPack.friend?this.esc(messagesPack.friend.nickname||messagesPack.friend.username||messagesPack.friend.friend_uid):'会话'}</h3><div class="muted">${messagesPack.friend?`关系：${this.esc(messagesPack.friend.relation)} · UID ${this.esc(messagesPack.friend.friend_uid)}`:''}</div></div><div>${messagesPack.friend&&canOps?`<button class="tiny" onclick="app.togglePinFriend()">${messagesPack.friend.is_pinned?'取消置顶':'置顶'}</button><button class="tiny" onclick="app.blockFriend()">${messagesPack.friend.relation==='blocked'?'取消拉黑':'拉黑'}</button>${canManage?`<button class="tiny danger" onclick="app.deleteChatFriend()">删除</button>`:''}`:''}</div></div>
@@ -586,48 +586,116 @@
     },
     searchChatUser(){this.setChatFriendTab('search');},
     async runChatUserSearch(passed){
-      // 取值优先级：调用方直传（回车/按钮带上输入框当前值）> DOM > state。
-      // 定时刷新会重绘输入框把它变空，所以不能只信 DOM；空字符串要用 || 回退，?? 不会回退。
+      // 取值优先级：调用方直传 > state > DOM。
+      // 定时刷新会重绘输入框（value 来自 state），DOM 可能已被换成一个空的新元素，
+      // 所以 DOM 只能当最后兜底；state 由 oninput 实时维护，最可靠。
+      // 空字符串要用 || 回退，?? 不会回退。
       const domEl=document.querySelector('#chat-search-keyword-inline')||document.querySelector('#chat-search-keyword');
       const inline=!!document.querySelector('#chat-search-keyword-inline');
       const box=document.querySelector(inline?'#chat-search-results-inline':'#chat-search-results');
-      const keyword=String(passed||'').trim()||String(domEl?.value||'').trim()||String(this.chatSearchKeyword||'').trim();
+      const fromPassed=String(passed==null?'':passed).trim();
+      const fromState=String(this.chatSearchKeyword==null?'':this.chatSearchKeyword).trim();
+      const fromDom=String(domEl&&domEl.value!=null?domEl.value:'').trim();
+      const keyword=fromPassed||fromState||fromDom;
       this.chatSearchKeyword=keyword;
       if(!this.chatAccountId){this.toast('请先选择账号',true);return}
-      if(!keyword){this.toast('请输入搜索词',true);return}
-      // 与后端一致：搜索词必须大于 5 个字符
-      if(keyword.length<=5){this.toast(`搜索词必须大于 5 个字符（当前 ${keyword.length} 个）`,true);return}
+      if(!keyword){this.toast('请输入搜索词（至少 6 个字符，如 nikefans）',true);return}
+      // 与后端一致：搜索词必须大于 5 个字符（按字符数，不是字节数）
+      const kwLen=Array.from(keyword).length;
+      if(kwLen<=5){this.toast(`搜索词必须大于 5 个字符（当前 ${kwLen} 个：「${keyword}」）`,true);return}
       if(!box&&!inline){this.toast('请先切换到搜索 Tab',true);return}
       if(!(await this.ensureNodeOnline('用户搜索')))return;
-      if(box)box.innerHTML='<div class="muted">已推送搜索任务到服务器浏览器，正在等待 TikTok 返回…</div>';
+      // 每个账号独立一份搜索状态：搜索中显示占位板块，切换账号不串数据
+      const aid=Number(this.chatAccountId);
+      const st=this.chatSearchStateOf(aid);
+      Object.assign(st,{loading:true,loaded:true,keyword,items:[],error:'',expireAt:0});
+      if(box)box.innerHTML=this.chatSearchSkeletonHtml(keyword);
       try{
-        // 每次搜索都重新跑任务，结果只做临时展示（覆盖上一次），不写本地好友
+        // 每次搜索都重新跑任务；后端完成时会把结果按账号写入 Redis（有效期一天），下次搜索覆盖
         const r=await this.runSeatTaskAndWait('search_users',{
-          accountId:Number(this.chatAccountId),
+          accountId:aid,
           keyword,
           limit:40,
         });
-        if(!r){if(box)box.innerHTML='';return}
+        if(!r){st.loading=false;this.chatSearchRepaint();return}
         const res=r.result||{};
-        const items=Array.isArray(res.items)?res.items:[];
         if(r.status!=='completed'){
-          const html=`<div class="empty">${this.esc(r.errorMessage||'搜索失败')}</div>`;
-          if(inline){this.chatSearchKeyword=keyword;this.chatSearchResultsHtml=html;if(box)box.innerHTML=html}
-          else if(box){box.innerHTML=html}
+          Object.assign(st,{loading:false,error:r.errorMessage||'搜索失败',items:[]});
+          this.chatSearchRepaint();
           return;
         }
-        const rows=items.map((u,i)=>inline
-          ?`<div class="search-hit"><div class="chat-avatar">${this.esc(((u.nickname||u.username||'?')[0]||'?').toUpperCase())}</div><div class="chat-meta"><b class="chat-name">${this.esc(u.nickname||u.username||'-')}</b>${this.chatLangTag(u.lang)}<small>@${this.esc(u.username)}${u.followersText?` · ${this.esc(u.followersText)}`:''}${u.friendId?' · 已在会话':' · 未加入会话'}</small></div><button class="tiny primary" type="button" onclick="app.addSearchedUserTmp(${i})">加入会话</button><button class="tiny" type="button" onclick="window.open('${this.esc(u.profileUrl)}','_blank')">主页</button></div>`
-          :`<tr><td>${this.esc(u.nickname||u.username||'-')} ${this.chatLangTag(u.lang)}</td><td>@${this.esc(u.username)}</td><td>${this.esc(u.followersText||'-')}</td><td><button class="tiny primary" type="button" onclick="app.addSearchedUserTmp(${i})">加入会话</button></td></tr>`
-        ).join('');
-        const html=`${rows?(inline?rows:`<div class="table-container"><table><thead><tr><th>用户</th><th>用户名</th><th>粉丝</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`):`<div class="empty">TikTok 没有返回「${this.esc(keyword)}」的用户结果</div>`}<div class="muted" style="margin-top:8px;font-size:12px">临时结果 ${items.length} 条（未入库，下次搜索会覆盖）</div>`;
-        // 只放内存，供「加入会话」按索引取用
-        this._chatSearchTmp={keyword,items};
-        if(inline){this.chatSearchKeyword=keyword;this.chatSearchResultsHtml=html;if(box)box.innerHTML=html}
-        else if(box){box.innerHTML=html}
+        Object.assign(st,{
+          loading:false,
+          keyword,
+          items:Array.isArray(res.items)?res.items:[],
+          error:'',
+          expireAt:Date.now()+86400000,
+        });
+        this.chatSearchRepaint();
       }catch(e){
-        if(box)box.innerHTML='';
+        Object.assign(st,{loading:false,error:''});
+        this.chatSearchRepaint();
         this.toast(e.message,true);
+      }
+    },
+    /** 每个账号一份搜索状态（内存），与 Redis 里按账号独立的缓存对应 */
+    chatSearchStateOf(aid){
+      this._chatSearchState=this._chatSearchState||{};
+      const k=Number(aid)||0;
+      return this._chatSearchState[k]||(this._chatSearchState[k]={loading:false,cacheLoading:false,loaded:false,keyword:'',items:[],error:'',expireAt:0});
+    },
+    /** 数据占位板块：结果出来之前显示骨架屏，避免空白 */
+    chatSearchSkeletonHtml(keyword){
+      const row='<div class="search-skeleton-row"><span class="sk-avatar"></span><span class="sk-lines"><i></i><i></i></span></div>';
+      return `<div class="search-skeleton"><div class="muted" style="padding:8px 12px;font-size:12px">${keyword?`正在服务器浏览器搜索「${this.esc(keyword)}」，请稍候…`:'正在加载搜索结果…'}</div>${row.repeat(6)}</div>`;
+    },
+    /** 当前账号的搜索面板：占位 / 错误 / 空 / 结果；过期（一天）后自动变空 */
+    chatSearchPanelHtml(){
+      const aid=Number(this.chatAccountId);
+      if(!aid)return '<div class="muted" style="padding:12px;font-size:12px">请先选择账号</div>';
+      const st=this.chatSearchStateOf(aid);
+      if(st.expireAt&&Date.now()>st.expireAt){
+        Object.assign(st,{items:[],keyword:'',error:'',expireAt:0,loaded:true});
+      }
+      if(!st.loaded&&!st.loading&&!st.cacheLoading){
+        this.loadChatSearchCache(aid);
+        return this.chatSearchSkeletonHtml('');
+      }
+      if(st.loading||st.cacheLoading)return this.chatSearchSkeletonHtml(st.loading?st.keyword:'');
+      if(st.error)return `<div class="empty">${this.esc(st.error)}</div>`;
+      if(!st.keyword&&!st.items.length)return '<div class="muted" style="padding:12px;font-size:12px">暂无搜索结果，输入关键词后点击搜索</div>';
+      // 供点击某条结果时按索引取用
+      this._chatSearchTmp={keyword:st.keyword,items:st.items,inline:true};
+      return this.chatSearchHtml(st.keyword,st.items,true);
+    },
+    chatSearchRepaint(){
+      const b=document.querySelector('#chat-search-results-inline');
+      if(b)b.innerHTML=this.chatSearchPanelHtml();
+    },
+    /** 从 Redis 读取该账号上一次的搜索结果（一天内有效，过期为空） */
+    async loadChatSearchCache(aid){
+      const st=this.chatSearchStateOf(aid);
+      if(st.cacheLoading||st.loading)return;
+      st.cacheLoading=true;
+      try{
+        const r=await this.api(`/chat/search-cache?accountId=${Number(aid)}`);
+        // 加载期间用户已发起新搜索：以新搜索为准，不覆盖
+        if(st.loading)return;
+        if(r&&r.cached){
+          st.keyword=String(r.keyword||'');
+          st.items=Array.isArray(r.items)?r.items:[];
+          st.expireAt=r.expiresIn?Date.now()+Number(r.expiresIn)*1000:0;
+          if(Number(this.chatAccountId)===Number(aid)&&st.keyword)this.chatSearchKeyword=st.keyword;
+        }else{
+          st.keyword='';st.items=[];st.expireAt=0;
+        }
+        st.error='';
+      }catch(e){
+        // 读缓存失败只当没有缓存，不打扰客服
+      }finally{
+        st.cacheLoading=false;
+        st.loaded=true;
+        this.chatSearchRepaint();
       }
     },
     async addSearchedUser(candidate){if(!this.canChatOps()){this.toast('当前角色无权加入会话',true);return}if(!candidate)return;const accountId=Number(this.chatAccountId);if(!accountId){this.toast('请先选择账号',true);return}try{const friend=await this.api('/chat/friends',{method:'POST',body:JSON.stringify({accountId,friendUid:candidate.friendUid,username:candidate.username||candidate.friendUid,nickname:candidate.nickname||'',relation:candidate.relation||'stranger'})});this.toast('已加入本地会话');this.chatAccountId=accountId;this.chatFriendId=friend.id;this.chatFriendTab='dm';this.chatSearchResultsHtml='';this.closeModal();this.refresh()}catch(e){this.toast(e.message,true)}},
@@ -658,6 +726,48 @@
         this.chatFriendTab='dm';
         this.chatSearchResultsHtml='';
         this._chatSearchTmp=null;
+        this.refresh();
+      }catch(e){this.toast(e.message,true)}
+    },
+    /** 搜索结果列表 HTML：整行可点，点击直接进入该用户的私信（与关注列表一致） */
+    chatSearchHtml(keyword,items,inline){
+      const rows=items.map((u,i)=>{
+        const active=u.friendId&&Number(u.friendId)===Number(this.chatFriendId);
+        const bg=active?' style="background:var(--brand-soft)"':'';
+        return inline
+          ?`<div class="search-hit"${bg} title="点击直接发私信" onclick="app.openSearchedUserChat(${i})"><div class="chat-avatar">${this.esc(((u.nickname||u.username||'?')[0]||'?').toUpperCase())}</div><div class="chat-meta"><b class="chat-name">${this.esc(u.nickname||u.username||'-')}</b>${this.chatLangTag(u.lang)}<small>@${this.esc(u.username)}${u.followersText?` · ${this.esc(u.followersText)}`:''}</small></div></div>`
+          :`<tr${bg} style="cursor:pointer" onclick="app.openSearchedUserChat(${i})"><td>${this.esc(u.nickname||u.username||'-')} ${this.chatLangTag(u.lang)}</td><td>@${this.esc(u.username)}</td><td>${this.esc(u.followersText||'-')}</td></tr>`;
+      }).join('');
+      return `${rows?(inline?rows:`<div class="table-container"><table><thead><tr><th>用户</th><th>用户名</th><th>粉丝</th></tr></thead><tbody>${rows}</tbody></table></div>`):`<div class="empty">TikTok 没有返回「${this.esc(keyword)}」的用户结果</div>`}<div class="muted" style="margin-top:8px;font-size:12px">点击用户即可直接发私信 · 临时结果 ${items.length} 条（下次搜索会覆盖）</div>`;
+    },
+    /**
+     * 点击搜索结果：不弹确认、不跳转 Tab。
+     * 后台静默建立本地会话记录（已存在则复用），选中后右侧直接出现聊天框，发送走和关注一样的私信任务。
+     */
+    async openSearchedUserChat(i){
+      if(!this.canChatOps()){this.toast('当前角色无权发私信',true);return}
+      const tmp=this._chatSearchTmp;
+      const u=tmp&&Array.isArray(tmp.items)?tmp.items[Number(i)]:null;
+      if(!u){this.toast('搜索结果已过期，请重新搜索',true);return}
+      const accountId=Number(this.chatAccountId);
+      if(!accountId){this.toast('请先选择账号',true);return}
+      try{
+        let friendId=Number(u.friendId||0);
+        if(!friendId){
+          const friend=await this.api('/chat/friends',{method:'POST',body:JSON.stringify({
+            accountId,
+            friendUid:String(u.username||''),
+            username:String(u.username||''),
+            nickname:String(u.nickname||''),
+            relation:'stranger',
+          })});
+          friendId=Number(friend&&friend.id||0);
+          if(!friendId)throw new Error('建立会话失败');
+          u.friendId=friendId;
+        }
+        this.chatFriendId=friendId;
+        // 留在搜索 Tab，刷新高亮后重绘
+        this.chatSearchResultsHtml=this.chatSearchHtml(tmp.keyword,tmp.items,tmp.inline!==false);
         this.refresh();
       }catch(e){this.toast(e.message,true)}
     },

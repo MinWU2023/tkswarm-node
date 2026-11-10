@@ -2,7 +2,8 @@
  * Hash router + lazy page loader for tkswarm-node
  */
 (function () {
-  const CACHE_V = '12.41';
+  // 改 pages/*.js 后必须同步 +1：子页面用 ?v=CACHE_V 加载，版本不变浏览器会一直用缓存的旧文件
+  const CACHE_V = '12.44';
   const VIEW_TO_PAGE = {
     accounts: 'accounts',
     proxies: 'proxies',

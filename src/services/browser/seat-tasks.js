@@ -448,9 +448,284 @@ async function runSyncFans(accountId, payload = {}) {
   }
 }
 
+/**
+ * 客服坐席「获取语言」：打开对方主页，用简介/昵称判断语种后回写 chat_users.lang。
+ * 判断不出由 PHP 侧默认英语。
+ */
+async function runFetchLang(accountId, payload = {}) {
+  const aid = Number(accountId);
+  const friendId = Number(payload.friendId || 0);
+  const target = String(payload.recipient || payload.toUser || payload.username || '')
+    .replace(/^@+/, '')
+    .trim();
+  if (!friendId) throw new Error('获取语言需要 friendId');
+  if (!target) throw new Error('获取语言需要对方用户名（recipient）');
+
+  liveLog(`账号 #${aid}：开始获取对方 @${target} 的语种`, 'info', { accountId: aid });
+  const { connection, profileId } = await openSeatBrowser(aid, 'https://www.tiktok.com/');
+  liveLog(
+    `账号 #${aid}：获取语种用浏览器环境已打开 ${String(profileId || '').slice(0, 8)}…，可在环境列表 / VNC 远程查看`,
+    'info',
+    { accountId: aid, profileId },
+  );
+  let keepOpen = false;
+  try {
+    let session = await probeLogin(connection, aid);
+    if (!session?.loggedIn) {
+      await tryInjectSavedSession(connection, aid);
+      session = await probeLogin(connection, aid);
+    }
+    if (!session?.loggedIn) {
+      keepOpen = true;
+      throw waitingLoginDataError(aid, '获取对方语种前需已登录：请在 VNC 完成登录后重试（窗口已保持打开）');
+    }
+    const profileUrl = `https://www.tiktok.com/@${encodeURIComponent(target)}`;
+    await connection.page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch((e) => {
+      liveLog(`账号 #${aid}：打开对方主页失败：${String(e?.message || e).slice(0, 160)}`, 'warn', { accountId: aid });
+    });
+    await connection.page.waitForTimeout?.(2500).catch(() => {});
+
+    const profile = await connection.page.evaluate(() => {
+      try {
+        const nodes = Array.from(document.querySelectorAll('script#__UNIVERSAL_DATA_FOR_REHYDRATION__, script#__NEXT_DATA__'));
+        for (const n of nodes) {
+          const raw = String(n.textContent || '').trim();
+          if (!raw) continue;
+          const data = JSON.parse(raw);
+          const scope = data?.__DEFAULT_SCOPE__ || data || {};
+          const detail = scope['webapp.user-detail'] || null;
+          const u = detail?.userInfo?.user || null;
+          if (u) {
+            return {
+              uniqueId: String(u.uniqueId || u.unique_id || ''),
+              nickname: String(u.nickname || u.nickName || ''),
+              signature: String(u.signature || u.bio || ''),
+              region: String(u.region || ''),
+            };
+          }
+        }
+      } catch { /* 解析失败按无数据处理 */ }
+      const h = document.querySelector('[data-e2e="user-bio"]');
+      return {
+        uniqueId: '',
+        nickname: '',
+        signature: String(h?.innerText || '').trim().slice(0, 300),
+        region: '',
+      };
+    }).catch(() => null);
+
+    const bio = String(profile?.signature || '').trim();
+    const nickname = String(profile?.nickname || '').trim();
+    let out = null;
+    try {
+      out = await phpApi.post('/node/chat/friend-lang', {
+        friendId,
+        accountId: aid,
+        bio,
+        nickname,
+        uniqueId: profile?.uniqueId || target,
+        region: profile?.region || '',
+      });
+    } catch (e) {
+      throw new Error(`语种回写中心库失败：${String(e?.message || e).slice(0, 200)}`);
+    }
+    const lang = String(out?.lang || 'en');
+    liveLog(
+      `账号 #${aid}：@${target} 语种=${lang}${out?.fallback ? '（未能判断，按默认英语）' : ''}`
+      + `${bio ? `，依据简介：${bio.slice(0, 40)}` : '，简介为空'}`,
+      out?.fallback ? 'warn' : 'info',
+      { accountId: aid },
+    );
+    return {
+      status: 'completed',
+      result: { friendId, lang, fallback: Boolean(out?.fallback), bio: bio.slice(0, 200), profileId },
+    };
+  } catch (e) {
+    keepOpen = true;
+    throw e;
+  } finally {
+    if (!keepOpen) {
+      try { await closeConnection(connection, { force: true }); } catch { /* */ }
+      try { await closeSession(profileId, { accountId: aid, pushPack: false }); } catch { /* */ }
+      await releaseSeatLease(profileId);
+    } else {
+      try { await closeConnection(connection, { force: false, keepAlive: true }); } catch { /* */ }
+      await releaseSeatLease(profileId);
+      liveLog(
+        `账号 #${aid}：获取语种任务的浏览器窗口保持打开（环境 ${String(profileId || '').slice(0, 8)}…），可在环境列表 / VNC 查看`,
+        'warn',
+        { accountId: aid, profileId },
+      );
+    }
+  }
+}
+
+/** 坐席用户搜索：关键词最少长度（大于 5 个字符，与前后端校验保持一致） */
+const SEARCH_KEYWORD_MIN = 6;
+
+/**
+ * 客服坐席「搜索用户」：走服务器浏览器在 TikTok 搜索页拉用户列表。
+ * 结果只随任务返回给界面做临时展示，不写 chat_users；下次搜索直接覆盖。
+ */
+async function runSearchUsers(accountId, payload = {}) {
+  const aid = Number(accountId);
+  const keyword = String(payload.keyword || '').trim();
+  if (Array.from(keyword).length < SEARCH_KEYWORD_MIN) {
+    throw new Error(`搜索词至少 ${SEARCH_KEYWORD_MIN} 个字符（当前 ${Array.from(keyword).length} 个）`);
+  }
+  const limit = Math.max(5, Math.min(100, Number(payload.limit || 40) || 40));
+
+  const {
+    searchUsersPage,
+    scrollSearchResults,
+    dismissSearchOverlays,
+    humanPause,
+  } = require('./ai-lead/pipeline-base');
+
+  liveLog(`账号 #${aid}：开始在 TikTok 搜索「${keyword}」（上限 ${limit} 条）`, 'info', { accountId: aid });
+  const { connection, profileId } = await openSeatBrowser(aid, 'https://www.tiktok.com/');
+  liveLog(
+    `账号 #${aid}：搜索用浏览器环境已打开 ${String(profileId || '').slice(0, 8)}…，可在环境列表 / VNC 远程查看执行过程`,
+    'info',
+    { accountId: aid, profileId },
+  );
+  let keepOpen = false;
+  try {
+    let session = await probeLogin(connection, aid);
+    if (!session?.loggedIn) {
+      await tryInjectSavedSession(connection, aid);
+      session = await probeLogin(connection, aid);
+    }
+    if (!session?.loggedIn) {
+      keepOpen = true;
+      throw waitingLoginDataError(aid, '搜索用户前需已登录：请在 VNC 完成登录后重试（窗口已保持打开）');
+    }
+
+    const page = await searchUsersPage(connection, keyword, aid);
+    await humanPause(2500, 0.15).catch(() => {});
+    await dismissSearchOverlays(page).catch(() => {});
+
+    const collect = () => page.evaluate(() => {
+      const out = [];
+      const seen = new Set();
+      const anchors = Array.from(document.querySelectorAll(
+        'div[class*="DivSearchUserItemContainer"] a[href*="/@"],'
+        + 'div[class*="DivSearchItemContainer"] a[href*="/@"],'
+        + '[data-e2e="search-user-item"] a[href*="/@"],'
+        + 'a[href^="/@"]'
+      ));
+      for (const a of anchors) {
+        const href = String(a.getAttribute('href') || '');
+        const m = href.match(/^\/@([^/?#]+)/);
+        if (!m) continue;
+        const username = decodeURIComponent(m[1]).trim();
+        if (!username || seen.has(username.toLowerCase())) continue;
+        const box = a.closest('div[class*="DivSearchUserItemContainer"], div[class*="DivSearchItemContainer"], [data-e2e="search-user-item"]')
+          || a.parentElement;
+        const txt = String(box?.innerText || '').trim();
+        const lines = txt.split('\n').map((s) => s.trim()).filter(Boolean);
+        const img = box?.querySelector('img');
+        const nickname = lines.find((s) => s.toLowerCase() !== `@${username.toLowerCase()}` && s !== username) || username;
+        const followers = lines.find((s) => /followers|粉丝/i.test(s)) || '';
+        seen.add(username.toLowerCase());
+        out.push({
+          username,
+          nickname: nickname.slice(0, 120),
+          avatar: String(img?.getAttribute('src') || ''),
+          profileUrl: `https://www.tiktok.com/@${encodeURIComponent(username)}`,
+          followersText: followers,
+        });
+        if (out.length >= 200) break;
+      }
+      return out;
+    }).catch(() => []);
+
+    let items = await collect();
+    if (!items.length) {
+      await scrollSearchResults(page).catch(() => {});
+      await humanPause(2500, 0.15).catch(() => {});
+      items = await collect();
+    }
+    let rounds = 0;
+    while (items.length < limit && rounds < 6) {
+      rounds += 1;
+      const before = items.length;
+      await scrollSearchResults(page).catch(() => {});
+      await humanPause(1800, 0.15).catch(() => {});
+      const next = await collect();
+      if (next.length > items.length) items = next;
+      if (items.length <= before) break;
+    }
+
+    const result = items.slice(0, limit).map((u) => ({
+      ...u,
+      friendUid: '',
+      relation: 'stranger',
+    }));
+    if (result.length) {
+      try {
+        const back = await phpApi.post('/node/chat/friend-langs', {
+          accountId: aid,
+          usernames: result.map((u) => String(u.username || '')),
+        });
+        const byName = new Map();
+        for (const it of (back?.items || [])) {
+          byName.set(String(it.username || '').toLowerCase(), it);
+        }
+        for (const u of result) {
+          const hit = byName.get(String(u.username || '').toLowerCase());
+          u.lang = String(hit?.lang || '');
+          u.friendId = Number(hit?.friendId || 0) || 0;
+        }
+      } catch (e) {
+        liveLog(`账号 #${aid}：搜索结果回查语言失败：${String(e?.message || e).slice(0, 160)}`, 'warn', { accountId: aid });
+      }
+    }
+    if (!result.length) {
+      keepOpen = true;
+      liveLog(
+        `账号 #${aid}：搜索「${keyword}」未解析到用户卡片（可能触发验证或关键词无结果），浏览器窗口已保持打开，请在远程查看确认`,
+        'warn',
+        { accountId: aid, profileId },
+      );
+    } else {
+      liveLog(`账号 #${aid}：搜索「${keyword}」拿到 ${result.length} 个用户（临时结果，未入库）`, 'info', { accountId: aid });
+    }
+    return {
+      status: 'completed',
+      result: {
+        keyword,
+        total: result.length,
+        items: result,
+        profileId,
+        temporary: true,
+      },
+    };
+  } catch (e) {
+    keepOpen = true;
+    throw e;
+  } finally {
+    if (!keepOpen) {
+      try { await closeConnection(connection, { force: true }); } catch { /* */ }
+      try { await closeSession(profileId, { accountId: aid, pushPack: false }); } catch { /* */ }
+      await releaseSeatLease(profileId);
+    } else {
+      try { await closeConnection(connection, { force: false, keepAlive: true }); } catch { /* */ }
+      await releaseSeatLease(profileId);
+      liveLog(
+        `账号 #${aid}：搜索任务的浏览器窗口保持打开（环境 ${String(profileId || '').slice(0, 8)}…），可在环境列表 / VNC 查看`,
+        'warn',
+        { accountId: aid, profileId },
+      );
+    }
+  }
+}
+
 module.exports = {
   runCsLogin,
   runCsDetect,
   runCsLogout,
   runSyncFans,
+  runFetchLang,
+  runSearchUsers,
 };
