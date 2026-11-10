@@ -526,12 +526,19 @@ button.account-pick-tag.ghost.is-on,
 .chat-meta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-account .chat-meta b{white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word;line-height:1.35}
 .chat-meta small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 语言标签：与名字同一行，名字过长先省略，标签不被挤掉 */
+.chat-meta .chat-name{display:inline-block;max-width:calc(100% - 56px);vertical-align:middle;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-lang{display:inline-block;vertical-align:middle;margin-left:5px;padding:0 6px;border-radius:9px;font-size:11px;line-height:17px;font-weight:600;white-space:nowrap;background:#e8f3ff;color:#1668dc;border:1px solid #c3ddff}
+.chat-lang.unknown{background:#f2f3f5;color:#909399;border-color:#e0e2e6;font-weight:500}
 .chat-account .chat-meta small{white-space:normal;overflow:visible;text-overflow:unset;line-height:1.35}
 .chat-filters{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line)}
 .chat-filters button{border:1px solid #dcdfe6;background:#fff;border-radius:12px;padding:3px 10px;font-size:12px;cursor:pointer;color:#606266}
 .chat-filters button.active{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
 .thread{flex:1;overflow:auto;padding:16px;background:#f7f8fa}
-.bubble-wrap{max-width:72%;margin:0 0 12px;display:flex;flex-direction:column;gap:4px}
+.bubble-wrap{max-width:72%;margin:0 0 12px;display:flex;flex-direction:column;gap:4px;position:relative}
+/* 发送失败重发按钮：贴在气泡左侧，不占布局流 */
+.bubble-resend{position:absolute;left:-32px;top:6px;width:24px;height:24px;line-height:1;display:grid;place-items:center;border-radius:50%;border:1px solid #fbc4c4;background:#fef0f0;color:#c45656;font-size:15px;cursor:pointer;padding:0;transition:background .15s,color .15s}
+.bubble-resend:hover{background:#dc2626;border-color:#dc2626;color:#fff}
 .bubble-wrap.out{align-self:flex-end;margin-left:auto}
 .chat-col .thread{display:flex;flex-direction:column}
 .bubble{max-width:100%;padding:10px 12px;border-radius:8px;background:#fff;border:1px solid #e4e7ed;color:#000;white-space:pre-wrap;word-break:break-word}

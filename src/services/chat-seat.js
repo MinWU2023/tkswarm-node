@@ -7,7 +7,8 @@ const { runClaimedBatchDirect, offerSpecificBatch } = require('./task-runner');
 const executorHub = require('./executor-hub');
 
 /**
- * @param {{ accountId:number, action:string, friendId?:number, content?:string, translated?:string, maxPerRun?:number }} body
+ * @param {{ accountId:number, action:string, friendId?:number, content?:string, translated?:string, maxPerRun?:number, keyword?:string, limit?:number, maxConversations?:number, maxMessagesPerChat?:number }} body
+ * 注意：body 会整体透传给 PHP，新增坐席动作的参数不需要在这里登记。
  */
 async function enqueueAndRunSeatTask(body = {}) {
   const accountId = Number(body.accountId || body.account_id || 0);
@@ -16,7 +17,11 @@ async function enqueueAndRunSeatTask(body = {}) {
 
   let enqueued;
   try {
+    // 透传原始 body：坐席动作在增加（fetch_lang / search_users / dm_sync 等），
+    // 逐字段白名单会静默丢掉新参数（例如 search_users 的 keyword），导致 PHP 收到空值。
+    // 这里规范化 accountId/action 后展开其余字段，新增动作无需再改这层。
     enqueued = await phpApi.post('/chat/seat-tasks', {
+      ...body,
       accountId,
       action,
       friendId: body.friendId || body.friend_id || 0,

@@ -718,9 +718,35 @@ async function executeWorkItem(item) {
 
   if (type === 'message' || type === 'dm_reply') {
     const seatSend = String(payload.source || '') === 'chat.seat' || payload.autoSend === true;
+    const originalText = payload.content || payload.publishCaption || payload.reply || '';
+    let deliverText = originalText;
+    let translated = String(payload.translated || '');
+    // 坐席发信：用本机翻译接口实时把中文翻成对方语种，投递译文
+    if (seatSend && payload.needTranslate === true && deliverText) {
+      const targetLang = String(payload.peerLang || 'en').toLowerCase();
+      const sourceLang = String(payload.sourceLang || 'zh').toLowerCase();
+      try {
+        const { translateForced } = require('./translator');
+        const tr = await translateForced(originalText, { from: sourceLang, to: targetLang });
+        translated = String(tr?.text || '').trim();
+        if (!translated) throw new Error('翻译接口未返回文本');
+        deliverText = translated;
+        liveLog(
+          `账号 #${accountId}：已按对方语种 ${targetLang} 翻译后投递（${String(originalText).slice(0, 30)} → ${String(translated).slice(0, 40)}）`,
+          'info',
+          logCtx,
+        );
+      } catch (e) {
+        return {
+          status: 'failed',
+          result: { error: String(e?.message || e), original: originalText },
+          errorMessage: `实时翻译失败，未发出消息：${String(e?.message || e)}`,
+        };
+      }
+    }
     const result = await prepareMessage(
       accountId,
-      payload.content || payload.publishCaption || payload.reply || '',
+      deliverText,
       payload.recipient || payload.toUser || '',
       {
         saveTraffic,
@@ -739,14 +765,15 @@ async function executeWorkItem(item) {
     if (result?.status === 'failed') {
       return { status: 'failed', result, errorMessage: result.error || '私信发送失败' };
     }
-    // 坐席发送成功后回写本地会话
+    // 坐席发送成功后回写本地会话：content=原文，translated=实际投递的译文
     if (seatSend && payload.friendId) {
       try {
         await phpApi.post('/node/chat/bit-send-result', {
           friendId: Number(payload.friendId),
           accountId,
-          content: payload.content || '',
-          translated: payload.translated || '',
+          content: originalText,
+          translated,
+          delivered: deliverText,
           recordId: Number(payload.recordId || 0) || undefined,
           status: 'synced',
         });

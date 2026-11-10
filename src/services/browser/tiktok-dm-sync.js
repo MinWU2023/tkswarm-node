@@ -175,11 +175,12 @@ function normalizeMessagesPayload(data) {
 async function maybeTranslateIn(friend, text) {
   if (!friend || !text) return '';
   if (!friend.translate_in) return '';
+  // 接收方向固定「对方语种 → 中文」：对方语种来自 chat_users.lang（未获取时按英语）
+  const peer = String(friend.lang || '').trim().toLowerCase();
+  const from = ['zh', 'en', 'ja', 'ko', 'es'].includes(peer) ? peer : 'en';
+  if (from === 'zh') return '';
   try {
-    const r = await translateText(text, {
-      from: friend.translate_source || 'auto',
-      to: friend.translate_target || 'zh',
-    });
+    const r = await translateText(text, { from, to: 'zh' });
     return r.text || '';
   } catch {
     return '';
