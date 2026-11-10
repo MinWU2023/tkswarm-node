@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "check": "node --check src/server.js"
+    "check": "node --check src/server.js",
+    "smoke:browser": "node scripts/smoke-browser-backend.js",
+    "smoke:cdp": "node scripts/smoke-browser-cdp.js",
+    "smoke:resolve": "node scripts/smoke-resolve-profile.js",
+    "compare:browser": "node scripts/compare-browser-backends.js"
   },
   "keywords": [],
   "author": "",

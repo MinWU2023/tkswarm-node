@@ -30,6 +30,182 @@
       const types=this.meta?.taskTypes||{publish:'视频发布',message:'消息群发'};
       return types[x?.type]||x?.type||'-';
     },
+    async renderCustomerTasks(opts={}){
+      const gen=opts.gen||this._matrixSwitchGen;
+      const still=()=>gen===this._matrixSwitchGen&&this.view==='publish'&&this.matrixTab==='customerTasks';
+      if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
+      const status=this.customerTaskStatus||'';
+      const keyword=String(this.customerTaskKeyword||'').trim().toLowerCase();
+      const page=this.customerTaskPage||1;
+      const pack=await this.api('/tasks?page=1&pageSize=200&type=publish,comment_reply,pull_video_list,pull_comments&source=company_entrust');
+      if(!still())return;
+      let items=[...(pack.items||[])].sort((a,b)=>Number(b.id||0)-Number(a.id||0));
+      if(status)items=items.filter(x=>x.status===status);
+      if(keyword){
+        items=items.filter(x=>{
+          const by=x.payload?.entrustBy||{};
+          const acc=x.payload?.entrustAccount||{};
+          const hay=`${x.name||''} ${x.type||''} ${by.username||''} ${by.nickname||''} ${acc.username||''} ${acc.nickname||''}`.toLowerCase();
+          return hay.includes(keyword);
+        });
+      }
+      const statusCounts={all:(pack.items||[]).length};
+      ['draft','queued','running','paused','completed','failed','cancelled'].forEach(k=>{
+        statusCounts[k]=(pack.items||[]).filter(x=>x.status===k).length;
+      });
+      const pagePack=UI.paginateLocal(items,page,15);
+      this.customerTaskPage=pagePack.page;
+      const L={
+        all:'\u5168\u90e8', refresh:'\u5237\u65b0', tip:'\u4ec5\u663e\u793a\u5173\u8054\u4f01\u4e1a\u5ba2\u6237\u63d0\u4ea4\u7684\u59d4\u6258\u4efb\u52a1\uff08\u53d1\u5e03/\u56de\u590d\u8bc4\u8bba/\u62c9\u53d6\u89c6\u9891\uff09\uff1b\u542f\u52a8\u540e\u7531\u672c\u673a\u6267\u884c\u5668\u5904\u7406',
+        status:'\u4efb\u52a1\u72b6\u6001', kw:'\u4efb\u52a1\u540d / \u7c7b\u578b / \u5ba2\u6237 / \u8d26\u53f7', search:'\u641c\u7d22', reset:'\u91cd\u7f6e',
+        empty:'\u6682\u65e0\u5173\u8054\u4f01\u4e1a\u5ba2\u6237\u7684\u59d4\u6258\u4efb\u52a1',
+        thTask:'\u4efb\u52a1', thType:'\u7c7b\u578b', thCustomer:'\u5ba2\u6237', thAccount:'\u8d26\u53f7', thMaterial:'\u7d20\u6750/\u89c6\u9891',
+        thProgress:'\u8fdb\u5ea6', thStatus:'\u72b6\u6001', thCreated:'\u521b\u5efa\u65f6\u95f4', thOps:'\u64cd\u4f5c',
+        start:'\u542f\u52a8', restart:'\u91cd\u542f', retry:'\u91cd\u8bd5', pause:'\u6682\u505c', cancel:'\u53d6\u6d88', detail:'\u8be6\u60c5',
+        downloadVideo:'\u4e0b\u8f7d\u89c6\u9891', redownloadVideo:'\u91cd\u4e0b\u89c6\u9891'
+      };
+      this._customerTaskLabels=L;
+      const statusOpts=[
+        ['',`${L.all} (${statusCounts.all||0})`],
+        ...this.taskStatusPairs().map(([k,n])=>[k,`${n} (${statusCounts[k]||0})`]),
+      ];
+      const html=`<div class="panel tasks-panel">
+        <div class="matrix-action-bar">
+          <div class="left">
+            <button class="ghost" onclick="app.refresh()">${L.refresh}</button>
+          </div>
+          <div class="right"><span class="muted">${L.tip}</span></div>
+        </div>
+        <div class="search-bar task-filter-bar">
+          <select id="customer-task-status" class="input" title="${L.status}">
+            ${statusOpts.map(([v,n])=>`<option value="${this.esc(v)}" ${status===v?'selected':''}>${this.esc(n)}</option>`).join('')}
+          </select>
+          <input id="customer-task-keyword" class="input" type="search" placeholder="${L.kw}" value="${this.esc(this.customerTaskKeyword||'')}" onkeydown="if(event.key==='Enter')app.searchCustomerTasks()">
+          <button class="primary" type="button" onclick="app.searchCustomerTasks()">${L.search}</button>
+          <button class="ghost" type="button" onclick="app.resetCustomerTaskFilters()">${L.reset}</button>
+        </div>
+        <div class="table-container">${this.customerTaskTable(pagePack.items)}</div>
+        ${UI.pager({items:pagePack.items,total:pagePack.total,page:pagePack.page,pages:pagePack.pages,pageSize:pagePack.pageSize||15},'customerTaskPage')}
+      </div>`;
+      if(!still())return;
+      this.mountMatrixPanel(html,'customerTasks',{soft:!!opts.soft});
+      if(items.some(x=>['queued','running'].includes(x.status))){
+        this.taskRefreshTimer=setInterval(()=>{
+          if(this.view==='publish'&&this.matrixTab==='customerTasks')this.renderPublish({soft:true});
+          else clearInterval(this.taskRefreshTimer);
+        },3000);
+      }
+    },
+    searchCustomerTasks(){
+      this.customerTaskStatus=String(document.querySelector('#customer-task-status')?.value||'').trim();
+      this.customerTaskKeyword=String(document.querySelector('#customer-task-keyword')?.value||'').trim();
+      this.customerTaskPage=1;
+      this.refresh();
+    },
+    resetCustomerTaskFilters(){
+      this.customerTaskStatus='';
+      this.customerTaskKeyword='';
+      this.customerTaskPage=1;
+      this.refresh();
+    },
+    customerEntrustTypeLabel(type){
+      const map={
+        publish:'\u53d1\u5e03\u89c6\u9891',
+        comment_reply:'\u56de\u590d\u8bc4\u8bba',
+        pull_video_list:'\u62c9\u53d6\u89c6\u9891\u5217\u8868',
+        pull_comments:'\u62c9\u53d6\u89c6\u9891\u8be6\u60c5'
+      };
+      return map[type]||type||'-';
+    },
+    customerTaskTable(rows){
+      const L=this._customerTaskLabels||{};
+      if(!rows.length)return `<div class="empty">${L.empty||'empty'}</div>`;
+      return `<table><thead><tr><th>${L.thTask||''}</th><th>${L.thType||''}</th><th>${L.thCustomer||''}</th><th>${L.thAccount||''}</th><th>${L.thMaterial||''}</th><th>${L.thProgress||''}</th><th>${L.thStatus||''}</th><th>${L.thCreated||''}</th><th>${L.thOps||''}</th></tr></thead><tbody>${rows.map(x=>this.customerTaskRowHtml(x)).join('')}</tbody></table>`;
+    },
+    customerTaskRowHtml(x){
+      const L=this._customerTaskLabels||{};
+      const pct=x.total_count?Math.round((x.success_count+x.fail_count)/x.total_count*100):0;
+      const by=x.payload?.entrustBy||{};
+      const acc=x.payload?.entrustAccount||{};
+      const mat=x.payload?.entrustMaterial||{};
+      const customer=by.nickname||by.username||('-');
+      let account=acc.nickname||acc.username||(acc.id?('#'+acc.id):'-');
+      const accCount=Number(x.payload?.entrustAccountCount||(x.payload?.accountIds||[]).length||0);
+      if(accCount>1)account=`${account} +\u7b49${accCount}\u4e2a`;
+      let material=mat.name||mat.fileName||(mat.id?('#'+mat.id):'-');
+      if(Number(mat.count||0)>1)material=`${material} \u00d7${mat.count}`;
+      if(x.type==='comment_reply'){
+        const mode=x.payload?.replyMode==='ai'?'AI':'\u56fa\u5b9a';
+        material=`${mode} / \u4e0a\u9650 ${Number(x.payload?.maxReplies||10)}`;
+      }
+      if(x.type==='pull_video_list')material='-';
+      const canStart=['draft','paused','failed'].includes(x.status);
+      const isEntrustPublish=x.type==='publish'&&(x.payload?.source==='company_entrust'||!!x.payload?.entrustBy);
+      const videoPulled=!!(x.payload?.videoPulled||x.payload?.localVideoPath||mat.localVideoPath);
+      const ops=[];
+      if(isEntrustPublish&&!videoPulled){
+        ops.push(`<button class="tiny primary" type="button" onclick="app.downloadCustomerTaskVideo(${x.id})">${L.downloadVideo||'下载视频'}</button>`);
+      }
+      if(isEntrustPublish&&videoPulled){
+        ops.push(`<button class="tiny ghost" type="button" title="${this.esc(x.payload?.localVideoPath||mat.localVideoPath||'')}" onclick="app.downloadCustomerTaskVideo(${x.id})">${L.redownloadVideo||'重下视频'}</button>`);
+      }
+      if(canStart&&(!isEntrustPublish||videoPulled)){
+        const startLabel=x.status==='paused'?(L.restart||'restart'):(x.status==='failed'?(L.retry||'retry'):(L.start||'start'));
+        ops.push(`<button class="tiny primary" type="button" onclick="app.taskAction(${x.id},'start','${this.esc(x.status)}')">${startLabel}</button>`);
+      }
+      if(['queued','running'].includes(x.status)){
+        ops.push(`<button class="tiny ghost" type="button" onclick="app.taskAction(${x.id},'pause')">${L.pause||'pause'}</button>`);
+        ops.push(`<button class="tiny danger" type="button" onclick="app.taskAction(${x.id},'cancel')">${L.cancel||'cancel'}</button>`);
+      }
+      ops.push(`<button class="tiny ghost" type="button" onclick="app.taskDetailModal(${x.id})">${L.detail||'detail'}</button>`);
+      return `<tr>
+        <td><b>${this.esc(x.name||'')}</b><div class="muted">#${x.id}</div></td>
+        <td>${this.esc(this.customerEntrustTypeLabel(x.type))}</td>
+        <td>${this.esc(customer)}</td>
+        <td>${this.esc(account)}</td>
+        <td>${this.esc(material)}${isEntrustPublish?`<div class="muted">${videoPulled?(x.payload?.localCoverPath?'已拉取视频+封面':'已拉取本机'):'未拉取视频'}</div>`:''}</td>
+        <td><div class="progress"><i style="width:${pct}%"></i></div><span class="muted">${x.success_count||0}/${x.total_count||0}</span></td>
+        <td>${this.badge(x.status)}${this.nodeOwnedTaskHint(x.status,x.type)}</td>
+        <td>${this.esc(x.created_at||'')}</td>
+        <td><div class="task-ops-cell">${ops.join('')}</div></td>
+      </tr>`;
+    },
+    async downloadCustomerTaskVideo(taskId){
+      const id=Number(taskId);
+      if(!id){this.toast('无效任务',true);return}
+      let dir='';
+      try{
+        const settings=await this.api('/settings');
+        dir=String(settings?.video_download_dir||settings?.videoDownloadDir||'').trim();
+      }catch{/* ignore */}
+      this.modal(
+        '下载视频到本机',
+        `<div class="form-grid">
+          <div class="field full"><label>本地下载目录（绝对路径）</label>
+            <input class="input" name="downloadDir" required placeholder="例如 D:\\Videos\\TkSwarm" value="${this.esc(dir)}">
+          </div>
+          <div class="field full"><div class="muted">已存在同名视频/封面将跳过；目录会写入当前管理用户设置。有封面时一并下载到同目录。</div></div>
+        </div>`,
+        async(data)=>{
+          const downloadDir=String(data.downloadDir||'').trim();
+          if(!downloadDir){this.toast('请填写本地下载目录',true);throw new Error('请填写本地下载目录')}
+          const r=await this.api(`/tasks/${id}/download-video`,{
+            method:'POST',
+            body:JSON.stringify({downloadDir,saveDirSetting:true}),
+            timeoutMs:960000,
+          });
+          const videoMsg=r?.skipped?`视频已存在：${r.localVideoPath||''}`:`视频已下载：${r?.localVideoPath||''}`;
+          const coverMsg=r?.localCoverPath
+            ?(r?.coverSkipped?`；封面已存在：${r.localCoverPath}`:`；封面：${r.localCoverPath}`)
+            :'';
+          this.toast(videoMsg+coverMsg);
+          this.closeModal();
+          this.refresh();
+        },
+        false,
+        {submitText:'开始下载',loadingTitle:'正在下载视频/封面',loadingDesc:'请稍候，大文件可能需要几分钟…',successTitle:'完成'}
+      );
+    },
     async renderTasks(opts={}){
       const gen=opts.gen||this._matrixSwitchGen;
       const still=()=>gen===this._matrixSwitchGen&&this.view==='publish'&&this.matrixTab==='tasks';
@@ -120,7 +296,7 @@
         }).catch(()=>{});
       }
       if(d.items.some(x=>['queued','running'].includes(x.status))||filtered.some(x=>['queued','running'].includes(x.status))){
-        this.taskRefreshTimer=setInterval(()=>{if(this.view==='publish'&&this.matrixTab==='tasks'&&!this.wizardOpen&&!this.massWizardOpen)this.renderPublish();else clearInterval(this.taskRefreshTimer)},3000);
+        this.taskRefreshTimer=setInterval(()=>{if(this.view==='publish'&&this.matrixTab==='tasks'&&!this.wizardOpen&&!this.massWizardOpen)this.renderPublish({soft:true});else clearInterval(this.taskRefreshTimer)},3000);
       }
     },
     setTaskTypeFilter(type){this.taskTypeFilter=type||'';this.taskModeFilter='';this.taskPage=1;this.refresh()},
@@ -360,7 +536,7 @@
     async batchTaskAction(action){const ids=[...document.querySelectorAll('.task-check:checked')].map(x=>Number(x.value));if(!ids.length){this.toast('请先选择任务',true);return}const names={start:'启动',pause:'暂停',cancel:'取消'};if(action==='cancel'&&!(await this.ask(`确定批量取消 ${ids.length} 个任务吗？`)))return;try{const r=await this.api('/tasks/batch-action',{method:'POST',body:JSON.stringify({taskIds:ids,action})});this.toast(r.changed?`批量${names[action]}完成，变更 ${r.changed} 个任务`:`没有任务被${names[action]||action}`,!r.changed);this.refresh()}catch(e){this.toast(e.message,true)}},
     taskTable(rows){
       if(!rows.length)return '<div class="empty">还没有任务</div>';
-      return `<table><thead><tr><th><input type="checkbox" onchange="app.toggleAllTasks(this.checked)" title="全选任务"></th><th>任务</th><th>类型</th><th>分组</th><th>进度</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows.map(x=>this.taskRowHtml(x)).join('')}</tbody></table>`;
+      return `<table><thead><tr><th><input type="checkbox" onchange="app.toggleAllTasks(this.checked)" title="全选任务"></th><th>任务</th><th>类型</th><th>分组</th><th>进度</th><th>状态</th><th>定时</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows.map(x=>this.taskRowHtml(x)).join('')}</tbody></table>`;
     },
     taskRowHtml(x){
       const pct=x.total_count?Math.round((x.success_count+x.fail_count)/x.total_count*100):0;
@@ -385,7 +561,7 @@
       const editBtn=canEdit?`<button class="tiny" type="button" title="编辑" onclick='app.taskModal(${JSON.stringify(x)})'>编辑</button>`:`<button class="tiny" type="button" title="编辑" disabled>编辑</button>`;
       const delBtn=`<button class="tiny danger" type="button" title="删除" onclick="app.remove('/tasks/${x.id}','任务')">删除</button>`;
       const moreBtn=more.length?`<div class="ops-dropdown task-ops-dropdown"><button class="tiny" type="button" title="更多" onclick="app.toggleTaskOps(${x.id},event)">…</button><div id="task-ops-${x.id}" class="dropdown-menu ops-menu hidden">${more.join('')}</div></div>`:'';
-      return `<tr><td><input class="task-check" type="checkbox" value="${x.id}"></td><td><b>${this.esc(x.name)}</b></td><td>${this.esc(this.taskTypeLabel(x))}</td><td>${this.esc(x.group_name||'-')}</td><td><div class="progress"><i style="width:${pct}%"></i></div><span class="muted">${x.success_count}/${x.total_count}</span></td><td>${this.badge(x.status)}${this.nodeOwnedTaskHint(x.status,x.type)}</td><td>${this.esc(x.created_at)}</td><td><div class="task-ops-cell">${editBtn}${delBtn}${moreBtn}</div></td></tr>`;
+      return `<tr><td><input class="task-check" type="checkbox" value="${x.id}"></td><td><b>${this.esc(x.name)}</b></td><td>${this.esc(this.taskTypeLabel(x))}</td><td>${this.esc(x.group_name||'-')}</td><td><div class="progress"><i style="width:${pct}%"></i></div><span class="muted">${x.success_count}/${x.total_count}</span></td><td>${this.badge(x.status)}${this.nodeOwnedTaskHint(x.status,x.type)}</td><td>${this.taskScheduleCellHtml(x)}</td><td>${this.esc(x.created_at)}</td><td><div class="task-ops-cell">${editBtn}${delBtn}${moreBtn}</div></td></tr>`;
     },
     toggleTaskOps(id,e){
       e?.stopPropagation?.();
@@ -399,16 +575,19 @@
         target.classList.add('ops-menu');
         target.classList.remove('hidden');
         const btn=e?.currentTarget||target.closest('.ops-dropdown')?.querySelector('button');
-        if(window.UI) UI.liftMenu(target, btn, {side:'left'});
+        if(window.UI){
+          UI.decorate(target);
+          UI.liftMenu(target, btn, {side:'left'});
+        }
       }
     },
-    async taskModal(x={}){const gs=this.groups.filter(g=>g.type==='account'),accounts=(await this.api('/accounts?pageSize=100')).items,scheduled=x.scheduled_at?new Date(x.scheduled_at).toISOString().slice(0,16):'',selectedAccounts=x.payload?.accountIds||[];this.modal(x.id?'编辑任务':'创建任务',`<div class="form-grid"><input type="hidden" name="id" value="${x.id||''}">${this.field('name','任务名称',x.name||'', 'text',true)}${this.selectRaw('type','任务类型',Object.entries(this.meta?.taskTypes||{publish:'视频发布',message:'消息群发',sync:'数据同步',profile:'资料同步'}),x.type||'sync')}<div class="field full"><label>指定发布账号（可多选，留空则按账号分组）</label><select name="accountIds" multiple size="6">${accounts.length?accounts.map(a=>`<option value="${a.id}" ${selectedAccounts.map(Number).includes(Number(a.id))?'selected':''}>#${a.id} · ${this.esc(a.username)} · ${this.esc(a.group_name||'未分组')}</option>`).join(''):'<option disabled>暂无账号</option>'}</select></div>${this.select('groupId','账号分组（未指定账号时生效）',gs,x.group_id)}${this.multiSelect('materialIds','关联素材',this.materials,x.payload?.materialIds||[])}${this.select('templateId','关联消息模板',this.templates,x.payload?.templateId)}${this.field('publishTitle','发布标题',x.payload?.publishTitle||'')}${this.field('publishCaption','发布描述/消息内容',x.payload?.publishCaption||'','textarea')}${this.field('totalCount','目标数量（0=全部所选）',x.total_count||0,'number')}${this.field('scheduledAt','计划开始时间',scheduled,'datetime-local')}</div>`,async d=>{const id=d.id;delete d.id;d.groupId=d.groupId?Number(d.groupId):null;d.totalCount=Number(d.totalCount||0);d.scheduledAt=d.scheduledAt?new Date(d.scheduledAt).toISOString():null;d.payload={accountIds:[...document.querySelector('[name="accountIds"]')?.selectedOptions||[]].map(o=>Number(o.value)).filter(Boolean),materialIds:[...document.querySelector('[name="materialIds"]')?.selectedOptions||[]].map(o=>Number(o.value)).filter(Boolean),templateId:d.templateId?Number(d.templateId):null,publishTitle:d.publishTitle||'',publishCaption:d.publishCaption||'',publishStrategy:'deduplicate',pushChannel:'bit',hashtags:''};delete d.templateId;delete d.publishTitle;delete d.publishCaption;await this.api(id?`/tasks/${id}`:'/tasks',{method:id?'PUT':'POST',body:JSON.stringify(d)});this.toast(id?'任务已更新':'任务已创建');this.closeModal();this.refresh()})},
+    async taskModal(x={}){const gs=this.groups.filter(g=>g.type==='account'),accounts=(await this.api('/accounts?pageSize=100')).items,scheduled=this.scheduleLocalInputValue(x),selectedAccounts=x.payload?.accountIds||[];this.modal(x.id?'编辑任务':'创建任务',`<div class="form-grid"><input type="hidden" name="id" value="${x.id||''}">${this.field('name','任务名称',x.name||'', 'text',true)}${this.selectRaw('type','任务类型',Object.entries(this.meta?.taskTypes||{publish:'视频发布',message:'消息群发',sync:'数据同步',profile:'资料同步'}),x.type||'sync')}<div class="field full"><label>指定发布账号（可多选，留空则按账号分组）</label><select name="accountIds" multiple size="6">${accounts.length?accounts.map(a=>`<option value="${a.id}" ${selectedAccounts.map(Number).includes(Number(a.id))?'selected':''}>#${a.id} · ${this.esc(a.username)} · ${this.esc(a.group_name||'未分组')}</option>`).join(''):'<option disabled>暂无账号</option>'}</select></div>${this.select('groupId','账号分组（未指定账号时生效）',gs,x.group_id)}${this.multiSelect('materialIds','关联素材',this.materials,x.payload?.materialIds||[])}${this.select('templateId','关联消息模板',this.templates,x.payload?.templateId)}${this.field('publishTitle','发布标题',x.payload?.publishTitle||'')}${this.field('publishCaption','发布描述/消息内容',x.payload?.publishCaption||'','textarea')}${this.field('totalCount','目标数量（0=全部所选）',x.total_count||0,'number')}${this.scheduleAtFieldHtml('scheduledAt','计划开始时间',scheduled,{preview:'task-modal'})}</div>`,async d=>{const id=d.id;delete d.id;d.groupId=d.groupId?Number(d.groupId):null;d.totalCount=Number(d.totalCount||0);const __schIds=[...document.querySelector('[name="accountIds"]')?.selectedOptions||[]].map(o=>Number(o.value)).filter(Boolean);const __sch=await this.resolveTaskScheduleFromLocal(d.scheduledAt||'',__schIds);d.scheduledAt=__sch.scheduledAt||null;d.payload={...__sch.scheduleFields,accountIds:[...document.querySelector('[name="accountIds"]')?.selectedOptions||[]].map(o=>Number(o.value)).filter(Boolean),materialIds:[...document.querySelector('[name="materialIds"]')?.selectedOptions||[]].map(o=>Number(o.value)).filter(Boolean),templateId:d.templateId?Number(d.templateId):null,publishTitle:d.publishTitle||'',publishCaption:d.publishCaption||'',publishStrategy:'deduplicate',pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),hashtags:''};delete d.templateId;delete d.publishTitle;delete d.publishCaption;await this.api(id?`/tasks/${id}`:'/tasks',{method:id?'PUT':'POST',body:JSON.stringify(d)});this.toast(id?'任务已更新':'任务已创建');this.closeModal();this.refresh()})},
     async taskAction(id,action,status=''){if(action==='cancel'&&!(await this.ask('确定取消这个任务吗？当前账号处理完成后将停止。')))return;try{await this.api(`/tasks/${id}/${action}`,{method:'POST'});const startTip=status==='paused'?'任务已重启并进入队列':status==='failed'?'任务已重试并进入队列':'任务已进入队列，执行器将按账号顺序处理';this.toast(action==='start'?startTip:action==='cancel'?'任务已取消':'任务已暂停');this.refresh()}catch(e){this.toast(e.message,true)}},
     async retryTask(id){if(!(await this.ask('只重试本任务中失败的账号，是否继续？')))return;try{await this.api(`/tasks/${id}/retry`,{method:'POST'});this.toast('失败账号已重新进入队列');this.refresh()}catch(e){this.toast(e.message,true)}},
     async prepareTask(id){try{const r=await this.api(`/tasks/${id}/prepare`,{method:'POST'});this.toast(r.message);if(await this.ask('执行方案已生成。确认后任务可按执行器策略自动运行，是否确认？')){await this.api(`/tasks/${id}/plans/${r.id}/confirm`,{method:'POST'});this.toast('执行方案已确认')}this.taskPreview(id)}catch(e){this.toast(e.message,true)}},
     async taskPlans(id){try{const plans=await this.api(`/tasks/${id}/plans`);return plans}catch(e){this.toast(e.message,true);return []}},
     async preflightTask(id){try{const r=await this.api(`/tasks/${id}/preflight`,{method:'POST'});this.toast(r.canRun?'执行前检查通过':'检查发现 '+r.issues.length+' 个问题',!r.canRun);if(!r.canRun)alert('执行前检查未通过：\\n\\n'+r.issues.join('\\n'))}catch(e){this.toast(e.message,true)}},
-    async taskPreview(id){try{const r=await this.api(`/tasks/${id}/preview`);const p=r.payload||{};this.modal('任务预览',`<div class="data-summary"><div><small>任务名称</small><b>${this.esc(r.task.name)}</b></div><div><small>类型</small><b>${this.esc(r.task.type)}</b></div><div><small>目标数量</small><b>${r.task.total_count}</b></div></div><div class="data-meta">计划时间：${this.esc(r.task.scheduled_at||'立即')}<br>发布标题：${this.esc(p.publishTitle||'-')}<br>发布描述：${this.esc(p.publishCaption||'-')}<br>消息模板：${this.esc(r.template?.name||'-')}</div><h3>关联素材</h3>${r.materials.length?`<table><thead><tr><th>名称</th><th>文件</th><th>类型</th><th>状态</th></tr></thead><tbody>${r.materials.map(m=>`<tr><td>${this.esc(m.name)}</td><td>${this.esc(m.file_name||'-')}</td><td>${this.esc(m.mime_type||'-')}</td><td>${this.badge(m.status)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">未关联素材</div>'}`,()=>this.closeModal())}catch(e){this.toast(e.message,true)}},
+    async taskPreview(id){try{const r=await this.api(`/tasks/${id}/preview`);const p=r.payload||{};this.modal('任务预览',`<div class="data-summary"><div><small>任务名称</small><b>${this.esc(r.task.name)}</b></div><div><small>类型</small><b>${this.esc(r.task.type)}</b></div><div><small>目标数量</small><b>${r.task.total_count}</b></div></div><div class="data-meta">计划时间：${this.taskScheduleCellHtml({...r.task,payload:p})}<br>发布标题：${this.esc(p.publishTitle||'-')}<br>发布描述：${this.esc(p.publishCaption||'-')}<br>消息模板：${this.esc(r.template?.name||'-')}</div><h3>关联素材</h3>${r.materials.length?`<table><thead><tr><th>名称</th><th>文件</th><th>类型</th><th>状态</th></tr></thead><tbody>${r.materials.map(m=>`<tr><td>${this.esc(m.name)}</td><td>${this.esc(m.file_name||'-')}</td><td>${this.esc(m.mime_type||'-')}</td><td>${this.badge(m.status)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">未关联素材</div>'}`,()=>this.closeModal())}catch(e){this.toast(e.message,true)}},
     async taskDetailModal(id){
       try{
         const [taskList,rows,events,items]=await Promise.all([
@@ -482,16 +661,19 @@
           <button class="ghost" type="button" onclick="app.resetMaterialFilters()">重置</button>
         </div>
         ${rows.length?`<div class="material-grid">${rows.map(x=>{
-          const fileName=x.file_name||x.fileName||'-';
-          const size=x.size_bytes||x.sizeBytes||0;
-          const canPreview=x.status==='ready';
-          const stream=this.materialStreamUrl?this.materialStreamUrl(x.id):(window.TKSWARM_API_BASE||'')+'/api/materials/'+x.id+'/stream';
+          // 列表禁止挂 video/stream，避免一页并发拉流卡死；仅封面图或占位
+          const thumb=typeof this.materialThumbHtml==='function'
+            ? this.materialThumbHtml(x,{imgClass:'material-thumb-img',emptyClass:'empty',allowVideo:false})
+            : ((x.coverBase64||x.cover_base64)
+              ? `<img class="material-thumb-img" src="${x.coverBase64||x.cover_base64}" alt="cover" loading="lazy" decoding="async">`
+              : ((x.hasCover||x.has_cover)
+                ? `<img class="material-thumb-img" src="${this.esc(this.materialCoverUrl?this.materialCoverUrl(x.id):(window.TKSWARM_API_BASE||'')+'/api/materials/'+x.id+'/cover')}" alt="cover" loading="lazy" decoding="async">`
+                : '<div class="empty" style="padding:24px">无封面</div>'));
           return `<div class="material-card">
-            <div class="material-thumb">${(x.coverBase64||x.cover_base64)?`<img src="${x.coverBase64||x.cover_base64}" alt="cover" style="width:100%;height:140px;object-fit:cover">`:canPreview?`<video src="${stream}" muted preload="none"></video>`:'<div class="empty" style="padding:24px">无预览</div>'}</div>
+            <div class="material-thumb">${thumb}</div>
             <div class="material-body">
-              <b>${this.esc(x.name)}</b>
-              <div class="muted">${this.esc(fileName)} · ${size?Math.round(size/1024)+' KB':'-'}</div>
-              <div style="margin-top:6px">${this.badge(x.status)} <span class="muted">${this.esc(x.tags||'')}</span></div>
+              <div class="material-title" title="${this.esc(x.name)}">${this.esc(x.name)}</div>
+              <div style="margin-top:6px">${this.badge(x.status)}</div>
               <div class="action-bar material-card-ops" style="margin:10px 0 0">
                 ${this.canPermission('publish.tasks')?`<button class="tiny icon-only-act" type="button" title="编辑" aria-label="编辑" onclick='app.materialModal(${JSON.stringify(x)})'>编辑</button>`:''}
                 <button class="tiny icon-only-act" type="button" title="检查" aria-label="检查" onclick="app.checkMaterial(${x.id})">检查</button>
@@ -527,16 +709,18 @@
         ${this.field('name','任务名称',defaultName,'text',true)}
         ${this.field('publishTitle','发布标题',mat.shareTitle||mat.share_title||mat.name||'')}
         ${this.field('publishCaption','发布文案',mat.shareCaption||mat.share_caption||'','textarea')}
-        ${this.field('scheduledAt','定时启动（可空）','','datetime-local')}
+        ${this.scheduleAtFieldHtml('scheduledAt','定时启动（可空）','',{preview:'material'})}
         ${this.selectRaw('autoStart','创建后',[['1','立即入队启动'],['0','仅保存为草稿']],'1')}
         <div class="field full"><div class="muted">将创建为「独立发布」任务：1 个账号 × 1 个素材。</div></div>
       </div>`,async d=>{
         const accountId=Number(d.accountId);
         if(!accountId)throw new Error('请选择发布账号');
         const name=String(d.name||'').trim()||defaultName;
-        const scheduledAt=d.scheduledAt?new Date(d.scheduledAt).toISOString():null;
+        const sch=await this.resolveTaskScheduleFromLocal(d.scheduledAt||'',[accountId]);
+        const scheduledAt=sch.scheduledAt||null;
         const payload={
-          pushChannel:'bit',
+          ...sch.scheduleFields,
+          pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),
           accountIds:[accountId],
           materialIds:[mid],
           pairs:[{accountId,materialId:mid}],
@@ -554,8 +738,8 @@
           name,type:'publish',groupId:null,totalCount:1,scheduledAt,payload,
         })});
         if(String(d.autoStart||'1')==='1'){
-          if(!(await this.ensureBitOnline('比特发布'))){
-            this.toast('任务已创建，但比特未在线，请稍后手动启动');
+          if(!(await this.ensureBitOnline('发布'))){
+            this.toast('任务已创建，但浏览器未在线，请稍后手动启动');
           }else{
             await this.api('/tasks/'+created.id+'/start',{method:'POST'});
             this.toast('发布任务已创建并入队');
@@ -732,8 +916,8 @@
         if(bar)bar.style.width='0%';
       }
     },
-    previewMaterial(id,streamUrl){const src=this.materialStreamUrl?this.materialStreamUrl(id,streamUrl):((window.TKSWARM_API_BASE||'')+'/api/materials/'+id+'/stream'+(this.authToken?('?token='+encodeURIComponent(this.authToken)):''));this.modal('素材预览',`<div class="material-preview"><video src="${this.esc(src)}" controls autoplay></video></div>`,()=>{},false,{hideSubmit:true,wide:true});const foot=document.querySelector('#modal .modal-foot');if(foot){const c=foot.querySelector('button[type=button]');if(c)c.textContent='关闭'}},
-    async checkMaterial(id){try{const r=await this.api(`/materials/${id}/check`,{method:'POST'});this.toast(r.message,!r.exists);this.refresh()}catch(e){this.toast(e.message,true)}},
+    async previewMaterial(id,streamUrl){const mid=Number(id);if(!mid){this.toast('素材无效',true);return}if(typeof this.openMaterialDupPreview==='function'){return this.openMaterialDupPreview(mid,'素材预览',streamUrl)}const src=typeof this.materialStreamUrl==='function'?this.materialStreamUrl(mid,streamUrl):(`${location.origin}/api/local-materials/${mid}/stream`+(this.authToken?('?token='+encodeURIComponent(this.authToken)):''));this.modal('素材预览',`<div class="material-preview"><video src="${this.esc(src)}" controls autoplay playsinline></video></div>`,()=>{},false,{hideSubmit:true,wide:true});const foot=document.querySelector('#modal .modal-foot');if(foot){const c=foot.querySelector('button[type=button]');if(c)c.textContent='关闭'}},
+    async checkMaterial(id){try{if(typeof this.checkMaterialExists==='function'){const r=await this.checkMaterialExists(id);this.toast(r.message|| (r.ok?'本机素材文件存在':'未找到本机素材文件'),!r.ok);this.refresh();return}const r=await this.api(`/local-materials/${id}/check`,{method:'POST',body:'{}'});this.toast(r.message,!r.exists);this.refresh()}catch(e){this.toast(e.message,true)}},
     materialModal(x={}){
       if(!this.canPermission('publish.tasks')){this.toast('当前角色无权维护素材',true);return}
       // 新增：与选择素材弹框内的「上传视频」保持同一套上传 UI
@@ -766,11 +950,23 @@
         this.refresh();
       });
     },
-    matrixTabs(tab){const items=(this.opt('matrixTabs',[['tasks','视频任务'],['materials','素材库'],['uids','UID好友']])||[]).filter(([k])=>k!=='mass');const cur=tab==='mass'?'tasks':tab;return `<div class="matrix-tabs">${items.map(([k,n])=>`<button type="button" data-tab="${k}" class="${cur===k?'active':''}" onclick="app.switchMatrix('${k}')">${n}</button>`).join('')}</div>`},
+    matrixTabs(tab){
+      const defaults=[['tasks','视频任务'],['customerTasks','客户任务'],['materials','素材库'],['uids','UID好友']];
+      let items=(this.opt('matrixTabs',defaults)||[]).filter(([k])=>k!=='mass');
+      if(!items.some(([k])=>k==='customerTasks')){
+        const at=items.findIndex(([k])=>k==='tasks');
+        items=[...items.slice(0,at<0?1:at+1),['customerTasks','客户任务'],...items.slice(at<0?1:at+1)];
+      }
+      const cur=tab==='mass'?'tasks':tab;
+      return `<div class="matrix-tabs">${items.map(([k,n])=>`<button type="button" data-tab="${k}" class="${cur===k?'active':''}" onclick="app.switchMatrix('${k}')">${n}</button>`).join('')}</div>`;
+    },
     matrixCacheKey(tab){
       const t=tab||this.matrixTab||'tasks';
       if(t==='tasks')return `tasks|${this.taskPage||1}|${this.taskStatusFilter||''}|${this.taskTypeFilter||''}|${this.taskModeFilter||''}|${this.taskKeyword||''}`;
+      if(t==='customerTasks')return `customerTasks|${this.customerTaskPage||1}|${this.customerTaskStatus||''}|${this.customerTaskKeyword||''}`;
       if(t==='materials')return `materials|${this.materialPage||1}|${this.materialKeyword||''}|${this.materialStatus||''}|${this.materialPublishStatus||''}|${this.materialTags||''}`;
+      if(t==='pullVideoList')return `pullVideoList|${this.pullVideoListPage||1}|${this.pullVideoListKeyword||''}|${this.pullVideoListStatus||''}`;
+      if(t==='pullComments')return `pullComments|${this.pullCommentPage||1}|${this.pullCommentKeyword||''}|${this.pullCommentStatus||''}`;
       if(t==='uids')return `uids|${this.uidGroupId||''}|${this.uidPage||1}|${this.uidKeyword||''}`;
       return t;
     },
@@ -786,6 +982,8 @@
       const tab=activeTab==='mass'?'tasks':(activeTab||this.matrixTab||'tasks');
       let body=content.querySelector('#matrix-body');
       let tabs=content.querySelector('.matrix-tabs');
+      // 仍停在整页加载壳时强制重建矩阵壳，避免刷新后永远转圈
+      if(content.querySelector('.page-shell-loading')){body=null;tabs=null}
       if(!body||!tabs){
         const head=content.querySelector('.page-head');
         const headHtml=head?head.outerHTML:(this.pageHead('publish')||'');
@@ -820,24 +1018,23 @@
       this._matrixTabCache[t]={html:body.innerHTML,at:Date.now(),key:this.matrixCacheKey(t),decorated:true};
       return body;
     },
-    switchMatrix(tab){
+    async switchMatrix(tab){
       const next=tab==='mass'?'tasks':tab;
       this.view='publish';
       this.wizardOpen=false;
       this.massWizardOpen=false;
+      this.imagePublishWizardOpen=false;
+      this.imageDeleteWizardOpen=false;
       const gen=++this._matrixSwitchGen;
       this.matrixTab=next;
-      // 立刻切换 Tab 高亮，避免等接口才反馈
       document.querySelectorAll('.matrix-tabs button[data-tab]').forEach(b=>b.classList.toggle('active',b.getAttribute('data-tab')===next));
       const body=this.ensureMatrixShell(next);
-      if(!body){this.refresh();return}
+      if(!body){await this.refresh();return}
       const cache=this._matrixTabCache?.[next];
       const key=this.matrixCacheKey(next);
       if(cache&&cache.html&&cache.key===key&&(Date.now()-cache.at)<15000){
         body.innerHTML=cache.html;
-        // 缓存已是 decorate 后的 HTML，命中时跳过全量扫按钮
         if(!cache.decorated&&window.UI)UI.decorate(body);
-        // 快速连点时只保留最后一次静默刷新，避免请求堆叠卡顿
         clearTimeout(this._matrixSoftTimer);
         this._matrixSoftTimer=setTimeout(()=>{
           if(this._matrixSwitchGen===gen)this.renderPublish({gen,soft:true});
@@ -845,12 +1042,14 @@
         return;
       }
       body.innerHTML=`<div class="panel matrix-loading-panel" style="margin:0"><div class="muted" style="padding:48px;text-align:center">加载中…</div></div>`;
-      this.renderPublish({gen});
+      await this.renderPublish({gen});
     },
     async renderPublish(opts={}){
-      const gen=opts.gen||++this._matrixSwitchGen;
+      // ??????? gen?????????? Tab ??
+      const gen=opts.gen!=null?opts.gen:(opts.soft?this._matrixSwitchGen:(++this._matrixSwitchGen));
       const soft=!!opts.soft;
       document.querySelector('#content')?.classList.remove('chat-mode');
+      /* early-shell */ if(!opts.soft){try{const b=this.ensureMatrixShell(this.matrixTab||'tasks');if(b&&(b.querySelector('.page-shell-loading')||!b.children.length||b.querySelector('.tk-list-loading,.matrix-loading-panel'))){b.innerHTML='<div class="panel matrix-loading-panel" style="margin:0"><div class="muted" style="padding:48px;text-align:center">加载中…</div></div>';}}catch{}}
       if(this.matrixTab==='mass')this.matrixTab='tasks';
       const still=()=>gen===this._matrixSwitchGen&&this.view==='publish';
       if(this.matrixTab==='materialImport'){
@@ -862,11 +1061,29 @@
         if(content&&!content.querySelector('.matrix-tabs'))content.insertAdjacentHTML('afterbegin',this.matrixTabs('materials'));
         return;
       }
+      if(this.matrixTab==='customerTasks'){
+        if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
+        if(!still())return;
+        await this.renderCustomerTasks({soft,gen});
+        return;
+      }
       if(this.matrixTab==='materials'){
         if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
         if(!still())return;
         await this.renderMaterials({soft,gen});
         return;
+      }
+      if(this.matrixTab==='pullComments'||this.pullCommentWizardOpen){
+        if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
+        if(!still())return;
+        if(typeof this.renderPullComments==='function'){await this.renderPullComments({soft,gen});return}
+        this.toast('拉取视频详情模块未加载',true);return;
+      }
+      if(this.matrixTab==='pullVideoList'||this.pullVideoListWizardOpen){
+        if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
+        if(!still())return;
+        if(typeof this.renderPullVideoList==='function'){await this.renderPullVideoList({soft,gen});return}
+        this.toast('拉取视频列表模块未加载',true);return;
       }
       if(this.matrixTab==='uids'){
         // UID好友已迁至客服聚合
@@ -883,6 +1100,18 @@
         return;
       }
       if(this.massWizardOpen){this.massWizardOpen=false;this.openPublishWizard('ordered');return}
+      if(this.imageDeleteWizardOpen&&typeof this.renderImageDeleteWizard==='function'){
+        if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
+        if(!still())return;
+        await this.renderImageDeleteWizard();
+        return;
+      }
+      if(this.imagePublishWizardOpen&&typeof this.renderImagePublishWizard==='function'){
+        if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
+        if(!still())return;
+        await this.renderImagePublishWizard();
+        return;
+      }
       if(this.commentReplyWizardOpen){
         if(this.taskRefreshTimer)clearInterval(this.taskRefreshTimer);
         if(!still())return;
@@ -923,7 +1152,7 @@
             <button class="ghost" onclick="app.refresh()">刷新</button>
             <button class="ghost" onclick="app.batchRetryTasks()">批量重试</button>
           </div>
-          <div class="right"><span class="muted">群发通过比特浏览器打开环境，尝试真实发送 TikTok 私信。</span></div>
+          <div class="right"><span class="muted">群发通过第一页自研浏览器打开环境，尝试真实发送 TikTok 私信。</span></div>
         </div>
         <div class="status-tags">
           <button type="button" class="status-tag ${!status?'active':''}" onclick="app.setMassStatusFilter('')">全部 <b>${counts.all||0}</b></button>
@@ -932,13 +1161,13 @@
         <div class="table-container">${this.taskTable(d.items)}</div>
         ${UI.pager(d,'massPage')}
       </div>`;
-      if(all.items.some(x=>['queued','running'].includes(x.status))){this.taskRefreshTimer=setInterval(()=>{if(this.view==='publish'&&this.matrixTab==='mass'&&!this.massWizardOpen)this.renderPublish();else clearInterval(this.taskRefreshTimer)},3000)}
+      if(all.items.some(x=>['queued','running'].includes(x.status))){this.taskRefreshTimer=setInterval(()=>{if(this.view==='publish'&&this.matrixTab==='mass'&&!this.massWizardOpen)this.renderPublish({soft:true});else clearInterval(this.taskRefreshTimer)},3000)}
     },
     setMassStatusFilter(status){this.massStatusFilter=status||'';this.massPage=1;this.refresh()},
     async openMassWizard(){return this.openPublishWizard('ordered')},
     closeMassWizard(){this.massWizardOpen=false;this.closePublishWizard()},
-    massWizardPanel(){const step=this.mass?.step||1;const labels=['选择账号','发送对象','发送内容','任务配置','确认'];const m=this.mass||{};m.massChannel='bit';return `<div class="wizard"><div class="wizard-steps">${labels.map((n,i)=>`<span class="${i+1===step?'on':''}">${i+1} ${n}</span>`).join('')}</div><div class="shell-note" style="margin:0 0 12px">群发任务：用已选账号，经比特浏览器向目标 UID / 好友批量发送 TikTok 私信。</div>${this.massBody(step,m)}<div class="toolbar" style="margin-top:16px"><button class="ghost" onclick="app.closeMassWizard()">取消</button><div>${step>1?`<button class="ghost" type="button" onclick="app.massPrev()">上一步</button> `:''}${step<5?`<button class="primary" type="button" onclick="app.massNext()">下一步</button>`:`<button class="primary" type="button" onclick="app.massSubmit()">创建群发</button>`}</div></div></div>`},
-    massBody(step,m){if(step===1){const gs=this.groups.filter(g=>g.type==='account');return `<div class="form-grid">${this.select('groupId','账号分组（可选）',gs,m.groupId)}<div class="field full"><label>指定账号</label>${this.accountPickToolbarHtml('mass-accounts',{batchHtml:`<button type="button" class="tiny" onclick="app.massSelectAccounts(true)">全选</button><button type="button" class="tiny" onclick="app.massSelectAccounts(false)">清空</button><button type="button" class="tiny" onclick="app.massInvertAccounts()">反选</button>`})}<div id="mass-accounts" class="account-pick-grid"></div></div></div>`}if(step===2){const ugs=this.groups.filter(g=>g.type==='uid');return `<div class="form-grid">${this.selectRaw('sendTargetType','发送对象',this.massTargetPairs(),m.sendTargetType||'imported')}${this.select('uidGroupId','UID 分组（导入好友时）',ugs,m.uidGroupId)}${this.field('fixedTargets','固定对象（每行一个 UID）',m.fixedTargets||'','textarea')}<div class="field full"><div class="muted">选「粉丝/互关」前请先在客服台对该账号执行「刷新粉丝」，把 TikTok 粉丝列表写入本地好友。</div></div></div>`}if(step===3){const sgs=this.groups.filter(g=>g.type==='message');const dmOn=this.dmTemplateEnabled!==false;const tpls=dmOn?this.templates.filter(t=>(t.enabled!==0&&t.enabled!==false)&&(!m.scriptGroupId||String(t.group_id)===String(m.scriptGroupId))):[];return `<div class="form-grid">${dmOn?`<div class="field"><label>话术分类</label><select onchange="app.setMassScriptGroup(this.value)"><option value="">全部分类</option>${sgs.map(g=>`<option value="${g.id}" ${String(m.scriptGroupId)===String(g.id)?'selected':''}>${this.esc(g.name)}</option>`).join('')}</select></div>${this.select('templateId','话术模板（可选）',tpls,m.templateId)}`:'<div class="field full"><div class="shell-note">设置中「启用私信话术」已关闭，请直接填写发送内容。</div></div>'}${this.field('content','发送内容（多行则轮换，支持 {{username}}）',m.content||'','textarea')}</div>`}if(step===4)return `<div class="form-grid">${this.field('name','任务名称',m.name||'','text',true)}${this.field('sendInterval','发送间隔（毫秒）',m.sendInterval??800,'number')}${this.field('retryCount','失败重试次数',m.retryCount??1,'number')}${this.field('perAccountLimit','每账号发送上限',m.perAccountLimit??20,'number')}${this.field('scheduledAt','定时开始',m.scheduledAt||'','datetime-local')}</div>`;return `<div class="data-meta"><b>注意：</b>将通过比特浏览器打开环境，尝试真实发送 TikTok 私信。<br>通道：比特浏览器<br>对象：${this.esc(m.sendTargetType||'-')}<br>账号：${(m.accountIds||[]).length||'按分组/全部'}<br>内容：${this.esc((m.content||'').slice(0,80)||'使用话术')}<br>间隔 ${m.sendInterval} ms · 重试 ${m.retryCount} · 每账号 ${m.perAccountLimit}</div>`},
+    massWizardPanel(){const step=this.mass?.step||1;const labels=['选择账号','发送对象','发送内容','任务配置','确认'];const m=this.mass||{};m.massChannel=(this.defaultMassChannel?.()||this.defaultTaskBrowserBackend?.()||'tkswarm');return `<div class="wizard"><div class="wizard-steps">${labels.map((n,i)=>`<span class="${i+1===step?'on':''}">${i+1} ${n}</span>`).join('')}</div><div class="shell-note" style="margin:0 0 12px">群发任务：用已选账号，经第一页自研浏览器向目标 UID / 好友批量发送 TikTok 私信。</div>${this.massBody(step,m)}<div class="toolbar" style="margin-top:16px"><button class="ghost" onclick="app.closeMassWizard()">取消</button><div>${step>1?`<button class="ghost" type="button" onclick="app.massPrev()">上一步</button> `:''}${step<5?`<button class="primary" type="button" onclick="app.massNext()">下一步</button>`:`<button class="primary" type="button" onclick="app.massSubmit()">创建群发</button>`}</div></div></div>`},
+    massBody(step,m){if(step===1){const gs=this.groups.filter(g=>g.type==='account');return `<div class="form-grid">${this.select('groupId','账号分组（可选）',gs,m.groupId)}<div class="field full"><label>指定账号</label>${this.accountPickToolbarHtml('mass-accounts',{batchHtml:`<button type="button" class="tiny" onclick="app.massSelectAccounts(true)">全选</button><button type="button" class="tiny" onclick="app.massSelectAccounts(false)">清空</button><button type="button" class="tiny" onclick="app.massInvertAccounts()">反选</button>`})}<div id="mass-accounts" class="account-pick-grid"></div></div></div>`}if(step===2){const ugs=this.groups.filter(g=>g.type==='uid');return `<div class="form-grid">${this.selectRaw('sendTargetType','发送对象',this.massTargetPairs(),m.sendTargetType||'imported')}${this.select('uidGroupId','UID 分组（导入好友时）',ugs,m.uidGroupId)}${this.field('fixedTargets','固定对象（每行一个 UID）',m.fixedTargets||'','textarea')}<div class="field full"><div class="muted">选「粉丝/互关」前请先在客服台对该账号执行「刷新粉丝」，把 TikTok 粉丝列表写入本地好友。</div></div></div>`}if(step===3){const sgs=this.groups.filter(g=>g.type==='message');const dmOn=this.dmTemplateEnabled!==false;const tpls=dmOn?this.templates.filter(t=>(t.enabled!==0&&t.enabled!==false)&&(!m.scriptGroupId||String(t.group_id)===String(m.scriptGroupId))):[];return `<div class="form-grid">${dmOn?`<div class="field"><label>话术分类</label><select onchange="app.setMassScriptGroup(this.value)"><option value="">全部分类</option>${sgs.map(g=>`<option value="${g.id}" ${String(m.scriptGroupId)===String(g.id)?'selected':''}>${this.esc(g.name)}</option>`).join('')}</select></div>${this.select('templateId','话术模板（可选）',tpls,m.templateId)}`:'<div class="field full"><div class="shell-note">设置中「启用私信话术」已关闭，请直接填写发送内容。</div></div>'}${this.field('content','发送内容（多行则轮换，支持 {{username}}）',m.content||'','textarea')}</div>`}if(step===4)return `<div class="form-grid">${this.field('name','任务名称',m.name||'','text',true)}${this.field('sendInterval','发送间隔（毫秒）',m.sendInterval??800,'number')}${this.field('retryCount','失败重试次数',m.retryCount??1,'number')}${this.field('perAccountLimit','每账号发送上限',m.perAccountLimit??20,'number')}${this.saveTrafficField(m.saveTraffic,false)}${this.massScheduleField('scheduledAt','定时开始',m.scheduledAt||'','datetime-local')}</div>`;return `<div class="data-meta"><b>注意：</b>将通过第一页自研浏览器打开环境，尝试真实发送 TikTok 私信。<br>通道：${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}<br>对象：${this.esc(m.sendTargetType||'-')}<br>账号：${(m.accountIds||[]).length||'按分组/全部'}<br>内容：${this.esc((m.content||'').slice(0,80)||'使用话术')}<br>间隔 ${m.sendInterval} ms · 重试 ${m.retryCount} · 每账号 ${m.perAccountLimit}<br>省流：${m.saveTraffic?'开启':'关闭'}</div>`},
     toggleAccountPickTag(el){
       if(!el)return;
       const willOn=!el.classList.contains('is-on');
@@ -976,12 +1205,14 @@
       this.invertAccountPick('wizard-accounts');if(this.wizardIsRandom()){const need=this.wizardMaterialCount();const on=[...document.querySelectorAll('#wizard-accounts .account-pick-tag.is-on')].filter(el=>!el.classList.contains('is-filtered-out'));if(on.length>need){on.slice(need).forEach(el=>el.classList.remove('is-on'));this.toast(`已自动裁剪为 ${need} 个账号`,true)}}this.updateWizardAccountPickHint()
     },
     setMassScriptGroup(id){this.collectMass();this.mass.scriptGroupId=id||'';this.mass.templateId='';document.querySelector('#content').innerHTML=this.matrixTabs('tasks')+this.massWizardPanel()},
-    collectMass(){const m=this.mass;m.massChannel='bit';const read=name=>document.querySelector(`[name="${name}"]`)?.value;if(m.step===1){m.groupId=read('groupId')||'';m.accountIds=this.selectedAccountPickIds('mass-accounts')}if(m.step===2){m.sendTargetType=read('sendTargetType')||'imported';m.uidGroupId=read('uidGroupId')||'';m.fixedTargets=read('fixedTargets')||''}if(m.step===3){m.templateId=read('templateId')||'';m.content=read('content')||''}if(m.step===4){m.name=read('name')||'';m.sendInterval=Number(read('sendInterval')||800);m.retryCount=Number(read('retryCount')||0);m.perAccountLimit=Number(read('perAccountLimit')||20);m.scheduledAt=read('scheduledAt')||''}},
+    collectMass(){const m=this.mass;m.massChannel=(this.defaultMassChannel?.()||this.defaultTaskBrowserBackend?.()||'tkswarm');const read=name=>document.querySelector(`[name="${name}"]`)?.value;if(m.step===1){m.groupId=read('groupId')||'';m.accountIds=this.selectedAccountPickIds('mass-accounts')}if(m.step===2){m.sendTargetType=read('sendTargetType')||'imported';m.uidGroupId=read('uidGroupId')||'';m.fixedTargets=read('fixedTargets')||''}if(m.step===3){m.templateId=read('templateId')||'';m.content=read('content')||''}if(m.step===4){m.name=read('name')||'';m.sendInterval=Number(read('sendInterval')||800);m.retryCount=Number(read('retryCount')||0);m.perAccountLimit=Number(read('perAccountLimit')||20);m.saveTraffic=this.parseSaveTrafficInput(read('saveTraffic'),false);m.scheduledAt=read('scheduledAt')||''}},
     async massNext(){this.collectMass();const m=this.mass;if(m.step===1&&!(m.accountIds||[]).length&&!m.groupId){this.toast('请勾选账号，或选择账号分组',true);return}if(m.step===2){const t=m.sendTargetType||'imported';if(t==='imported'&&!m.uidGroupId){this.toast('请选择 UID 分组',true);return}if(t==='fixed'&&!String(m.fixedTargets||'').trim()){this.toast('请填写固定对象 UID',true);return}}if(m.step===3){if(this.dmTemplateEnabled===false){m.templateId='';if(!String(m.content||'').trim()){this.toast('话术已关闭，请填写发送内容',true);return}}else if(!String(m.content||'').trim()&&!m.templateId){this.toast('请填写内容或选择话术',true);return}}if(m.step===4&&!m.name){this.toast('请填写任务名称',true);return}this.mass.step+=1;document.querySelector('#content').innerHTML=this.matrixTabs('tasks')+this.massWizardPanel();if(this.mass.step===1)await this.fillMassAccounts()},
     massPrev(){this.collectMass();this.mass.step=Math.max(1,this.mass.step-1);document.querySelector('#content').innerHTML=this.matrixTabs('tasks')+this.massWizardPanel();if(this.mass.step===1)this.fillMassAccounts()},
-    async massSubmit(){this.collectMass();const m=this.mass;m.massChannel='bit';if(!m.name){this.toast('请填写任务名称',true);return}if(!(m.accountIds||[]).length&&!m.groupId){this.toast('请勾选账号或选择账号分组',true);return}const t=m.sendTargetType||'imported';if(t==='imported'&&!m.uidGroupId){this.toast('请选择 UID 分组',true);return}if(t==='fixed'&&!String(m.fixedTargets||'').trim()){this.toast('请填写固定对象',true);return}if(this.dmTemplateEnabled===false){m.templateId=''}if(!String(m.content||'').trim()&&!m.templateId){this.toast(this.dmTemplateEnabled===false?'话术已关闭，请填写发送内容':'请填写内容或选择话术',true);return}if(!(await this.ensureBitOnline('比特群发')))return;try{const created=await this.api('/tasks',{method:'POST',body:JSON.stringify({name:m.name,type:'message',groupId:m.groupId?Number(m.groupId):null,totalCount:0,scheduledAt:m.scheduledAt?new Date(m.scheduledAt).toISOString():null,payload:{massChannel:'bit',sendTargetType:m.sendTargetType||'imported',uidGroupId:m.uidGroupId?Number(m.uidGroupId):null,fixedTargets:m.fixedTargets||'',templateId:m.templateId?Number(m.templateId):null,content:m.content||'',accountIds:m.accountIds||[],sendInterval:Number(m.sendInterval||800),retryCount:Number(m.retryCount||0),perAccountLimit:Number(m.perAccountLimit||20)}})});await this.api('/tasks/'+created.id+'/start',{method:'POST'});this.toast('群发任务已创建并进入队列');this.massWizardOpen=false;this.matrixTab='tasks';this.taskTypeFilter='message';this.refresh()}catch(e){this.toast(e.message,true)}},
+    /** 群发向导定时字段：带列表图标，预览当前所选账号国家对应的中国时间（第 4 个参数为旧 type，忽略） */
+    massScheduleField(name,label,value){return this.scheduleAtFieldHtml(name,label,value||'',{preview:'mass'})},
+    async massSubmit(){this.collectMass();const m=this.mass;m.massChannel=(this.defaultMassChannel?.()||this.defaultTaskBrowserBackend?.()||'tkswarm');if(!m.name){this.toast('请填写任务名称',true);return}if(!(m.accountIds||[]).length&&!m.groupId){this.toast('请勾选账号或选择账号分组',true);return}const t=m.sendTargetType||'imported';if(t==='imported'&&!m.uidGroupId){this.toast('请选择 UID 分组',true);return}if(t==='fixed'&&!String(m.fixedTargets||'').trim()){this.toast('请填写固定对象',true);return}if(this.dmTemplateEnabled===false){m.templateId=''}if(!String(m.content||'').trim()&&!m.templateId){this.toast(this.dmTemplateEnabled===false?'话术已关闭，请填写发送内容':'请填写内容或选择话术',true);return}if(!(await this.ensureBitOnline('群发')))return;try{const __sch=await this.resolveTaskScheduleFromLocal(m.scheduledAt||'',m.accountIds||[]);const created=await this.api('/tasks',{method:'POST',body:JSON.stringify({name:m.name,type:'message',groupId:m.groupId?Number(m.groupId):null,totalCount:0,scheduledAt:__sch.scheduledAt||null,payload:{...__sch.scheduleFields,massChannel:(this.defaultMassChannel?.()||this.defaultTaskBrowserBackend?.()||'tkswarm'),sendTargetType:m.sendTargetType||'imported',uidGroupId:m.uidGroupId?Number(m.uidGroupId):null,fixedTargets:m.fixedTargets||'',templateId:m.templateId?Number(m.templateId):null,content:m.content||'',accountIds:m.accountIds||[],sendInterval:Number(m.sendInterval||800),retryCount:Number(m.retryCount||0),perAccountLimit:Number(m.perAccountLimit||20),saveTraffic:!!m.saveTraffic}})});await this.api('/tasks/'+created.id+'/start',{method:'POST'});this.toast('群发任务已创建并进入队列');this.massWizardOpen=false;this.matrixTab='tasks';this.taskTypeFilter='message';this.refresh()}catch(e){this.toast(e.message,true)}},
     async retryFailedItems(id){if(!(await this.ask('将失败和人工跳过的子任务重新排队（会重新上传准备），是否继续？')))return;try{const r=await this.api(`/tasks/${id}/items/retry-failed`,{method:'POST',body:JSON.stringify({includeSkipped:true})});this.toast(`已重新排队 ${r.retried} 条`);this.closeModal();this.refresh()}catch(e){this.toast(e.message,true)}},
-    async resumePublishItem(taskId,itemId){if(!(await this.ask('将在已打开的比特环境里点击发布按钮。请确认页面仍停在上传编辑态。继续？')))return;this.toast('正在继续发布…');try{const r=await this.api(`/tasks/${taskId}/items/${itemId}/resume-publish`,{method:'POST'});this.toast(r.status==='published'?'继续发布成功':(r.reason||r.status||'已处理'),r.status!=='published');this.taskDetailModal(taskId);this.refresh()}catch(e){this.toast(e.message,true);this.taskDetailModal(taskId)}},
+    async resumePublishItem(taskId,itemId){if(!(await this.ask('将在已打开的浏览器环境里点击发布按钮。请确认页面仍停在上传编辑态。继续？')))return;this.toast('正在继续发布…');try{const r=await this.api(`/tasks/${taskId}/items/${itemId}/resume-publish`,{method:'POST'});this.toast(r.status==='published'?'继续发布成功':(r.reason||r.status||'已处理'),r.status!=='published');this.taskDetailModal(taskId);this.refresh()}catch(e){this.toast(e.message,true);this.taskDetailModal(taskId)}},
     async confirmPublishedItem(taskId,itemId){if(!(await this.ask('确认该条已在 TikTok 人工发布成功？将标记为成功；若任务开启了发后删除，会删除本地素材记录。')))return;try{await this.api(`/tasks/${taskId}/items/${itemId}/confirm-published`,{method:'POST'});this.toast('已标记为发布成功');this.taskDetailModal(taskId);this.refresh()}catch(e){this.toast(e.message,true)}},
     batchEditTaskItems(taskId){this.modal('批量修改子任务文案',`<div class="form-grid">${this.field('title','统一标题（可空）')}${this.field('caption','统一文案（可空）','','textarea')}${this.selectRaw('scope','范围',[['pending','仅待执行/失败/跳过'],['all','全部未成功']],'pending')}<div class="field full"><div class="muted">已成功或正在发布的子任务不会改。留空字段不改。</div></div></div>`,async d=>{const r=await this.api(`/tasks/${taskId}/items/batch-update`,{method:'POST',body:JSON.stringify({title:d.title||'',caption:d.caption||'',scope:d.scope||'pending'})});this.toast(`已更新 ${r.updated} 条`);this.closeModal();this.taskDetailModal(taskId)})},
     editTaskItem(taskId,itemId){this.modal('修改子任务文案',`<div class="form-grid">${this.field('title','标题，留空则用任务标题')}${this.field('caption','文案，留空则用任务文案','','textarea')}<div class="field full"><div class="muted">只影响这一条下次执行。已成功的子任务不能改。</div></div></div>`,async d=>{await this.api(`/tasks/${taskId}/items/${itemId}`,{method:'PUT',body:JSON.stringify({title:d.title||'',caption:d.caption||''})});this.toast('文案已保存，下次执行使用这条文案');this.closeModal();this.taskDetailModal(taskId)})},
@@ -1195,14 +1426,14 @@
       const publishMode=ordered?'ordered':(mode==='independent'?'independent':'random');
       const publishStrategy=publishMode==='independent'?'deduplicate':(publishMode==='ordered'?'pairs':'random');
       this.massWizardOpen=false;this.deleteWizardOpen=false;this.commentReplyWizardOpen=false;
-      this.wizard={pushChannel:'bit',accountIds:[],groupId:'',materialIds:[],materialSource:'library',selectedVideos:[],folderPath:'',publishMode,publishStrategy,pairs:[],pairDraft:{accountIds:[],materialIds:[]},publishTitle:'',publishCaption:'',hashtags:'',name:'',scheduledAt:'',threadCount:1,saveTraffic:false,deleteAfterPublish:false};
+      this.wizard={pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),accountIds:[],groupId:'',materialIds:[],materialSource:'library',selectedVideos:[],folderPath:'',publishMode,publishStrategy,pairs:[],pairDraft:{accountIds:[],materialIds:[]},publishTitle:'',publishCaption:'',hashtags:'',name:'',scheduledAt:'',threadCount:1,saveTraffic:false,deleteAfterPublish:false};
       this.wizardStep=1;this.wizardOpen=true;this.matrixTab='tasks';
       if(!opts.skipRefresh)this.refresh();
     },
     publishModeLabel(mode){return mode==='independent'?'独立发布':(mode==='ordered'?'群发任务':'随机发布')},
     closePublishWizard(){this.wizardOpen=false;this.massWizardOpen=false;this.refresh()},
     wizardPanel(){const step=this.wizardStep||1;setTimeout(()=>this.bindWizardMaterialSource(),0);const w=this.wizard||{};const labels=this.wizardStepLabels(w);const last=labels.length;const modeTitle=this.publishModeLabel(w.publishMode||'random');const modeHint=this.wizardIsOrdered(w)?'人为指定账号↔视频组合，每组创建 1 个任务':(this.wizardIsRandom(w)?'账号与视频等量选择后随机配对，每对创建 1 个任务':'每次选 1 个账号 + 1 个视频，创建 1 条独立发布任务');return `<div class="wizard"><div class="toolbar" style="margin:0 0 12px"><div><b>${this.esc(modeTitle)}</b><span class="muted" style="margin-left:8px">${modeHint}</span></div></div><div class="wizard-steps">${labels.map((n,i)=>`<span class="${i+1===step?'on':''}">${i+1} ${n}</span>`).join('')}</div><div id="wizard-body">${this.wizardBody(step,w)}</div><div class="toolbar" style="margin-top:16px"><button class="ghost" onclick="app.closePublishWizard()">取消</button><div>${step>1?`<button class="ghost" type="button" onclick="app.wizardPrev()">上一步</button> `:''}${step<last?`<button class="primary" type="button" onclick="app.wizardNext()">下一步</button>`:`<button class="primary" type="button" onclick="app.wizardSubmit()">创建任务</button>`}</div></div></div>`},
-    wizardBody(step,w){const kind=this.wizardStepKind(step,w);if(kind==='entry')return `<div class="channels"><button type="button" class="channel active"><b>比特浏览器</b><span class="muted">打开环境并上传，按设置自动点击发布或停在待确认</span></button></div>`;if(kind==='compose')return this.wizardComposeBody(w);if(kind==='accounts')return this.wizardAccountsBody(w);if(kind==='materials')return this.wizardMaterialsBody(w);if(kind==='pairs')return `<div id="wizard-pairs-panel">${this.wizardPairsBody(w)}</div>`;if(kind==='config')return `<div class="form-grid">${this.field('name','任务名称前缀',w.name||'','text',true)}${this.field('scheduledAt','定时发布（可空）',w.scheduledAt||'','datetime-local')}${this.field('threadCount','线程数（1-3）',w.threadCount??1,'number')}${this.selectRaw('saveTraffic','省流模式',[['false','关闭'],['true','开启']],String(w.saveTraffic)==='true'?'true':'false')}${this.selectRaw('deleteAfterPublish','发后删除素材记录',[['false','关闭'],['true','开启']],String(w.deleteAfterPublish)==='true'?'true':'false')}${this.wizardIsOrdered(w)||this.wizardIsRandom(w)?`<div class="field full"><div class="muted">将按「1 账号 + 1 视频 = 1 任务」创建多条任务；名称会自动带上账号与视频。</div></div>`:''}</div>`;const names=(w.accountIds||[]).length?`${w.accountIds.length} 个指定账号`:(w.groupId?`分组 #${w.groupId}`:'全部启用账号');const matCount=(w.materialIds||[]).length;const matText=w.materialSource==='library'?`素材库 ${matCount} 个`:`已选 ${matCount} 个视频文件`;const pairCount=this.wizardIsOrdered(w)?(w.pairs||[]).filter(p=>p.accountId&&p.materialId).length:(this.wizardIsRandom(w)?Math.min((w.accountIds||[]).length,matCount):0);const taskCountLine=(this.wizardIsOrdered(w)||this.wizardIsRandom(w))?`<br><b>将创建 ${pairCount} 个独立任务</b>（每任务 = 1 账号 + 1 视频）`:'';const pairLine=this.wizardIsOrdered(w)?`<br>组合：${pairCount} 条（人为指定）`:(this.wizardIsRandom(w)?`<br>配对：${pairCount} 条（提交时随机匹配）`:'');const strategyLabel=this.wizardIsOrdered(w)?'人为组合':(this.wizardIsRandom(w)?'随机配对':((this.opt('publishStrategies',[['deduplicate','去重'],['random','随机']]).find(x=>x[0]===w.publishStrategy)||[])[1]||w.publishStrategy||'-'));return `<div class="data-meta">通道：比特浏览器<br>账号：${this.esc(names)}<br>素材：${this.esc(matText)}，策略 ${this.esc(strategyLabel)}${pairLine}${taskCountLine}<br>标题/文案/封面：使用各素材自身的分享配置<br>计划：${this.esc(w.scheduledAt||'立即')}</div>`},
+    wizardBody(step,w){const kind=this.wizardStepKind(step,w);if(kind==='entry')return `<div class="channels"><button type="button" class="channel active"><b>${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}</b><span class="muted">打开环境并上传，按设置自动点击发布或停在待确认</span></button></div>`;if(kind==='compose')return this.wizardComposeBody(w);if(kind==='accounts')return this.wizardAccountsBody(w);if(kind==='materials')return this.wizardMaterialsBody(w);if(kind==='pairs')return `<div id="wizard-pairs-panel">${this.wizardPairsBody(w)}</div>`;if(kind==='config')return `<div class="form-grid">${this.field('name','任务名称前缀',w.name||'','text',true)}${this.scheduleAtFieldHtml('scheduledAt','定时发布（可空）',w.scheduledAt||'',{preview:'wizard'})}${this.field('threadCount','线程数（1-3）',w.threadCount??1,'number')}${this.saveTrafficField(w.saveTraffic,false)}${this.selectRaw('deleteAfterPublish','发后删除素材记录',[['false','关闭'],['true','开启']],String(w.deleteAfterPublish)==='true'?'true':'false')}${this.wizardIsOrdered(w)||this.wizardIsRandom(w)?`<div class="field full"><div class="muted">将按「1 账号 + 1 视频 = 1 任务」创建多条任务；名称会自动带上账号与视频。</div></div>`:''}</div>`;const names=(w.accountIds||[]).length?`${w.accountIds.length} 个指定账号`:(w.groupId?`分组 #${w.groupId}`:'全部启用账号');const matCount=(w.materialIds||[]).length;const matText=w.materialSource==='library'?`素材库 ${matCount} 个`:`已选 ${matCount} 个视频文件`;const pairCount=this.wizardIsOrdered(w)?(w.pairs||[]).filter(p=>p.accountId&&p.materialId).length:(this.wizardIsRandom(w)?Math.min((w.accountIds||[]).length,matCount):0);const taskCountLine=(this.wizardIsOrdered(w)||this.wizardIsRandom(w))?`<br><b>将创建 ${pairCount} 个独立任务</b>（每任务 = 1 账号 + 1 视频）`:'';const pairLine=this.wizardIsOrdered(w)?`<br>组合：${pairCount} 条（人为指定）`:(this.wizardIsRandom(w)?`<br>配对：${pairCount} 条（提交时随机匹配）`:'');const strategyLabel=this.wizardIsOrdered(w)?'人为组合':(this.wizardIsRandom(w)?'随机配对':((this.opt('publishStrategies',[['deduplicate','去重'],['random','随机']]).find(x=>x[0]===w.publishStrategy)||[])[1]||w.publishStrategy||'-'));return `<div class="data-meta">通道：${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}<br>账号：${this.esc(names)}<br>素材：${this.esc(matText)}，策略 ${this.esc(strategyLabel)}${pairLine}${taskCountLine}<br>标题/文案/封面：使用各素材自身的分享配置<br>计划：${this.esc(w.scheduledAt||'立即')}</div>`},
     collectWizard(){const w=this.wizard;const read=name=>{const el=document.querySelector(`[name="${name}"]`);return el?el.value:undefined};const kind=this.wizardStepKind(this.wizardStep,w);if(kind==='accounts'){if(this.wizardIsRandom(w)||this.wizardIsIndependent(w))w.groupId='';else w.groupId=read('groupId')||'';w.accountIds=this.selectedAccountPickIds('wizard-accounts');if(this.wizardIsIndependent(w))w.accountIds=(w.accountIds||[]).slice(0,1)}if(kind==='materials'){w.materialSource='library';w.publishStrategy=w.publishMode==='independent'?'deduplicate':'random';w.materialIds=this.selectedMaterialPickerIds?this.selectedMaterialPickerIds('wizard-material-field'):(w.materialIds||[]);if(this.wizardIsIndependent(w))w.materialIds=(w.materialIds||[]).slice(0,1);w.selectedVideos=[]}if(kind==='compose'){this.syncWizardIdsFromPairs()}if(kind==='config'){w.name=read('name')||'';w.scheduledAt=read('scheduledAt')||'';w.threadCount=Number(read('threadCount')||1);w.saveTraffic=read('saveTraffic')==='true';w.deleteAfterPublish=read('deleteAfterPublish')==='true'}},
     bindWizardMaterialSource(){const sel=document.querySelector('[name=materialSource]');if(!sel||sel._bound)return;sel._bound=true;const sync=()=>{const isFiles=(sel.value||'files')!=='library';const f=document.querySelector('#wizard-file-fields');const l=document.querySelector('#wizard-library-fields');if(f)f.style.display=isFiles?'':'none';if(l)l.style.display=isFiles?'none':''};sel.addEventListener('change',sync);sync()},
     renderWizardVideosListHtml(){const list=this.wizard?.selectedVideos||[];if(!list.length){return '<div class="muted" style="font-size:13px;padding:8px 0">暂未选择视频文件。点击上方区域即可选择本地视频。</div>'}const readyCount=list.filter(v=>v.status==='ready').length;const totalSize=list.reduce((acc,v)=>acc+(v.size||0),0);return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0"><span style="font-weight:600;font-size:13px">已选视频：${readyCount}/${list.length} 个就绪 (${this.formatFileSize(totalSize)})</span><div style="display:flex;gap:8px"><button type="button" class="tiny ghost" onclick="document.querySelector('#wizard-video-input')?.click()">+ 继续添加</button><button type="button" class="tiny danger" onclick="app.clearWizardVideos()">清空全部</button></div></div><div class="table-card" style="max-height:220px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="background:#f8fafc;text-align:left;border-bottom:1px solid #e2e8f0"><th style="padding:6px 10px">文件名</th><th style="padding:6px 10px;width:90px">大小</th><th style="padding:6px 10px;width:120px">状态</th><th style="padding:6px 10px;width:60px;text-align:center">操作</th></tr></thead><tbody>${list.map((v,i)=>{let statusBadge='<span class="badge queued">等待中</span>';if(v.status==='ready')statusBadge='<span class="badge success">已就绪</span>';else if(v.status==='uploading')statusBadge=`<span class="badge running">上传中 ${v.progress||0}%</span>`;else if(v.status==='error')statusBadge=`<span class="badge failed" title="${this.esc(v.error||'上传失败')}">失败</span>`;return `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:6px 10px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${this.esc(v.name)}">🎬 ${this.esc(v.name)}</td><td style="padding:6px 10px;color:#64748b">${this.formatFileSize(v.size||0)}</td><td style="padding:6px 10px">${statusBadge}</td><td style="padding:6px 10px;text-align:center"><button type="button" class="tiny danger" onclick="app.removeWizardVideo(${i})" style="padding:2px 6px">移除</button></td></tr>`}).join('')}</tbody></table></div>`},
@@ -1210,13 +1441,14 @@
     removeWizardVideo(index){if(!this.wizard?.selectedVideos)return;this.wizard.selectedVideos.splice(index,1);this.wizard.materialIds=(this.wizard.selectedVideos||[]).filter(v=>v.status==='ready'&&v.materialId).map(v=>v.materialId);this.renderWizardVideosList()},
     clearWizardVideos(){if(!this.wizard)return;this.wizard.selectedVideos=[];this.wizard.materialIds=[];this.renderWizardVideosList()},
     async handleWizardVideos(source){const fileList=source?.files?[...source.files]:[];const inp=document.querySelector('#wizard-video-input');if(inp)inp.value='';if(!fileList.length)return;const videoExts=['.mp4','.mov','.avi','.mkv','.webm','.m4v','.flv'];const validFiles=fileList.filter(f=>{const ext='.'+f.name.split('.').pop().toLowerCase();return (f.type&&f.type.startsWith('video/'))||videoExts.includes(ext)});if(!validFiles.length){this.toast('所选文件中未检测到视频，请选择 MP4、MOV 等视频文件',true);return}if(!this.wizard.selectedVideos)this.wizard.selectedVideos=[];let addedCount=0;for(const file of validFiles){const exists=this.wizard.selectedVideos.find(v=>v.name===file.name&&v.size===file.size);if(!exists){this.wizard.selectedVideos.push({file,name:file.name,size:file.size,status:'pending',progress:0,materialId:null,error:null});addedCount++}}this.renderWizardVideosList();if(addedCount>0){this.toast(`已选择 ${addedCount} 个视频，正在上传…`);await this.uploadPendingWizardVideos()}},
-    uploadVideoWithProgress(formData,onProgress){return new Promise((resolve,reject)=>{let apiBase=window.TKSWARM_API_BASE||window.__TKSWARM_CONFIG__?.defaultApiBase||'http://tkswarm-api.dyyweb.com';const xhr=new XMLHttpRequest();xhr.open('POST',apiBase+'/api/materials/upload');if(this.authToken)xhr.setRequestHeader('Authorization','Bearer '+this.authToken);const actingAs=this.getActingAsId();if(actingAs)xhr.setRequestHeader('X-Acting-As',String(actingAs));if(xhr.upload&&onProgress){xhr.upload.onprogress=(e)=>{if(e.lengthComputable){const pct=Math.round((e.loaded/e.total)*100);onProgress(pct)}}};xhr.onload=()=>{let json;try{json=JSON.parse(xhr.responseText)}catch(_){json=null}if(xhr.status>=200&&xhr.status<300&&json&&json.success){resolve(json.data)}else{const err=new Error(json?.message||`上传失败 (HTTP ${xhr.status})`);err.data=json?.data||null;err.code=json?.code||json?.data?.code;reject(err)}};xhr.onerror=()=>reject(new Error('网络请求异常，请检查接口服务'));xhr.send(formData)})},
+    // 主实现在 material-picker.js；此处保留同名兜底（仅加载 publish 时向导仍可用）
+    uploadVideoWithProgress(formData,onProgress){return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','/api/local-materials/ingest');if(this.authToken)xhr.setRequestHeader('Authorization','Bearer '+this.authToken);const actingAs=this.getActingAsId?.();if(actingAs)xhr.setRequestHeader('X-Acting-As',String(actingAs));if(xhr.upload&&onProgress){xhr.upload.onprogress=(e)=>{if(e.lengthComputable)onProgress(Math.round((e.loaded/e.total)*100))}};xhr.onload=()=>{let json;try{json=JSON.parse(xhr.responseText)}catch(_){json=null}if(xhr.status>=200&&xhr.status<300&&json&&json.success){resolve(json.data)}else{const err=new Error(json?.message||`上传失败 (HTTP ${xhr.status})`);err.data=json?.data||null;err.code=json?.code||json?.data?.code;reject(err)}};xhr.onerror=()=>reject(new Error('网络请求异常，请检查接口服务'));xhr.send(formData)})},
     async uploadPendingWizardVideos(){const list=this.wizard?.selectedVideos||[];const pending=list.filter(v=>v.status==='pending'||v.status==='error');if(!pending.length)return;for(const item of pending){if(!item.file)continue;item.status='uploading';item.progress=0;item.error=null;this.renderWizardVideosList();try{const fd=new FormData();const cover=await (this.captureVideoCoverBase64?this.captureVideoCoverBase64(item.file):Promise.resolve(''));fd.append('file',item.file);fd.append('name',item.name.replace(/\.[^/.]+$/,''));fd.append('tags','publish-wizard');fd.append('reuseExisting','1');if(cover)fd.append('coverBase64',cover);const mat=await this.uploadVideoWithProgress(fd,(pct)=>{item.progress=pct;this.renderWizardVideosList()});const matId=Number(mat?.id||mat?.data?.id);if(!matId)throw new Error(mat?.message||'未获取到素材ID');item.status='ready';item.materialId=matId;item.progress=100}catch(err){console.error('上传视频错误:',err);if(/内容重复|已存在/i.test(err.message)){try{await this.loadRefs();const cleanName=item.name.replace(/\.[^/.]+$/,'');const match=(this.materials||[]).find(m=>(m.file_name||m.fileName)===item.name||m.name===cleanName);if(match){item.status='ready';item.materialId=Number(match.id);item.progress=100;item.error=null}else{item.status='error';item.error=err.message||'素材已存在但未匹配到记录'}}catch(_){item.status='error';item.error=err.message||'上传失败'}}else{item.status='error';item.error=err.message||'上传失败'}}this.renderWizardVideosList()}this.wizard.materialIds=(this.wizard?.selectedVideos||[]).filter(v=>v.status==='ready'&&v.materialId).map(v=>v.materialId);const readyCount=this.wizard.materialIds.length;if(readyCount>0){this.toast(`视频已就绪 ${readyCount} 个`)}},
     async wizardNext(){
       this.collectWizard();
       const w=this.wizard;
       const kind=this.wizardStepKind(this.wizardStep,w);
-      if(kind==='entry'&&!(await this.ensureBitOnline('比特发布')))return;
+      if(kind==='entry'&&!(await this.ensureBitOnline('发布')))return;
       if(kind==='accounts'){
         const ids=w.accountIds||[];
         if(this.wizardIsRandom(w)){
@@ -1269,7 +1501,7 @@
       const accountId=Number(pair.accountId);
       const materialId=Number(pair.materialId);
       const payload={
-        pushChannel:'bit',
+        pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),
         accountIds:[accountId],
         materialIds:[materialId],
         pairs:[{accountId,materialId}],
@@ -1283,12 +1515,15 @@
         saveTraffic:!!opts.saveTraffic,
         deleteAfterPublish:!!opts.deleteAfterPublish,
       };
+      // 定时：按该任务账号所在国家把当地时间折算为中国时间；入库 scheduled_at=中国时间，payload 保存当地+中国
+      const sch=await this.resolveTaskScheduleFromLocal(opts.scheduledLocal||'',[accountId]);
+      Object.assign(payload,sch.scheduleFields);
       const created=await this.api('/tasks',{method:'POST',body:JSON.stringify({
         name:opts.name||this.buildPairTaskName('发布',accountId,materialId,0,1),
         type:'publish',
         groupId:null,
         totalCount:1,
-        scheduledAt:opts.scheduledAt||null,
+        scheduledAt:sch.scheduledAt||null,
         payload,
       })});
       await this.api('/tasks/'+created.id+'/start',{method:'POST'});
@@ -1319,8 +1554,8 @@
         ids=ids.slice(0,1);
         w.groupId='';
       }
-      if(!(await this.ensureBitOnline('比特发布')))return;
-      const scheduledAt=w.scheduledAt?new Date(w.scheduledAt).toISOString():null;
+      if(!(await this.ensureBitOnline('发布')))return;
+      const scheduledLocal=w.scheduledAt||'';
       try{
         if(this.wizardIsOrdered(w)||this.wizardIsRandom(w)){
           let ok=0;
@@ -1335,7 +1570,7 @@
               threadCount:w.threadCount||1,
               saveTraffic:!!w.saveTraffic,
               deleteAfterPublish:!!w.deleteAfterPublish,
-              scheduledAt,
+              scheduledLocal,
             });
             ok+=1;
           }
@@ -1346,16 +1581,18 @@
           return;
         }
         const payload={
-          pushChannel:'bit',accountIds:ids,materialIds,folderPath:'',
+          pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),accountIds:ids,materialIds,folderPath:'',
           publishMode:w.publishMode||'independent',
           publishStrategy:'deduplicate',
           publishTitle:w.publishTitle||'',publishCaption:w.publishCaption||'',hashtags:w.hashtags||'',
           threadCount:w.threadCount||1,saveTraffic:!!w.saveTraffic,deleteAfterPublish:!!w.deleteAfterPublish,
         };
+        const sch=await this.resolveTaskScheduleFromLocal(scheduledLocal,ids);
+        Object.assign(payload,sch.scheduleFields);
         const created=await this.api('/tasks',{method:'POST',body:JSON.stringify({
           name:w.name,type:'publish',groupId:w.groupId?Number(w.groupId):null,
           totalCount:ids.length||0,
-          scheduledAt,
+          scheduledAt:sch.scheduledAt||null,
           payload,
         })});
         await this.api('/tasks/'+created.id+'/start',{method:'POST'});
@@ -1371,6 +1608,7 @@
       this.wizardOpen=false;this.massWizardOpen=false;this.commentReplyWizardOpen=false;
       this.deleteWizard={
         step:1,
+        saveTraffic:false,
         accountIds:[],
         selectedKeys:new Set(),
         rows:[],
@@ -1403,7 +1641,8 @@
     },
     deleteWizardBody(step,w){
       if(step===1){
-        return `<div class="form-grid"><div class="field full"><label>选择账号</label>
+        return `<div class="form-grid">
+          ${this.saveTrafficField(w.saveTraffic,false)}<div class="field full"><label>选择账号</label>
           ${this.accountPickToolbarHtml('delete-wizard-accounts',{batchHtml:`<button type="button" class="tiny" onclick="app.setAccountPickAll('delete-wizard-accounts',true)">全选</button><button type="button" class="tiny" onclick="app.setAccountPickAll('delete-wizard-accounts',false)">清空</button><button type="button" class="tiny" onclick="app.invertAccountPick('delete-wizard-accounts')">反选</button>`})}
           <div id="delete-wizard-accounts" class="account-pick-grid"></div>
         </div></div>`;
@@ -1477,6 +1716,7 @@
     async deleteWizardNext(){
       const w=this.deleteWizard;if(!w)return;
       if(w.step===1){
+        w.saveTraffic=this.parseSaveTrafficInput(document.querySelector('[name=saveTraffic]')?.value,false);
         w.accountIds=this.selectedAccountPickIds('delete-wizard-accounts');
         if(!w.accountIds.length){this.toast('请至少选择一个账号',true);return}
         w.step=2;w.selectedKeys=new Set();w.rows=[];w.loading=true;w.loadError='';
@@ -1567,20 +1807,20 @@
       };
       // 1) 优先：已发布 + 账号过滤（新接口）
       try{
-        const pack=await this.api(`/materials?page=1&pageSize=200&publishStatus=published&publishAccountIds=${[...idSet].join(',')}`);
+        const pack=await this.api(`/materials?page=1&pageSize=50&publishStatus=published&publishAccountIds=${[...idSet].join(',')}`);
         const items=Array.isArray(pack)?pack:(pack?.items||[]);
         if(items.length)return items.filter(matchAcc);
       }catch(_){/* 线上可能尚未支持 publishAccountIds */}
       // 2) 仅已发布，前端再按账号过滤
       try{
-        const pack=await this.api('/materials?page=1&pageSize=200&publishStatus=published');
+        const pack=await this.api('/materials?page=1&pageSize=50&publishStatus=published');
         const items=Array.isArray(pack)?pack:(pack?.items||[]);
         const hit=items.filter(matchAcc);
         if(hit.length)return hit;
       }catch(_){}
       // 3) 不过滤发布状态：凡 publish_account_id 命中即展示（兼容未回写 publish_status 的历史数据）
       try{
-        const pack=await this.api('/materials?page=1&pageSize=500');
+        const pack=await this.api('/materials?page=1&pageSize=50');
         const items=Array.isArray(pack)?pack:(pack?.items||[]);
         return items.filter(matchAcc);
       }catch(_){}
@@ -1748,7 +1988,7 @@
         this.toast(`有 ${missingTitle.length} 条缺少发布标题，无法在 Studio 搜索。请先同步视频或确认素材有分享标题/名称。`,true);
         return;
       }
-      if(!(await this.ask(`确认将 ${picked.length} 条视频加入删除任务？将打开比特环境在 TikTok 上删除。`)))return;
+      if(!(await this.ask(`确认将 ${picked.length} 条视频加入删除任务？将打开浏览器环境在 TikTok 上删除。`)))return;
       if(!(await this.ensureBitOnline('删除视频')))return;
       const byAcc=new Map();
       picked.forEach(r=>{
@@ -1776,6 +2016,7 @@
                 // 搜索只用发布标题/素材名，绝不把同步描述（可能是 videoplayback）塞进来
                 searchTitle:x.publishTitle||x.materialName||'',
               })),
+              saveTraffic:!!w.saveTraffic,
             },
           })});
           ok+=1;
@@ -1798,6 +2039,7 @@
         replyTexts:[],
         replyAiPrompt:'',
         maxReplies:10,
+        saveTraffic:true,
         templates:[],
       };
       this.commentReplyWizardOpen=true;
@@ -1825,7 +2067,8 @@
     },
     commentReplyWizardBody(step,w){
       if(step===1){
-        return `<div class="form-grid"><div class="field full"><label>选择账号</label>
+        return `<div class="form-grid">
+          ${this.saveTrafficField(w.saveTraffic,true)}<div class="field full"><label>选择账号</label>
           ${this.accountPickToolbarHtml('comment-reply-wizard-accounts',{batchHtml:`<button type="button" class="tiny" onclick="app.setAccountPickAll('comment-reply-wizard-accounts',true)">全选</button><button type="button" class="tiny" onclick="app.setAccountPickAll('comment-reply-wizard-accounts',false)">清空</button><button type="button" class="tiny" onclick="app.invertAccountPick('comment-reply-wizard-accounts')">反选</button>`})}
           <div id="comment-reply-wizard-accounts" class="account-pick-grid"></div>
         </div></div>`;
@@ -2004,6 +2247,7 @@
     async commentReplyWizardNext(){
       const w=this.commentReplyWizard;if(!w)return;
       if(w.step===1){
+        w.saveTraffic=this.parseSaveTrafficInput(document.querySelector('[name=saveTraffic]')?.value,true);
         w.accountIds=this.selectedAccountPickIds('comment-reply-wizard-accounts');
         if(!w.accountIds.length){this.toast('请至少选择一个账号',true);return}
         w.step=2;
@@ -2048,7 +2292,8 @@
             accountId:Number(accountId),
             taskType:'comment_reply',
             payload:{
-              source:'comment_reply_wizard',
+              source:w.source||'comment_reply_wizard',
+              mediaType:w.mediaType||'',
               accountId:Number(accountId),
               replyMode:w.replyMode||'fixed',
               replyTemplateIds:w.replyMode==='fixed'?(w.replyTemplateIds||[]):[],
@@ -2056,6 +2301,7 @@
               replyTexts:w.replyMode==='fixed'?(w.replyTexts||[]):[],
               replyAiPrompt:w.replyMode==='ai'?(w.replyAiPrompt||''):'',
               maxReplies:Math.max(1,Math.min(50,Number(w.maxReplies||10))),
+              saveTraffic:w.saveTraffic!==false,
             },
           })});
           ok+=1;

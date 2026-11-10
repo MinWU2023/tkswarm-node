@@ -1,34 +1,35 @@
-const { chromium } = require('playwright-core');
-const { BitBrowserProvider } = require('./bit-browser-provider');
+const { resolveAccountBrowser } = require('./providers');
 const dataStore = require('../data-store');
 const phpApi = require('../php-api');
-const { isHeadless } = require('./headless');
-const { syncProfile } = require('./tiktok-profile');
+const { syncProfile, pullProfile } = require('./tiktok-profile');
 
 async function loadAccount(accountId) {
   const bundle = await dataStore.getAccountBundle(accountId);
   if (!bundle) throw new Error('账号不存在');
+  const { profileId } = resolveAccountBrowser(bundle, { requireProfile: false });
   return {
     id: bundle.id,
     username: bundle.username,
-    browser_profile_id: bundle.browser_profile_id,
+    browser_profile_id: profileId,
+    _bundle: bundle,
   };
 }
 
 async function syncVideos(accountId, limit = 100) {
   const account = await loadAccount(accountId);
-  if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
-  const provider = new BitBrowserProvider();
-  let browser;
+  const { connectAccount, closeConnection } = require('./tiktok-actions');
+  const profileUrl = `https://www.tiktok.com/@${encodeURIComponent(account.username || '')}`;
+  // keepBrowser 会话内自动复用；独立同步仍走默认 forceRelaunch
+  const connection = await connectAccount(accountId, profileUrl, 'sync');
   try {
-    const opened = await provider.open(account.browser_profile_id, { headless: isHeadless('sync') });
-    if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
-    browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
-    const context = browser.contexts()[0];
-    const page = context.pages().find((item) => /tiktok\.com/i.test(item.url())) || context.pages()[0] || await context.newPage();
-    await page.goto(`https://www.tiktok.com/@${encodeURIComponent(account.username)}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const page = connection.page;
     await page.waitForTimeout(2500);
-    const links = await page.locator(`a[href*="/@${account.username}/video/"]`).evaluateAll((els, max) => els.slice(0, max).map((el) => ({
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(page, { accountId });
+    } catch { /* ignore */ }
+    const uname = account.username || '';
+    const links = await page.locator(`a[href*="/@${uname}/video/"]`).evaluateAll((els, max) => els.slice(0, max).map((el) => ({
       url: el.href, text: (el.innerText || el.getAttribute('aria-label') || '').trim(),
       image: el.querySelector('img')?.src || '',
     })), Math.min(100, Math.max(1, Number(limit) || 100)));
@@ -40,13 +41,7 @@ async function syncVideos(accountId, limit = 100) {
     await dataStore.tiktokSync(account.id, { videos: items });
     return { accountId: account.id, count: items.length, items };
   } finally {
-    if (browser) await browser.close().catch(() => {});
-    let keep = false;
-    try {
-      const { shouldKeepBrowserOpen } = require('../session-context');
-      keep = shouldKeepBrowserOpen();
-    } catch { /* ignore */ }
-    if (!keep) await provider.close(account.browser_profile_id).catch(() => {});
+    await closeConnection(connection).catch(() => {});
   }
 }
 
@@ -80,4 +75,4 @@ async function getStats(accountId) {
   }
 }
 
-module.exports = { syncProfile, getProfile, syncVideos, getVideos, getStats };
+module.exports = { syncProfile, pullProfile, getProfile, syncVideos, getVideos, getStats };

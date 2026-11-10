@@ -6,6 +6,7 @@
     comment_reply: { label: '回复评论', desc: '回复他人评论的文案', tone: 'amber', icon: '↩️' },
     dm: { label: '私信', desc: '主动发送的私信开场', tone: 'sky', icon: '✉️' },
     dm_reply: { label: '回复私信', desc: '回复对方私信的文案', tone: 'mint', icon: '💭' },
+    video_boost: { label: '视频增量', desc: '视频增值任务的评论模板，AI 提示词可用 {{video_title}} / {{video_desc}} / {{author}}', tone: 'violet', icon: '🎬' },
   };
 
   const MODE_META = {
@@ -15,14 +16,28 @@
 
   const __methods = {
     canMsgTemplates() {
-      return this.canPermission('account.msg_template')
+      return this.canPermission('account.msg_template.comment')
+        || this.canPermission('account.msg_template.dm')
+        || this.canPermission('account.msg_template')
         || this.canPermission('account.create')
         || this.canPermission('publish.tasks')
         || this.canPermission('chat.manage')
         || this.canPermission('account.view');
     },
-    canEditMsgTemplates() {
-      return this.canPermission('account.msg_template')
+    canEditMsgTemplates(type = '') {
+      const t = String(type || this.msgTplType || '');
+      if (t === 'dm' || t === 'dm_reply') {
+        return this.canPermission('account.msg_template.dm') || this.canEditMsgTemplatesAny();
+      }
+      if (t === 'comment' || t === 'comment_reply') {
+        return this.canPermission('account.msg_template.comment') || this.canEditMsgTemplatesAny();
+      }
+      return this.canEditMsgTemplatesAny();
+    },
+    canEditMsgTemplatesAny() {
+      return this.canPermission('account.msg_template.comment')
+        || this.canPermission('account.msg_template.dm')
+        || this.canPermission('account.msg_template')
         || this.canPermission('account.create')
         || this.canPermission('publish.tasks')
         || this.canPermission('chat.manage')
@@ -43,7 +58,7 @@
         const types = pack.types || Object.keys(TYPE_META).map((code) => ({ code, label: TYPE_META[code].label }));
         const counts = pack.counts || {};
         this._msgTplTypes = types;
-        const canEdit = this.canEditMsgTemplates();
+        const canEdit = this.canEditMsgTemplates(type);
         const meta = TYPE_META[type] || { label: type, desc: '', tone: 'sky', icon: '📝' };
 
         host.innerHTML = `
@@ -165,12 +180,12 @@
       if (vars) vars.hidden = m !== 'ai';
     },
     editMsgTemplate(t = null) {
-      if (!this.canEditMsgTemplates()) {
-        this.toast('当前角色无权维护消息模板', true);
-        return;
-      }
       const isEdit = !!(t && t.id);
       const curType = (t && t.type) || this.msgTplType || 'comment';
+      if (!this.canEditMsgTemplates(curType)) {
+        this.toast('当前角色无权维护该类型消息模板', true);
+        return;
+      }
       let curMode = t?.contentMode;
       if (curMode !== 'fixed' && curMode !== 'ai') {
         curMode = (String(t?.aiPrompt || '').trim() && !String(t?.fixedText || '').trim()) ? 'ai' : 'fixed';

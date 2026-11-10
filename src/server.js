@@ -1,3 +1,6 @@
+// 业务时间统一东八区（须在任何 Date 格式化之前）
+process.env.TZ = process.env.TZ || 'Asia/Shanghai';
+
 const path = require('node:path');
 const http = require('node:http');
 const express = require('express');
@@ -10,7 +13,9 @@ const { attach } = require('./services/live-log');
 const { attachChat } = require('./services/chat-hub');
 const { attachExecutor, handleMessage: handleExecutorMessage } = require('./services/executor-hub');
 const { notFound, errorHandler } = require('./middleware/error-handler');
+const { phpApiProxy } = require('./middleware/php-api-proxy');
 const phpApi = require('./services/php-api');
+const { nowChinaIso } = require('./utils/china-time');
 
 const app = express();
 const server = http.createServer(app);
@@ -36,7 +41,8 @@ app.get('/api/health', (req, res) => ok(res, {
   dataSource,
   apiBase: phpApi.loadApiBase() || apiBase,
   mode,
-  time: new Date().toISOString(),
+  time: nowChinaIso(),
+  timezone: 'Asia/Shanghai',
 }));
 
 app.get('/api/system/info', (req, res) => ok(res, {
@@ -55,6 +61,21 @@ app.use('/api/audio', require('./routes/audio'));
 const uploads = require('./routes/uploads');
 app.use('/api/uploads', uploads.router);
 app.use('/uploads', express.static(uploads.uploadDir));
+const materialsLocal = require('./routes/materials-local');
+app.use('/api/local-materials', materialsLocal.router);
+// 旧前端仍 POST /api/materials/upload：改走本机 ingest，禁止把视频传到 PHP
+app.post('/api/materials/upload', (req, res, next) => {
+  req.url = '/ingest';
+  req.originalUrl = '/api/local-materials/ingest';
+  materialsLocal.router(req, res, next);
+});
+// 线下素材 GitHub 上传：文件在本机，不能交给远程 PHP 读盘
+app.post('/api/materials/:id/github-upload', (req, res, next) => {
+  const id = encodeURIComponent(String(req.params.id || ''));
+  req.url = `/${id}/github-upload`;
+  req.originalUrl = `/api/local-materials/${id}/github-upload`;
+  materialsLocal.router(req, res, next);
+});
 
 app.post('/api/accounts/monitor/run', async (req, res) => {
   try {
@@ -68,11 +89,54 @@ app.post('/api/accounts/monitor/run', async (req, res) => {
 
 app.post('/api/chat/messages/bit-send', async (req, res) => {
   try {
-    const { bitSend } = require('./services/bit-send');
-    const result = await bitSend(req.body || {});
-    return ok(res, result, '已通过比特发送');
+    // 坐席发信：改为入队服务器浏览器 dm_reply（linux / cs_seat）
+    const { enqueueAndRunSeatTask, pollSeatItem } = require('./services/chat-seat');
+    const friendId = Number(req.body?.friendId || req.body?.friend_id || 0);
+    const content = String(req.body?.content || '').trim();
+    if (!friendId || !content) return fail(res, 'friendId 与 content 必填', 422);
+    // 需要 accountId：从 PHP context 取
+    const ctx = await require('./services/php-api').post('/node/chat/bit-send-context', { friendId });
+    const accountId = Number(ctx.accountId || 0);
+    if (!accountId) return fail(res, '无法解析账号', 422);
+    const enq = await enqueueAndRunSeatTask({
+      accountId,
+      action: 'send',
+      friendId,
+      content,
+      translated: req.body?.translated || '',
+    });
+    const done = await pollSeatItem(enq.itemId, { timeoutMs: 120000, intervalMs: 2000 });
+    const okSend = String(done?.status || '') === 'completed';
+    return ok(res, {
+      ok: okSend,
+      ...enq,
+      status: done?.status,
+      result: done?.result,
+      reason: done?.errorMessage || '',
+    }, okSend ? '已通过服务器浏览器发送' : (done?.errorMessage || '发送未完成'));
   } catch (e) {
     return fail(res, e.message || '发送失败', 422);
+  }
+});
+
+/** 客服坐席：入队并触发服务器浏览器执行 */
+app.post('/api/chat/seat-tasks', async (req, res) => {
+  try {
+    const { enqueueAndRunSeatTask } = require('./services/chat-seat');
+    const data = await enqueueAndRunSeatTask(req.body || {});
+    return ok(res, data, '已推送坐席任务到服务器浏览器');
+  } catch (e) {
+    return fail(res, e.message || '入队失败', 422);
+  }
+});
+
+app.get('/api/chat/seat-items/:id', async (req, res) => {
+  try {
+    const phpApi = require('./services/php-api');
+    const data = await phpApi.get(`/chat/seat-items/${req.params.id}`);
+    return ok(res, data);
+  } catch (e) {
+    return fail(res, e.message || '查询失败', 422);
   }
 });
 
@@ -95,6 +159,28 @@ app.post('/api/tasks/:id/items/:itemId/confirm-published', async (req, res) => {
   }
 });
 
+/** 客户委托发布：下载 CDN/GitHub 视频到本机目录（存在则跳过） */
+app.post('/api/tasks/:id/download-video', async (req, res) => {
+  try {
+    const { downloadCustomerTaskVideo } = require('./services/customer-video-download');
+    const downloadDir = String(req.body?.downloadDir || req.body?.download_dir || '').trim();
+    if (!downloadDir) return fail(res, '请选择本地下载目录', 422);
+    const data = await downloadCustomerTaskVideo(req.params.id, {
+      downloadDir,
+      saveDirSetting: req.body?.saveDirSetting !== false,
+    });
+    const msg = data.skipped
+      ? (data.localCoverPath ? '本地视频已存在（封面已处理）' : '本地已存在，已跳过下载')
+      : (data.localCoverPath ? '视频与封面已下载到本机' : '视频已下载到本机');
+    return ok(res, data, msg);
+  } catch (e) {
+    return fail(res, e.message || '下载视频失败', 422);
+  }
+});
+
+// 未在本机注册的 /api/* 统一转发至线上 PHP，避免浏览器跨域 / X-Acting-As 被拦
+app.use(phpApiProxy);
+
 const publicDir = path.resolve(__dirname, '../public');
 app.use(express.static(publicDir));
 app.get('*path', (req, res, next) => {
@@ -109,13 +195,13 @@ wss.on('connection', (socket) => {
   attach(socket);
   attachChat(socket);
   attachExecutor(socket);
-  socket.send(JSON.stringify({ type: 'connected', data: { time: new Date().toISOString(), mode: 'php-only' } }));
+  socket.send(JSON.stringify({ type: 'connected', data: { time: nowChinaIso(), mode: 'php-only' } }));
   socket.on('message', (raw) => {
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return socket.send(JSON.stringify({ type: 'error', message: '消息必须是 JSON' })); }
     if (handleExecutorMessage(socket, message)) return;
-    if (message.type === 'ping') socket.send(JSON.stringify({ type: 'pong', data: { time: new Date().toISOString() } }));
-    if (message.type === 'heartbeat') socket.send(JSON.stringify({ type: 'heartbeat', data: { time: new Date().toISOString() } }));
+    if (message.type === 'ping') socket.send(JSON.stringify({ type: 'pong', data: { time: nowChinaIso() } }));
+    if (message.type === 'heartbeat') socket.send(JSON.stringify({ type: 'heartbeat', data: { time: nowChinaIso() } }));
   });
 });
 
@@ -140,6 +226,12 @@ server.listen(port, host, () => {
     startAccountMonitor();
   } catch (e) {
     console.warn('[WARN] account-monitor:', e.message);
+  }
+  try {
+    const { startBanRestoreScheduler } = require('./services/ban-restore-scheduler');
+    startBanRestoreScheduler();
+  } catch (e) {
+    console.warn('[WARN] ban-restore:', e.message);
   }
   console.log(`TkSwarm Rebuild running at http://${host}:${port}`);
   console.log(`Data: ${dataPath} | mode=${mode}`);

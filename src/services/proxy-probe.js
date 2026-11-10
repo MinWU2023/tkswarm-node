@@ -1,5 +1,5 @@
-const net = require('node:net');
 const phpApi = require('./php-api');
+const { openUpstreamSocket, describeProbeRoute, resolveSystemProxyMode } = require('./system-proxy');
 
 function proxyUrl(proxy) {
   const password = proxy.password || '';
@@ -7,46 +7,85 @@ function proxyUrl(proxy) {
   return `${proxy.protocol}://${auth}${proxy.host}:${proxy.port}`;
 }
 
-async function tcpProbe(proxy, timeoutMs = 5000) {
+async function tcpProbeOnce(proxy, timeoutMs = 12000) {
   const started = Date.now();
-  const available = await new Promise((resolve) => {
-    const socket = net.createConnection({ host: proxy.host, port: Number(proxy.port) });
-    const timer = setTimeout(() => { socket.destroy(); resolve(false); }, timeoutMs);
-    socket.once('connect', () => { clearTimeout(timer); socket.destroy(); resolve(true); });
-    socket.once('error', () => { clearTimeout(timer); resolve(false); });
-  });
-  return { available, latencyMs: available ? Date.now() - started : null };
+  try {
+    const { socket, via } = await openUpstreamSocket(proxy.host, Number(proxy.port), timeoutMs);
+    try { socket.destroy(); } catch { /* ignore */ }
+    return {
+      available: true,
+      latencyMs: Date.now() - started,
+      via,
+    };
+  } catch {
+    return { available: false, latencyMs: null, via: '' };
+  }
+}
+
+async function tcpProbe(proxy, timeoutMs = 5000, retries = 0) {
+  const attempts = Math.max(1, Number(retries) + 1);
+  let last = { available: false, latencyMs: null };
+  for (let i = 0; i < attempts; i += 1) {
+    last = await tcpProbeOnce(proxy, timeoutMs);
+    if (last.available) return last;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 350));
+  }
+  return last;
 }
 
 /**
  * SOCKS5 握手；可选 CONNECT 目标并经隧道取出口 IP（HTTP）。
  * opts.fetchEgress: 握手成功后探测出口 IP
  */
-async function socks5HandshakeProbe(proxy, timeoutMs = 8000, opts = {}) {
+async function socks5HandshakeProbe(proxy, timeoutMs = 20000, opts = {}) {
   const started = Date.now();
   const host = String(proxy.host || '');
   const port = Number(proxy.port);
   const user = String(proxy.username || '');
   const pass = String(proxy.password || '');
   const fetchEgress = opts.fetchEgress === true;
-  if (!host || !port) return { available: false, latencyMs: null, detail: 'SOCKS5 信息不完整', egressIp: '' };
+  if (!host || !port) return { available: false, latencyMs: null, detail: 'SOCKS5 信息不完整', egressIp: '', via: '' };
+
+  let opened;
+  try {
+    opened = await openUpstreamSocket(host, port, timeoutMs);
+  } catch (err) {
+    return {
+      available: false,
+      latencyMs: null,
+      detail: `SOCKS5 连接失败：${err.message || err}`,
+      egressIp: '',
+      via: '',
+    };
+  }
+  const { socket, via } = opened;
 
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port });
     let buf = Buffer.alloc(0);
     let step = 'greeting';
     let egressIp = '';
-    const done = (available, detail) => {
+    /** SOCKS CONNECT 成功时刻（不含后续 HTTP 取出口 IP），用于列表「延迟」展示 */
+    let connectLatencyMs = null;
+    const done = (available, detail, extra = {}) => {
       clearTimeout(timer);
       try { socket.destroy(); } catch { /* ignore */ }
+      const handshakeMs = connectLatencyMs ?? (available ? Date.now() - started : null);
+      const totalMs = available ? Date.now() - started : null;
+      const viaHint = via && via !== 'direct' ? ` · 经本机翻墙` : '';
       resolve({
         available,
-        latencyMs: available ? Date.now() - started : null,
-        detail,
+        latencyMs: extra.latencyMs ?? handshakeMs,
+        connectLatencyMs: handshakeMs,
+        egressLatencyMs: extra.egressLatencyMs ?? (fetchEgress && available ? totalMs : null),
+        detail: `${detail}${viaHint}`,
         egressIp,
+        via,
       });
     };
-    const timer = setTimeout(() => done(false, 'SOCKS5 握手超时'), timeoutMs);
+    const markConnectOk = () => {
+      if (connectLatencyMs == null) connectLatencyMs = Date.now() - started;
+    };
+    const timer = setTimeout(() => done(false, 'SOCKS5 握手超时'), Math.max(timeoutMs, 15000));
     socket.on('error', (err) => done(false, `SOCKS5 连接失败：${err.message || err}`));
 
     const sendConnect = (domain, dport) => {
@@ -117,7 +156,19 @@ async function socks5HandshakeProbe(proxy, timeoutMs = 8000, opts = {}) {
           if (buf[0] !== 0x05) return done(false, '非 SOCKS5 响应');
           const method = buf[1];
           buf = buf.subarray(2);
-          if (method === 0xFF) return done(false, 'SOCKS5 拒绝认证方式');
+          if (method === 0xFF) {
+            const hasAuth = Boolean(String(user || '').trim() || String(pass || '').trim());
+            if (greetPass < 2) {
+              buf = Buffer.alloc(0);
+              step = 'greeting';
+              sendGreeting();
+              return;
+            }
+            if (!hasAuth) {
+              return done(false, 'SOCKS5 需要账密认证（请填写代理用户名和密码）');
+            }
+            return done(false, 'SOCKS5 拒绝认证（账密错误或代理不支持该认证方式）');
+          }
           if (method === 0x02) {
             const u = Buffer.from(user, 'utf8');
             const p = Buffer.from(pass, 'utf8');
@@ -146,10 +197,13 @@ async function socks5HandshakeProbe(proxy, timeoutMs = 8000, opts = {}) {
         }
         if (step === 'connect-reply') {
           if (parseConnectReply() !== true) return;
-          return done(true, 'SOCKS5 握手成功');
+          markConnectOk();
+          const ms = connectLatencyMs;
+          return done(true, ms != null ? `SOCKS5 握手成功 · ${ms}ms` : 'SOCKS5 握手成功');
         }
         if (step === 'connect-egress') {
           if (parseConnectReply() !== true) return;
+          markConnectOk();
           step = 'http-egress';
           socket.write(
             'GET /?format=json HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n'
@@ -168,41 +222,118 @@ async function socks5HandshakeProbe(proxy, timeoutMs = 8000, opts = {}) {
             const m = body.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
             egressIp = m ? m[1] : '';
           }
-          if (egressIp) return done(true, `SOCKS5 出口 ${egressIp}`);
-          return done(true, 'SOCKS5 握手成功（未解析到出口 IP）');
+          const handshake = connectLatencyMs;
+          const total = Date.now() - started;
+          const latencyHint = handshake != null ? ` · 握手 ${handshake}ms` : '';
+          if (egressIp) {
+            return done(true, `SOCKS5 出口 ${egressIp}${latencyHint}`, {
+              latencyMs: handshake,
+              egressLatencyMs: total,
+            });
+          }
+          return done(true, `SOCKS5 握手成功（未解析到出口 IP）${latencyHint}`, {
+            latencyMs: handshake,
+            egressLatencyMs: total,
+          });
         }
       } catch (e) {
         done(false, `SOCKS5 探测异常：${e.message || e}`);
       }
     });
-    socket.on('connect', () => {
-      // 有用户名时声明无认证 + 用户名密码；无用户名只声明无认证
-      if (user) {
-        socket.write(Buffer.from([0x05, 0x02, 0x00, 0x02]));
-      } else {
-        socket.write(Buffer.from([0x05, 0x01, 0x00]));
+    let greetPass = 0;
+    const sendGreeting = () => {
+      const hasAuth = Boolean(String(user || '').trim() || String(pass || '').trim());
+      greetPass += 1;
+      if (!hasAuth) {
+        socket.write(greetPass === 1
+          ? Buffer.from([0x05, 0x01, 0x00])
+          : Buffer.from([0x05, 0x02, 0x00, 0x02]));
+        return;
       }
-    });
+      // 有账密：先只提供用户名密码（部分住宅代理见到 0x00+0x02 会直接 0xFF）
+      if (greetPass === 1) {
+        socket.write(Buffer.from([0x05, 0x01, 0x02]));
+        return;
+      }
+      socket.write(Buffer.from([0x05, 0x02, 0x00, 0x02]));
+    };
+
+    // 套接字已由 openUpstreamSocket 建好（可能经本机翻墙）
+    sendGreeting();
   });
 }
 
+/** HTTP(S) 代理：经本机翻墙连到账号代理后，用绝对 URI GET 取出口 IP */
 async function egressProbe(proxy) {
   if (!['http', 'https'].includes(String(proxy.protocol || '').toLowerCase())) {
-    return { egressIp: '', detail: 'SOCKS5 仅完成端口探测' };
+    return { egressIp: '', detail: 'SOCKS5 仅完成端口探测', via: '' };
   }
+  const started = Date.now();
+  let socket;
+  let via = '';
   try {
-    const { ProxyAgent, fetch } = require('undici');
-    const agent = new ProxyAgent(proxyUrl(proxy));
-    const started = Date.now();
-    const response = await fetch('https://api.ipify.org?format=json', {
-      dispatcher: agent,
-      signal: AbortSignal.timeout(8000),
+    const opened = await openUpstreamSocket(proxy.host, Number(proxy.port), 20000);
+    socket = opened.socket;
+    via = opened.via;
+    const user = String(proxy.username || '').trim();
+    const pass = String(proxy.password || '');
+    const lines = [
+      'GET http://api.ipify.org/?format=json HTTP/1.1',
+      'Host: api.ipify.org',
+      'Connection: close',
+    ];
+    if (user || pass) {
+      const token = Buffer.from(`${user}:${pass}`, 'utf8').toString('base64');
+      lines.push(`Proxy-Authorization: Basic ${token}`);
+    }
+    lines.push('', '');
+    const body = await new Promise((resolve, reject) => {
+      let buf = '';
+      const timer = setTimeout(() => {
+        try { socket.destroy(); } catch { /* */ }
+        reject(new Error('出口探测超时'));
+      }, 15000);
+      socket.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      socket.on('data', (chunk) => {
+        buf += chunk.toString('utf8');
+        if (buf.includes('\r\n\r\n')) {
+          clearTimeout(timer);
+          resolve(buf);
+        }
+      });
+      socket.on('end', () => {
+        clearTimeout(timer);
+        resolve(buf);
+      });
+      socket.write(lines.join('\r\n'));
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    return { egressIp: data.ip || '', latencyMs: Date.now() - started, detail: '出口 IP 探测成功' };
+    const sep = body.indexOf('\r\n\r\n');
+    const head = sep >= 0 ? body.slice(0, sep) : body;
+    const text = sep >= 0 ? body.slice(sep + 4).trim() : '';
+    if (!/^HTTP\/1\.\d 200/i.test(head)) {
+      throw new Error(`代理响应 ${head.split('\r\n')[0] || '非 200'}`);
+    }
+    let egressIp = '';
+    try {
+      egressIp = String(JSON.parse(text).ip || '').trim();
+    } catch {
+      const m = text.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
+      egressIp = m ? m[1] : '';
+    }
+    const viaHint = via && via !== 'direct' ? ' · 经本机翻墙' : '';
+    return {
+      egressIp,
+      latencyMs: Date.now() - started,
+      detail: egressIp ? `出口 IP 探测成功${viaHint}` : `未解析到出口 IP${viaHint}`,
+      via,
+    };
   } catch (error) {
-    return { egressIp: '', detail: `出口探测失败：${error.message}` };
+    return { egressIp: '', detail: `出口探测失败：${error.message}`, via };
+  } finally {
+    try { socket?.destroy(); } catch { /* */ }
   }
 }
 
@@ -239,32 +370,43 @@ async function lookupCountryByIp(ip) {
 }
 
 async function loadProxyForProbe(proxyId) {
-  try {
-    const bundle = await phpApi.get(`/node/proxies/${proxyId}/bundle`);
-    if (bundle?.host && bundle?.port) {
-      return {
-        id: bundle.id,
-        protocol: bundle.protocol,
-        host: bundle.host,
-        port: bundle.port,
-        username: bundle.username || '',
-        password: bundle.password || '',
-      };
-    }
-  } catch {
-    /* fall through */
+  const bundle = await phpApi.get(`/node/proxies/${proxyId}/bundle`);
+  if (!bundle?.host || !bundle?.port) {
+    throw new Error('代理不存在或 host/port 无效');
   }
-  // 兼容旧接口：列表无密码，仅能做 TCP / 主机 IP 国家
-  const page = await phpApi.get(`/proxies?page=1&pageSize=500`);
-  const proxy = (page?.items || []).find((p) => Number(p.id) === Number(proxyId));
-  if (!proxy) throw new Error('代理不存在');
   return {
-    id: proxy.id,
-    protocol: proxy.protocol,
-    host: proxy.host,
-    port: proxy.port,
-    username: proxy.username || '',
-    password: proxy.password || '',
+    id: bundle.id,
+    protocol: bundle.protocol,
+    host: bundle.host,
+    port: bundle.port,
+    username: bundle.username || '',
+    password: bundle.password || '',
+  };
+}
+
+/** 登录/同步用：优先账号 bundle，缺账密时按 proxy_id 回读中心库解密密码 */
+async function resolveProxyCredsFromBundle(bundle) {
+  const host = String(bundle?.proxy_host || '').trim();
+  const port = Number(bundle?.proxy_port || 0);
+  if (!host || !port) return null;
+  let username = String(bundle?.proxy_username || '').trim();
+  let password = String(bundle?.proxy_password || '');
+  const proxyId = Number(bundle?.proxy_id || 0);
+  if (proxyId > 0 && (!username || !password)) {
+    try {
+      const pb = await loadProxyForProbe(proxyId);
+      username = username || String(pb.username || '').trim();
+      password = password || String(pb.password || '');
+    } catch {
+      /* 回读失败仍用账号 bundle 已有字段 */
+    }
+  }
+  return {
+    protocol: bundle?.proxy_protocol || 'socks5',
+    host,
+    port,
+    username,
+    password,
   };
 }
 
@@ -274,63 +416,96 @@ async function probeProxyObject(proxy, opts = {}) {
   const strictSocks = opts.strictSocks === true;
   const proto = String(proxy.protocol || '').toLowerCase();
   const isSocks = proto === 'socks5' || proto === 'socks' || proto === 'socks5h';
-  const hasCreds = Boolean(String(proxy.username || '') && String(proxy.password || ''));
-
-  const tcp = await tcpProbe(proxy, opts.tcpTimeoutMs || 5000);
+  const hasUser = Boolean(String(proxy.username || '').trim());
+  const hasPass = Boolean(String(proxy.password || '').trim());
+  const hasCreds = hasUser && hasPass;
 
   if (isSocks) {
-    let socks = { available: false, latencyMs: null, detail: '', egressIp: '' };
-    if (tcp.available) {
-      socks = await socks5HandshakeProbe(proxy, opts.socksTimeoutMs || (wantCountry ? 12000 : 5000), {
-        fetchEgress: wantCountry,
-      });
-    }
+    // SOCKS 一次探测即可（勿先 TCP 再 SOCKS，会重复建连且把 HTTP 取出口耗时误算成「延迟」）
+    const socks = await socks5HandshakeProbe(proxy, opts.socksTimeoutMs || (wantCountry ? 10000 : 6000), {
+      fetchEgress: opts.fetchEgress ?? wantCountry,
+    });
+    const portReachable = !/^SOCKS5 连接失败/i.test(String(socks.detail || ''))
+      && !/信息不完整/i.test(String(socks.detail || ''));
+    const tcp = {
+      available: portReachable,
+      latencyMs: socks.connectLatencyMs ?? socks.latencyMs,
+    };
 
     let country = '';
-    if (wantCountry && tcp.available) {
-      const ipForGeo = socks.egressIp
-        || (/^\d{1,3}(\.\d{1,3}){3}$/.test(String(proxy.host || '')) ? String(proxy.host) : '');
-      if (ipForGeo) country = await lookupCountryByIp(ipForGeo);
+    if (wantCountry && socks.available && socks.egressIp) {
+      country = await lookupCountryByIp(socks.egressIp);
     }
 
-    // 有用户名却无密码时的「认证失败」多为列表未带密，不当作硬失败
-    const authFail = /认证失败|拒绝认证|非 SOCKS5/i.test(String(socks.detail || ''));
-    const missingPassAuthFail = authFail && String(proxy.username || '') && !String(proxy.password || '');
-    const hardFail = !tcp.available || (authFail && !missingPassAuthFail && hasCreds);
-    const available = strictSocks
-      ? Boolean(tcp.available && socks.available)
-      : Boolean(tcp.available);
+    const authFail = /认证失败|拒绝认证|需要账密|非 SOCKS5/i.test(String(socks.detail || ''));
+    const missingPass = hasUser && !hasPass;
+    const missingUser = hasPass && !hasUser;
+    const socksOk = Boolean(socks.available);
+    // let：登录预检 relaxedForLogin 会改写 available / hardFail / softWarning
+    let available = strictSocks
+      ? Boolean(tcp.available && socksOk)
+      : Boolean(tcp.available && socksOk);
 
     const detailParts = [];
     if (!tcp.available) {
       detailParts.push('端口不可连接');
-    } else if (socks.available) {
+    } else if (missingPass) {
+      detailParts.push('端口可连接，但缺少代理密码（SOCKS 无法鉴权）');
+    } else if (missingUser) {
+      detailParts.push('端口可连接，但缺少代理用户名');
+    } else if (socksOk) {
       detailParts.push(socks.egressIp ? `SOCKS5 出口 ${socks.egressIp}` : 'SOCKS5 握手成功');
-    } else if (missingPassAuthFail) {
-      detailParts.push('端口可连接（缺少代理密码，已跳过 SOCKS 鉴权校验）');
-    } else if (/超时/i.test(String(socks.detail || ''))) {
-      detailParts.push('端口可连接（SOCKS 握手超时，交由比特实际验证）');
     } else if (socks.detail) {
-      detailParts.push(`端口可连接（${socks.detail}）`);
+      detailParts.push(socks.detail);
     } else {
-      detailParts.push('端口可连接');
+      detailParts.push('SOCKS5 握手失败');
     }
     if (country) detailParts.push(`国家 ${country}`);
+    const via = socks.via || tcp.via || '';
+    if (via && via !== 'direct' && !detailParts.some((x) => /经本机翻墙/.test(x))) {
+      detailParts.push('经本机翻墙');
+    }
+
+    let hardFail = !available;
+    let softWarning = Boolean(
+      tcp.available && !socksOk && !missingPass && !missingUser && /超时/i.test(String(socks.detail || '')),
+    );
+
+    // 登录前预检：端口通即可继续，SOCKS 细节交给自研浏览器实测（与比特行为一致）
+    if (opts.relaxedForLogin && isSocks) {
+      const explicitAuthFail = hasCreds && /认证失败|拒绝认证/.test(String(socks.detail || ''));
+      const credsMissingInRequest = !hasUser && !hasPass;
+      available = Boolean(tcp.available);
+      hardFail = Boolean(!tcp.available || explicitAuthFail);
+      softWarning = Boolean(tcp.available && !socksOk && !hardFail);
+      if (credsMissingInRequest && !socksOk && tcp.available) {
+        detailParts.length = 0;
+        detailParts.push(
+          socks.detail
+            ? `端口可连接（${socks.detail}，仍将打开浏览器验证）`
+            : '端口可连接（SOCKS 预检未通过，仍将打开浏览器验证）',
+        );
+      }
+    }
 
     return {
       available,
       hardFail,
-      softWarning: Boolean(tcp.available && !socks.available && !hardFail),
-      latencyMs: socks.latencyMs || tcp.latencyMs,
+      softWarning,
+      latencyMs: socks.connectLatencyMs ?? socks.latencyMs ?? tcp.latencyMs,
+      egressLatencyMs: socks.egressLatencyMs ?? null,
       egressIp: socks.egressIp || '',
       country,
+      via,
       detail: detailParts.join(' · '),
     };
   }
 
-  let egress = { egressIp: '', detail: '' };
+  const tcp = await tcpProbe(proxy, opts.tcpTimeoutMs || 12000, opts.tcpRetries || 0);
+  let egress = { egressIp: '', detail: '', via: tcp.via || '' };
   if (tcp.available) egress = await egressProbe(proxy);
   const reallyAvailable = Boolean(tcp.available && egress.egressIp);
+  const via = egress.via || tcp.via || '';
 
   let country = '';
   if (wantCountry) {
@@ -345,6 +520,9 @@ async function probeProxyObject(proxy, opts = {}) {
   } else {
     detailParts.push(egress.detail || (tcp.available ? '出口探测失败' : '连接失败'));
   }
+  if (via && via !== 'direct' && !/经本机翻墙/.test(detailParts.join(''))) {
+    detailParts.push('经本机翻墙');
+  }
 
   return {
     available: reallyAvailable,
@@ -353,6 +531,7 @@ async function probeProxyObject(proxy, opts = {}) {
     latencyMs: egress.latencyMs || tcp.latencyMs,
     egressIp: egress.egressIp || '',
     country,
+    via,
     detail: detailParts.join(' · '),
   };
 }
@@ -367,38 +546,27 @@ async function testProxyReal(proxyId, opts = {}) {
 async function batchTestProxies(proxyIds) {
   const ids = [...new Set(proxyIds.map(Number).filter(Number.isInteger))];
   const results = [];
+  let updated = 0;
+  try {
+    const { publish: liveLog } = require('./live-log');
+    liveLog(`代理检测路由：${await describeProbeRoute()}（模式 ${resolveSystemProxyMode()}）`, 'info');
+  } catch { /* ignore */ }
   for (const id of ids) {
     try {
-      results.push({ id, ...(await testProxyReal(id)) });
+      const result = await testProxyReal(id, { detectCountry: true, fetchEgress: true });
+      if (result.country) updated += 1;
+      results.push({ id, ...result });
     } catch (error) {
-      results.push({ id, available: false, detail: error.message });
+      const fail = { available: false, latencyMs: null, egressIp: '', country: '', detail: error.message || '检测失败' };
+      await phpApi.post(`/node/proxies/${id}/probe-result`, fail).catch(() => {});
+      results.push({ id, ...fail });
     }
   }
   return {
     total: ids.length,
     available: results.filter((x) => x.available).length,
     unavailable: results.filter((x) => !x.available).length,
-    items: results,
-  };
-}
-
-async function batchDetectCountries(proxyIds) {
-  const ids = [...new Set(proxyIds.map(Number).filter(Number.isInteger))];
-  const results = [];
-  let updated = 0;
-  for (const id of ids) {
-    try {
-      const result = await testProxyReal(id, { detectCountry: true });
-      if (result.country) updated += 1;
-      results.push({ id, ...result });
-    } catch (error) {
-      results.push({ id, available: false, country: '', detail: error.message });
-    }
-  }
-  return {
-    total: ids.length,
     updated,
-    available: results.filter((x) => x.available).length,
     items: results,
   };
 }
@@ -411,7 +579,8 @@ module.exports = {
   probeProxyObject,
   testProxyReal,
   batchTestProxies,
-  batchDetectCountries,
+  loadProxyForProbe,
+  resolveProxyCredsFromBundle,
   lookupCountryByIp,
   fetchCloudProxies,
   proxyUrl,

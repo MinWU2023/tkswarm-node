@@ -20,6 +20,12 @@
 const { connectAccount, closeConnection } = require('./tiktok-actions');
 const { inspectTikTokSession } = require('./cdp-client');
 const { capture } = require('../automation-guard');
+let nowChinaIso;
+try {
+  ({ nowChinaIso } = require('../../utils/china-time'));
+} catch {
+  ({ nowChinaIso } = require('../utils/china-time'));
+}
 
 const HOME_URL = 'https://www.tiktok.com/';
 const DEFAULT_COMMENT_TEXT = '很棒的视频，点赞';
@@ -156,26 +162,22 @@ const SELECTORS = {
 
 /* ───────── utils ───────── */
 
-function delay(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function jitter(base, spread = 0.25) {
-  const b = Math.max(0, Number(base) || 0);
-  const s = Math.max(0, Number(spread) || 0);
-  const delta = b * s * (Math.random() * 2 - 1);
-  return Math.max(0, Math.round(b + delta));
-}
-
-async function humanPause(baseMs, spread = 0.3) {
-  await delay(jitter(baseMs, spread));
-}
-
-function randInt(min, max) {
-  const a = Math.min(min, max);
-  const b = Math.max(min, max);
-  return a + Math.floor(Math.random() * (b - a + 1));
-}
+const {
+  humanPause,
+  randInt,
+  sleep: delay,
+  typeDelay,
+  clickHoldMs,
+} = require('../human-pace');
+const {
+  scaleTimeout,
+  waitDocumentReady,
+  waitPageSettled,
+  waitSearchContent,
+  detectProxyErrorPage,
+  recoverProxyErrorPage,
+  detectRawDocumentPage,
+} = require('./page-ready');
 
 function splitTerms(text) {
   if (Array.isArray(text)) {
@@ -248,9 +250,9 @@ function buildExecutionPlanLocal(cfg = {}) {
     return { videoTotal: 0, keywords: [], ...commentCfg };
   }
   const minV = Math.max(1, Math.min(100, Number(cfg.videoCountMin || 10)));
-  const maxV = Math.max(minV, Math.min(100, Number(cfg.videoCountMax || minV)));
-  const stayMin = Math.max(1, Math.min(300, Number(cfg.staySecondsMin || 10)));
-  const stayMax = Math.max(stayMin, Math.min(300, Number(cfg.staySecondsMax || 20)));
+  const maxV = Math.max(minV, Math.min(100, Number(cfg.videoCountMax || 20)));
+  const stayMin = Math.max(1, Math.min(300, Number(cfg.staySecondsMin || 30)));
+  const stayMax = Math.max(stayMin, Math.min(300, Number(cfg.staySecondsMax || 50)));
   const likeRate = Number(cfg.likeRate || 0);
   const commentRate = Number(cfg.commentRate ?? cfg.viewCommentRate ?? 0);
   const followRate = Number(cfg.followRate || 0);
@@ -298,7 +300,7 @@ function buildExecutionPlanLocal(cfg = {}) {
     videoTotal,
     ...commentCfg,
     keywords,
-    generatedAt: new Date().toISOString(),
+    generatedAt: nowChinaIso(),
     source: 'local-fallback',
   };
 }
@@ -307,8 +309,8 @@ function buildExecutionPlanLocal(cfg = {}) {
  * 对齐 videoCount 与 videos[]：缺行补「仅停留」，避免抬头 9 条实际只有 4 步。
  */
 function normalizeKeywordVideos(kw, cfg = {}) {
-  const stayMin = Math.max(1, Number(cfg.staySecondsMin || 10));
-  const stayMax = Math.max(stayMin, Number(cfg.staySecondsMax || 20));
+  const stayMin = Math.max(1, Number(cfg.staySecondsMin || 30));
+  const stayMax = Math.max(stayMin, Number(cfg.staySecondsMax || 50));
   let videos = [];
   if (Array.isArray(kw?.videos)) {
     videos = kw.videos.slice();
@@ -439,6 +441,10 @@ async function resolveCommentText(page, ctx = {}) {
 /* ───────── page helpers ───────── */
 
 async function dismissOverlays(page, { escape = false } = {}) {
+  try {
+    const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+    await solveRotateCaptchaIfPresent(page);
+  } catch { /* ignore */ }
   for (const sel of SELECTORS.dismiss) {
     try {
       const el = page.locator(sel).first();
@@ -507,6 +513,10 @@ async function clickByPatterns(page, patterns, { timeout = 2500 } = {}) {
 async function waitVideoReady(page, timeoutMs = 15000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(page);
+    } catch { /* ignore */ }
     const ok = await page.evaluate(() => {
       const v = document.querySelector('video');
       if (v && (v.readyState >= 2 || v.currentTime > 0)) return true;
@@ -663,7 +673,7 @@ async function assertPageAlive(page, step = '') {
 
 function isTransientNavError(err) {
   const msg = String(err?.message || err || '');
-  return /ERR_CONNECTION_CLOSED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|ERR_NETWORK_CHANGED|ERR_EMPTY_RESPONSE|ERR_TIMED_OUT|ERR_PROXY|ERR_SSL|Timeout|Target page|has been closed|Browser has been closed|Navigation failed/i.test(msg);
+  return /ERR_CONNECTION_CLOSED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|ERR_NETWORK_CHANGED|ERR_EMPTY_RESPONSE|ERR_TIMED_OUT|ERR_PROXY|ERR_SOCKS|ERR_TUNNEL|ERR_SSL|Timeout|Target page|has been closed|Browser has been closed|Navigation failed|代理连接失败|网络错误/i.test(msg);
 }
 
 /**
@@ -675,7 +685,7 @@ async function ensureLivePage(connection) {
   if (page && !page.isClosed?.()) return page;
 
   const context = connection.context || connection.browser?.contexts?.()?.[0];
-  if (!context) throw new Error('浏览器上下文已失效，请检查比特环境是否被关闭');
+  if (!context) throw new Error('浏览器上下文已失效，请检查浏览器环境是否被关闭');
 
   const existing = (context.pages?.() || []).find((p) => p && !p.isClosed?.());
   if (existing) {
@@ -695,9 +705,11 @@ async function safeGoto(connection, url, {
   accountId = 0,
   retries = 3,
   waitUntil = 'domcontentloaded',
-  timeout = 60000,
+  timeout = 90000,
   label = '导航',
+  settle = true,
 } = {}) {
+  const navTimeout = scaleTimeout(timeout, 60000);
   let lastErr;
   for (let i = 1; i <= retries; i++) {
     try {
@@ -705,45 +717,106 @@ async function safeGoto(connection, url, {
       const cur0 = (() => { try { return page.url() || ''; } catch { return ''; } })();
       if (url === HOME_URL && /^https?:\/\/(www\.)?tiktok\.com\/?(\?|#|$)/i.test(cur0)) {
         logWarm(accountId, `${label}: 已在首页，跳过重复打开`);
+        if (settle) {
+          await waitPageSettled(page, {
+            timeoutMs: 25000,
+            label,
+            log: (m) => logWarm(accountId, m),
+          });
+        }
         return page;
       }
       if (urlLooksLike(url, cur0) && /\/search\//i.test(cur0)) {
         logWarm(accountId, `${label}: 已在目标页 ${cur0}`);
+        if (settle) {
+          await waitPageSettled(page, {
+            timeoutMs: 35000,
+            contentSelectors: [
+              '[data-e2e="search_video-item"]',
+              'a[href*="/video/"]',
+              '[data-e2e="search-user-container"]',
+            ],
+            label,
+            log: (m) => logWarm(accountId, m),
+          });
+        }
         return page;
       }
 
-      logWarm(accountId, `${label}: goto ${url} (第 ${i}/${retries} 次)`);
+      logWarm(accountId, `${label}: goto ${url} (第 ${i}/${retries} 次，超时 ${Math.round(navTimeout / 1000)}s)`);
       try {
-        await page.goto(url, { waitUntil, timeout });
+        await page.goto(url, { waitUntil, timeout: navTimeout });
       } catch (gotoErr) {
         lastErr = gotoErr;
         logWarm(accountId, `${label} goto 异常: ${String(gotoErr.message || gotoErr).slice(0, 120)}`);
       }
 
-      await humanPause(800, 0.15);
+      await waitDocumentReady(page, 12000);
+      await humanPause(1000, 0.15);
       page = await ensureLivePage(connection);
       let cur = (() => { try { return page.url() || ''; } catch { return ''; } })();
+
+      // 深链偶发返回 application/json / i18n 字典当正文：刷新后再验
+      if (await detectRawDocumentPage(page)) {
+        logWarm(accountId, `${label}: 检测到原始 JSON/乱码文档，刷新重试`);
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: Math.min(navTimeout, 60000) }).catch(() => {});
+        await waitDocumentReady(page, 12000);
+        await humanPause(1200, 0.15);
+        page = await ensureLivePage(connection);
+        cur = (() => { try { return page.url() || ''; } catch { return ''; } })();
+        if (await detectRawDocumentPage(page)) {
+          throw new Error(`导航后页面为原始 JSON/i18n 乱码（非 HTML UI）url=${cur}`);
+        }
+      }
 
       if (!urlLooksLike(url, cur)) {
         logWarm(accountId, `${label}: 地址未真正跳转(当前 ${cur})，改用 location.assign`);
         await Promise.all([
-          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: Math.min(timeout, 45000) }).catch(() => null),
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: Math.min(navTimeout, 60000) }).catch(() => null),
           page.evaluate((u) => { window.location.assign(u); }, url),
         ]);
-        await humanPause(1000, 0.15);
+        await humanPause(1200, 0.15);
         page = await ensureLivePage(connection);
         cur = (() => { try { return page.url() || ''; } catch { return ''; } })();
       }
 
       if (!urlLooksLike(url, cur)) {
         await page.evaluate((u) => { window.location.href = u; }, url);
-        await humanPause(2000, 0.15);
+        await humanPause(2500, 0.15);
         page = await ensureLivePage(connection);
         cur = (() => { try { return page.url() || ''; } catch { return ''; } })();
       }
 
       if (!urlLooksLike(url, cur)) {
         throw new Error(`导航后仍停留在 ${cur || '(空)'}，目标 ${url}`);
+      }
+
+      // 高延迟代理中途抖成错误页：退避重开，不当作永久失败
+      const netCode = await detectProxyErrorPage(page);
+      if (netCode) {
+        logWarm(accountId, `${label}: 导航后出现 ${netCode}，尝试恢复`);
+        await recoverProxyErrorPage(page, {
+          url,
+          attempts: 3,
+          label,
+          log: (m) => logWarm(accountId, m),
+        });
+        const still = await detectProxyErrorPage(page);
+        if (still) throw new Error(`代理/网络错误页 ${still}`);
+        page = await ensureLivePage(connection);
+        cur = (() => { try { return page.url() || ''; } catch { return ''; } })();
+      }
+
+      if (settle) {
+        await waitPageSettled(page, {
+          timeoutMs: /\/search\//i.test(cur) ? 40000 : 25000,
+          contentSelectors: /\/search\//i.test(cur)
+            ? ['[data-e2e="search_video-item"]', 'a[href*="/video/"]', '[data-e2e*="search"]']
+            : ['[data-e2e]', 'main', 'header'],
+          reloadOnce: i >= retries,
+          label,
+          log: (m) => logWarm(accountId, m),
+        });
       }
 
       connection.page = page;
@@ -755,7 +828,7 @@ async function safeGoto(connection, url, {
       logWarm(accountId, `${label}失败: ${msg.slice(0, 160)}`);
       if (i >= retries) break;
       if (!isTransientNavError(err) && !/仍停留|未真正跳转/i.test(msg) && i >= 2) break;
-      await humanPause(1500 * i, 0.1);
+      await humanPause(2000 * i, 0.1);
       try {
         const context = connection.context || connection.browser?.contexts?.()?.[0];
         if (context) {
@@ -766,7 +839,7 @@ async function safeGoto(connection, url, {
     }
   }
   throw new Error(
-    `${label}失败（已重试 ${retries} 次）: ${lastErr?.message || lastErr}。请检查比特代理/网络是否能打开 TikTok`
+    `${label}失败（已重试 ${retries} 次）: ${lastErr?.message || lastErr}。请检查代理/网络是否能打开 TikTok`
   );
 }
 
@@ -925,7 +998,7 @@ async function revealAndFillSearch(page, term, accountId = 0) {
     await input.click({ timeout: 3000 }).catch(() => input.click({ force: true, timeout: 3000 }));
     await humanPause(200, 0.2);
     await input.fill('');
-    await input.type(q, { delay: randInt(40, 85) });
+    await input.type(q, { delay: typeDelay(80, 160) });
     await humanPause(400, 0.2);
     await page.keyboard.press('Enter');
     logWarm(accountId, '搜索框已展开并提交');
@@ -963,7 +1036,57 @@ async function revealAndFillSearch(page, term, accountId = 0) {
 }
 
 /**
+ * 深链搜索若落到「整页 i18n/JSON 乱码」：刷新一次；仍坏则回首页用搜索框提交。
+ */
+async function recoverFromRawSearchPage(connection, term, accountId = 0) {
+  let page = await ensureLivePage(connection);
+  if (!(await detectRawDocumentPage(page))) return page;
+
+  logWarm(accountId, '搜索页呈现原始 JSON/i18n 乱码，先刷新');
+  await capture(page, `warm-raw-json-${accountId}`).catch(() => '');
+  await page.reload({
+    waitUntil: 'domcontentloaded',
+    timeout: scaleTimeout(75000, 50000),
+  }).catch(() => {});
+  await waitDocumentReady(page, 12000);
+  await humanPause(1800, 0.2);
+  page = await ensureLivePage(connection);
+  if (!(await detectRawDocumentPage(page))) {
+    logWarm(accountId, '刷新后乱码页已恢复');
+    return page;
+  }
+
+  logWarm(accountId, '刷新仍乱码，改走首页搜索框');
+  page = await gotoHome(connection, accountId);
+  await humanPause(1200, 0.2);
+  const filled = await revealAndFillSearch(page, term, accountId);
+  if (!filled) {
+    throw new Error('搜索页乱码且首页搜索框不可用');
+  }
+  await humanPause(2500, 0.25);
+  page = await ensureLivePage(connection);
+  await waitPageSettled(page, {
+    timeoutMs: 40000,
+    contentSelectors: [
+      '[data-e2e="search_video-item"]',
+      'a[href*="/video/"]',
+      '[data-e2e="search-user-input"]',
+      '[data-e2e*="search"]',
+    ],
+    reloadOnce: true,
+    label: '首页搜索落地',
+    log: (m) => logWarm(accountId, m),
+  });
+  if (await detectRawDocumentPage(page)) {
+    await capture(page, `warm-raw-json-ui-${accountId}`).catch(() => '');
+    throw new Error(`搜索结果仍为原始 JSON/乱码页 url=${page.url()}`);
+  }
+  return page;
+}
+
+/**
  * 首页就绪后直达视频搜索结果页（不依赖顶栏；goto 失败会 location.assign）
+ * 若深链返回 JSON/i18n 乱码文档，自动刷新并回退到顶栏搜索框。
  */
 async function searchKeywordFromHome(connection, term, accountId = 0) {
   const q = String(term || '').trim();
@@ -991,8 +1114,12 @@ async function searchKeywordFromHome(connection, term, accountId = 0) {
   await dismissOverlays(page, { escape: false });
 
   page = await ensureLivePage(connection);
+  if (await detectRawDocumentPage(page)) {
+    page = await recoverFromRawSearchPage(connection, q, accountId);
+  }
+
   let onSearch = /\/search\//i.test(page.url() || '');
-  if (!onSearch) {
+  if (!onSearch && !(await detectRawDocumentPage(page))) {
     logWarm(accountId, 'video 搜索未落地，改试 /search?q=');
     page = await safeGoto(connection, searchUrl, {
       accountId,
@@ -1001,7 +1128,16 @@ async function searchKeywordFromHome(connection, term, accountId = 0) {
     });
     await humanPause(2000, 0.25);
     await dismissOverlays(page, { escape: false });
+    page = await ensureLivePage(connection);
+    if (await detectRawDocumentPage(page)) {
+      page = await recoverFromRawSearchPage(connection, q, accountId);
+    }
     onSearch = /\/search\//i.test(page.url() || '');
+  }
+
+  if (await detectRawDocumentPage(page)) {
+    await capture(page, `warm-raw-json-final-${accountId}`).catch(() => '');
+    throw new Error(`搜索页为原始 JSON/i18n 乱码（非正常 TikTok UI）url=${page.url()}`);
   }
 
   if (!onSearch) {
@@ -1043,11 +1179,105 @@ async function clickVideosTab(page) {
   return /\/search\/video/i.test(page.url() || '');
 }
 
-/** TikTok 搜索无结果空态（文案/节点） */
+/**
+ * TikTok 搜索页滑块 / 拼图人机验证（常见文案：Drag the slider to fit the puzzle）
+ * 有验证时结果区只有骨架屏，不能当成「关键词无视频」。
+ */
+async function detectCaptchaChallenge(page) {
+  return page.evaluate(() => {
+    const text = String(document.body?.innerText || '').slice(0, 12000);
+    if (/Drag the slider to fit the puzzle|Verify to continue|verify you.?re (a )?human|Security check|人机验证|安全验证|拖动滑块|完成拼图|请完成验证/i.test(text)) {
+      return true;
+    }
+    const nodes = document.querySelectorAll([
+      '#captcha-verify-container',
+      '.captcha_verify_container',
+      '[id*="captcha"]',
+      '[class*="captcha"]',
+      '[class*="Captcha"]',
+      'iframe[src*="captcha"]',
+      'iframe[src*="verify"]',
+      '[aria-label*="captcha" i]',
+      '[aria-label*="verify" i]',
+    ].join(','));
+    for (const el of nodes) {
+      const r = el.getBoundingClientRect?.() || { width: 0, height: 0 };
+      if (r.width > 80 && r.height > 60) return true;
+      // iframe 无 getBoundingClientRect 时仍视为存在
+      if (el.tagName === 'IFRAME') return true;
+    }
+    return false;
+  }).catch(() => false);
+}
+
+/**
+ * 检测到验证码：短等片刻（可能自动消失），否则立即返回 need_manual，由人工验证队列暂停任务。
+ * @returns {'cleared'|'timeout'|'absent'|'need_manual'}
+ */
+async function waitForCaptchaClear(page, accountId = 0, timeoutMs = 180000) {
+  if (!(await detectCaptchaChallenge(page))) return 'absent';
+  // 省流会拦拼图/验证码图片：检测到验证后立刻临时关闭省流，方便人工处理
+  try {
+    const { pauseSaveTrafficForCaptcha, resumeSaveTrafficAfterCaptcha } = require('./save-traffic');
+    await pauseSaveTrafficForCaptcha(page);
+    page.__tkResumeSaveTrafficAfterCaptcha = resumeSaveTrafficAfterCaptcha;
+  } catch { /* ignore */ }
+  logWarm(
+    accountId,
+    '检测到 TikTok 人机验证（滑块/拼图），正在尝试 NoCaptchaAI 自动识别过码（已临时关闭省流以便显示验证图片）…'
+  );
+  await capture(page, `warm-captcha-${accountId}`).catch(() => '');
+  const resumeIfCleared = async () => {
+    try {
+      const resume = page.__tkResumeSaveTrafficAfterCaptcha;
+      if (typeof resume === 'function') await resume(page);
+    } catch { /* ignore */ }
+  };
+  // 留足时间让关闭省流后的旋转图片加载 + NoCaptchaAI 3 次识别重试完成
+  const briefMs = Math.min(35000, Math.max(18000, Number(timeoutMs) || 0) || 25000);
+  const end = Date.now() + briefMs;
+  while (Date.now() < end) {
+    await assertPageAlive(page, '等待验证码完成').catch(() => {});
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      const rot = await solveRotateCaptchaIfPresent(page, { accountId });
+      if (rot?.detected && rot?.solved) {
+        logWarm(accountId, 'NoCaptchaAI 旋转图片验证已通过，继续');
+        await resumeIfCleared();
+        await humanPause(800, 0.2);
+        return 'cleared';
+      }
+    } catch { /* ignore */ }
+    if (!(await detectCaptchaChallenge(page))) {
+      logWarm(accountId, '人机验证已消失，继续');
+      await resumeIfCleared();
+      await humanPause(800, 0.2);
+      return 'cleared';
+    }
+    if (await countSearchVideoCards(page) > 0) {
+      logWarm(accountId, '验证码仍在，但已出现视频卡片，继续');
+      await resumeIfCleared();
+      return 'cleared';
+    }
+    await humanPause(800, 0.1);
+  }
+  logWarm(accountId, '人机验证仍在，交由人工验证队列暂停任务（保持省流关闭以便显示验证图片）');
+  await capture(page, `warm-captcha-manual-${accountId}`).catch(() => '');
+  return 'need_manual';
+}
+
+/** TikTok 搜索无结果空态（文案/节点）——有验证码/仍在加载时不当作空态 */
 async function detectSearchEmpty(page) {
+  if (await detectCaptchaChallenge(page)) return false;
   return page.evaluate(() => {
     const text = (document.body?.innerText || '').slice(0, 8000);
-    const emptyRe = /Couldn't find|Couldn.?t find|No results|No videos|没有任何结果|没有找到|未找到|找不到结果|暂无结果|没有相关|没有搜到|Try searching|换个关键词|试试其他/i;
+    // 加载中常见文案，勿当空态
+    if (/Loading|正在加载|加载中|Please wait|稍候|Something went wrong.*try again later/i.test(text)
+      && !/Couldn't find|No results|没有任何结果|没有找到/i.test(text)) {
+      return false;
+    }
+    // 避免匹配搜索框旁的「Try searching…」提示；只认明确的空结果文案
+    const emptyRe = /Couldn't find (this|any)|Couldn.?t find|No results found|No videos found|没有任何结果|没有找到相关|未找到结果|找不到结果|暂无结果|没有相关视频|没有搜到/;
     if (emptyRe.test(text)) return true;
     const emptyNodes = document.querySelectorAll(
       '[data-e2e="search-empty"], [data-e2e="search-error"], [class*="DivErrorContainer"], [class*="DivEmptyState"], [class*="EmptyState"]'
@@ -1076,16 +1306,29 @@ async function countSearchVideoCards(page) {
   return 0;
 }
 
-async function waitSearchVideoGrid(page, timeoutMs = 30000) {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    await assertPageAlive(page, '等待视频网格');
-    if (await countSearchVideoCards(page) > 0) return true;
-    // 空态出现则尽早结束，不必空等满超时
-    if (await detectSearchEmpty(page)) return false;
-    await page.mouse.wheel(0, 400).catch(() => {});
-    await humanPause(700, 0.2);
+async function waitSearchVideoGrid(page, timeoutMs = 60000, accountId = 0) {
+  // 先处理验证码：否则骨架屏会被当成「无结果」
+  const captcha = await waitForCaptchaClear(page, accountId, Math.min(180000, Math.max(timeoutMs, 90000)));
+  if (captcha === 'timeout' || captcha === 'need_manual') {
+    return false;
   }
+  const result = await waitSearchContent(page, {
+    timeoutMs,
+    accountId,
+    reloadOnce: true,
+    countCards: countSearchVideoCards,
+    isEmpty: detectSearchEmpty,
+    isCaptcha: detectCaptchaChallenge,
+    onCaptcha: waitForCaptchaClear,
+    log: (m) => logWarm(accountId, m),
+  });
+  if (result.ok) return true;
+  if (result.reason === 'empty') {
+    logWarm(accountId, '搜索空态已确认');
+    return false;
+  }
+  if (result.reason === 'captcha') return false;
+  logWarm(accountId, `等待视频网格超时 url=${page.url()}`);
   return (await countSearchVideoCards(page)) > 0;
 }
 
@@ -1113,18 +1356,39 @@ async function isInVideoBrowseMode(page) {
  * 禁止随后点 Close / 按 Escape（那是「打开又秒关」的根因）。
  * 成功后只依赖下箭头切下一条，不再回网格重开。
  */
+
+/** 自研浏览器导航失败时注入的 data: 诊断页（非 TikTok） */
+function isEnvLoadDiagnosticPage(page) {
+  try {
+    const url = String(page.url?.() || page.url || '');
+    if (/^data:text\/html/i.test(url)) return true;
+    if (/环境窗口没能正常打开|加载诊断|页面加载超时/i.test(url)) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+async function assertNotDiagnosticPage(page, where = '') {
+  if (!isEnvLoadDiagnosticPage(page)) return;
+  const url = String(page.url?.() || '');
+  throw new Error(
+    `环境窗口未打开 TikTok（${where || '页面'}）。当前是加载诊断页，通常为网络/代理超时。请检查代理后重试。url=${url.slice(0, 160)}`
+  );
+}
+
 async function openFirstSearchVideo(page, accountId = 0) {
   await assertPageAlive(page, '点第一条视频前');
+  await assertNotDiagnosticPage(page, '点第一条视频前');
   if (await isInVideoBrowseMode(page)) {
     logWarm(accountId, '已在浏览态，跳过再次点击');
     return true;
   }
 
-  // 网格已由 runKeyword 预检；此处再确认一次，避免重复空等
+  // 网格已由 runKeyword 预检；此处再确认一次（慢网再给一轮，不再刷新以免打断）
   let hasGrid = (await countSearchVideoCards(page)) > 0;
-  if (!hasGrid) hasGrid = await waitSearchVideoGrid(page, 8000);
+  if (!hasGrid) hasGrid = await waitSearchVideoGrid(page, 45000, accountId);
   if (!hasGrid) {
-    logWarm(accountId, `搜索网格未出现 url=${page.url()}`);
+    const cap = await detectCaptchaChallenge(page);
+    logWarm(accountId, `搜索网格未出现${cap ? '（仍有人机验证）' : ''} url=${page.url()}`);
     return false;
   }
   await humanPause(600, 0.2);
@@ -1167,7 +1431,7 @@ async function openFirstSearchVideo(page, accountId = 0) {
 
   logWarm(accountId, `单击第1条视频 selector=${usedSel} href=${href || '-'}`);
   try {
-    await target.click({ timeout: 5000, delay: 60 });
+    await target.click({ timeout: 5000, delay: clickHoldMs() });
   } catch {
     await target.click({ timeout: 5000, force: true }).catch(() => {});
   }
@@ -1176,6 +1440,10 @@ async function openFirstSearchVideo(page, accountId = 0) {
   let stableHits = 0;
   const end = Date.now() + 12000;
   while (Date.now() < end) {
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(page, { accountId });
+    } catch { /* ignore */ }
     if (await isInVideoBrowseMode(page)) {
       stableHits += 1;
       if (stableHits >= 2) {
@@ -1255,7 +1523,7 @@ async function clickNextVideoArrow(page) {
   if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
     await page.mouse.move(target.x, target.y).catch(() => {});
     await humanPause(80, 0.1);
-    await page.mouse.click(target.x, target.y, { delay: 40 }).catch(() => {});
+    await page.mouse.click(target.x, target.y, { delay: clickHoldMs() }).catch(() => {});
     // 同步派发 click，防止被遮罩吞掉 mouse 事件
     await page.evaluate(({ x, y }) => {
       const el = document.elementFromPoint(x, y);
@@ -1296,6 +1564,10 @@ function armVideoNavFlag(page) {
  */
 async function swipeToNextVideo(page, accountId = 0) {
   await closeCommentPanel(page);
+  try {
+    const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+    await solveRotateCaptchaIfPresent(page, { accountId });
+  } catch { /* ignore */ }
 
   if (!(await isInVideoBrowseMode(page))) {
     logWarm(accountId, '翻页前已不在浏览态，放弃');
@@ -1544,7 +1816,7 @@ async function clickAvatarPlusAt(page, hit) {
         const box = await loc.boundingBox().catch(() => null);
         if (!box || box.x < (page.viewportSize()?.width || 1280) * 0.45) continue;
         if (box.width > 40 || box.height > 40) {
-          await page.mouse.click(box.x + box.width / 2, box.y + box.height - 5, { delay: 45 });
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height - 5, { delay: clickHoldMs() });
         } else {
           await loc.click({ timeout: 2000, force: true });
         }
@@ -1585,7 +1857,7 @@ async function clickAvatarPlusAt(page, hit) {
     }, { x, y: clickY }).catch(() => ({ ok: false, reason: 'eval-fail', y: clickY }));
 
     if (!top?.ok) {
-      await page.mouse.click(x, Number(top?.y || clickY), { delay: 45 }).catch(() => {});
+      await page.mouse.click(x, Number(top?.y || clickY), { delay: clickHoldMs() }).catch(() => {});
     }
     didClick = true;
   }
@@ -1650,9 +1922,13 @@ async function tryFollow(page, accountId = 0) {
       continue;
     }
 
-    // 必须等到当前栏状态变成 followed；点一下不算成功
+    // 必须等到当前栏状态变成 followed；点一下不算成功（期间若弹出旋转验证则自动识别过码）
     const end = Date.now() + 3500;
     while (Date.now() < end) {
+      try {
+        const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+        await solveRotateCaptchaIfPresent(page, { accountId });
+      } catch { /* ignore */ }
       const after = await readBrowseFollowState(page);
       if (after === 'followed') {
         logWarm(accountId, `关注状态已确认 tag=${hit.tag}`);
@@ -1691,6 +1967,10 @@ async function isCommentInputReady(page) {
 async function waitCommentInputReady(page, timeoutMs = 15000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(page);
+    } catch { /* ignore */ }
     if (await isCommentInputReady(page)) return true;
     await humanPause(350, 0.12);
   }
@@ -1858,7 +2138,7 @@ async function fillCommentInput(page, text) {
       let wrote = await insertCommentText(page, value);
       if (!wrote) {
         // 最后才用逐字输入，并在开头垫一个空格再删掉，防止吞首字母
-        await page.keyboard.type(` ${value}`, { delay: randInt(25, 50) });
+        await page.keyboard.type(` ${value}`, { delay: typeDelay(80, 160) });
         await page.keyboard.press('Home').catch(() => {});
         await page.keyboard.press('Delete').catch(() => {});
         wrote = true;
@@ -2017,6 +2297,10 @@ async function waitCommentPosted(page, beforeDraft, timeoutMs = 8000) {
   const end = Date.now() + timeoutMs;
   const before = String(beforeDraft || '').trim();
   while (Date.now() < end) {
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(page);
+    } catch { /* ignore */ }
     const draft = String(await readCommentDraft(page) || '').trim();
     if (!draft) return true;
     if (before && draft !== before && draft.length < Math.max(4, before.length * 0.5)) return true;
@@ -2253,18 +2537,55 @@ async function runKeyword(page, kw, ctx) {
     await humanPause(1500, 0.2);
   }
 
-  // 无搜索结果：终止本关键词，交给外层继续下一个
-  if (await detectSearchEmpty(page)) {
-    return abortKeywordNoResults(page, connection, ctx, keywordLog, '搜索空态');
+  // 人机验证优先：yoga 等热词也会出滑块，绝不能报「无视频」
+  if (await detectCaptchaChallenge(page)) {
+    const cap = await waitForCaptchaClear(page, ctx.accountId, 180000);
+    if (cap === 'timeout' || cap === 'need_manual') {
+      keywordLog.securityPaused = true;
+      return abortKeywordNoResults(
+        page,
+        connection,
+        ctx,
+        keywordLog,
+        'TikTok 人机验证（滑块拼图），请在浏览器里完成验证后从通知中心恢复任务'
+      );
+    }
   }
-  const hasGrid = await waitSearchVideoGrid(page, 18000);
+
+  // 慢网先等内容；空态需连续确认，避免加载中误判
+  if (await detectRawDocumentPage(page)) {
+    try {
+      page = await recoverFromRawSearchPage(connection, term, ctx.accountId);
+      ctx.page = page;
+    } catch (err) {
+      return abortKeywordNoResults(
+        page,
+        connection,
+        ctx,
+        keywordLog,
+        `搜索页 JSON/乱码: ${err.message || err}`
+      );
+    }
+  }
+
+  const hasGrid = await waitSearchVideoGrid(page, 90000, ctx.accountId);
   if (!hasGrid) {
+    const stillCaptcha = await detectCaptchaChallenge(page);
+    if (stillCaptcha) keywordLog.securityPaused = true;
+    const rawDoc = !stillCaptcha && await detectRawDocumentPage(page);
+    const emptyConfirmed = !stillCaptcha && !rawDoc && await detectSearchEmpty(page);
     return abortKeywordNoResults(
       page,
       connection,
       ctx,
       keywordLog,
-      `无视频卡片 url=${page.url()}`
+      stillCaptcha
+        ? '仍被 TikTok 人机验证挡住，搜索结果未加载（不是关键词无视频）'
+        : rawDoc
+          ? '搜索页为原始 JSON/i18n 乱码（非正常 UI）'
+          : emptyConfirmed
+            ? '搜索空态'
+            : `无视频卡片（已含慢网等待/刷新） url=${page.url()}`
     );
   }
 
@@ -2277,7 +2598,9 @@ async function runKeyword(page, kw, ctx) {
       connection,
       ctx,
       keywordLog,
-      `未能点开第1条视频 url=${page.url()}`
+      isEnvLoadDiagnosticPage(page)
+      ? `环境窗口未打开 TikTok（加载超时/诊断页），无法点开视频。请检查代理与网络。url=${String(page.url()).slice(0, 120)}`
+      : `未能点开第1条视频 url=${page.url()}`
     );
   }
   logWarm(ctx.accountId, `已打开第1条，后续用下箭头切换，共 ${need} 条`);
@@ -2290,7 +2613,7 @@ async function runKeyword(page, kw, ctx) {
     }
     const step = videos[i] || {
       index: i,
-      staySeconds: randInt(Number(ctx.cfg.staySecondsMin || 10), Number(ctx.cfg.staySecondsMax || 20)),
+      staySeconds: randInt(Number(ctx.cfg.staySecondsMin || 30), Number(ctx.cfg.staySecondsMax || 50)),
       like: false,
       comment: false,
       follow: false,
@@ -2360,6 +2683,8 @@ async function runWarmAccount(accountId, cfg = {}, options = {}) {
   const commentPages = Number(cfg.commentPages || 0);
   const keepOpen = !!options.keepOpen;
   const reuse = options.connection || null;
+  /** 人机验证挂起时 finally 不关窗 */
+  let holdForHumanVerify = false;
 
   const stats = {
     browsed: 0,
@@ -2381,16 +2706,25 @@ async function runWarmAccount(accountId, cfg = {}, options = {}) {
 
   try {
     if (!connection) {
-      logWarm(accountId, `打开比特 → 首页 · 计划 ${stats.planVideoTotal} 条 · ${keywords.length} 个关键词`);
+      logWarm(accountId, `打开浏览器 → 首页 · 计划 ${stats.planVideoTotal} 条 · ${keywords.length} 个关键词`);
       // 先只拉起比特，避免 connect 里 goto 与后续首页 goto 叠加重试冲突
-      connection = await connectAccount(accountId, null, 'warm');
+      const { parseSaveTrafficFlag } = require('./save-traffic');
+      connection = await connectAccount(accountId, null, 'warm', {
+        saveTraffic: parseSaveTrafficFlag(cfg.saveTraffic ?? cfg.save_traffic ?? options.saveTraffic, true),
+        browserBackend: cfg.browserBackend || cfg.browser_backend || options.browserBackend,
+      });
       owned = true;
       await humanPause(1200, 0.2);
     }
 
     let page = await gotoHome(connection, accountId);
 
-    const session = await inspectTikTokSession(connection.ws, page).catch(() => null);
+    const { ensureSessionLoggedIn } = require('./tiktok-actions');
+    connection.page = page;
+    const session = await ensureSessionLoggedIn(connection, accountId, {
+      reloadUrl: 'https://www.tiktok.com/',
+      label: '养号',
+    }).catch(() => null);
     if (session && session.loggedIn === false) {
       stats.screenshot = await capture(page, `warm-nologin-${accountId}`).catch(() => '');
       throw new Error('当前浏览器没有有效 TikTok 登录状态，请先登录后再养号');
@@ -2413,7 +2747,7 @@ async function runWarmAccount(accountId, cfg = {}, options = {}) {
       } catch (err) {
         const msg = String(err.message || err);
         // 登录/连接类致命错误仍中断整账号；搜索无结果类应已在 runKeyword 内消化
-        if (/没有有效 TikTok 登录|比特|浏览器已关闭|ERR_CONNECTION|页面已关闭/i.test(msg)) {
+        if (/没有有效 TikTok 登录|比特|自研浏览器|浏览器已关闭|ERR_CONNECTION|页面已关闭|人机验证.*超时/i.test(msg)) {
           throw err;
         }
         logWarm(accountId, `关键词「${keywords[ki]?.term || ''}」异常，跳过改下一词: ${msg}`);
@@ -2432,6 +2766,10 @@ async function runWarmAccount(accountId, cfg = {}, options = {}) {
         } catch { /* ignore */ }
       }
       keywordResults.push(kwResult);
+      if (kwResult?.securityPaused) {
+        holdForHumanVerify = true;
+        break;
+      }
       if (kwResult?.noResults) {
         logWarm(accountId, `已跳过「${kwResult.term}」，准备下一个关键词 (${ki + 1}/${keywords.length})`);
       }
@@ -2441,9 +2779,41 @@ async function runWarmAccount(accountId, cfg = {}, options = {}) {
     }
 
     page = await ensureLivePage(connection).catch(() => connection.page);
+    if (holdForHumanVerify || keywordResults.some((k) => k?.securityPaused)) {
+      holdForHumanVerify = true;
+      stats.screenshot = stats.screenshot
+        || (await capture(page, `warm-captcha-hold-${accountId}`).catch(() => ''));
+      return {
+        status: 'security_paused',
+        reason: 'TikTok 人机验证（滑块/拼图），请在浏览器完成验证后从右上角通知恢复任务',
+        manualRequired: true,
+        screenshot: stats.screenshot || '',
+        ...stats,
+        keywords: keywordResults,
+        executionPlan: plan,
+      };
+    }
     if (!stats.browsed) {
       stats.screenshot = await capture(page, `warm-empty-${accountId}`).catch(() => '');
-      throw new Error('未刷到任何视频，请检查搜索词、登录状态或网络');
+      const reasons = keywordResults
+        .map((k) => String(k?.skipReason || ''))
+        .filter(Boolean);
+      const captchaHit = reasons.some((r) => /人机验证|滑块|拼图|captcha/i.test(r));
+      if (captchaHit) {
+        holdForHumanVerify = true;
+        return {
+          status: 'security_paused',
+          reason: 'TikTok 人机验证（滑块/拼图），请在浏览器完成验证后从右上角通知恢复任务',
+          manualRequired: true,
+          screenshot: stats.screenshot || '',
+          ...stats,
+          keywords: keywordResults,
+          executionPlan: plan,
+        };
+      }
+      throw new Error(
+        `未刷到任何视频。关键词结果：${reasons.slice(0, 3).join('；') || '无可用结果'}。请检查登录状态、验证码或网络`
+      );
     }
 
     logWarm(accountId, `完成 browsed=${stats.browsed} liked=${stats.liked} commented=${stats.commented} skipped=${stats.skipped}`);
@@ -2458,8 +2828,8 @@ async function runWarmAccount(accountId, cfg = {}, options = {}) {
       executionPlan: plan,
     };
   } finally {
-    // 总任务 keepBrowser 时 closeConnection 只会断 CDP，不关比特窗口
-    if (owned && connection && !keepOpen) {
+    // 总任务 keepBrowser / 人机验证挂起：不关窗口
+    if (owned && connection && !keepOpen && !holdForHumanVerify) {
       await closeConnection(connection);
     }
   }

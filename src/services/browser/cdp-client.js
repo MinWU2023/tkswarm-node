@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const { nowChinaIso } = require('../../utils/china-time');
 
 function command(wsUrl, method, params = {}, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -93,11 +94,11 @@ async function pageLooksLoggedIn(page) {
   if (await pageLooksLoggedOut(page)) return false;
   try {
     if (await pageLooksLikeStudioAuthed(page)) return true;
+    // 禁止用信息流里的 a[href*="/@"]：For You 作者链接会把未登录页误判成已登录
     const markers = [
       page.locator('[data-e2e="nav-profile"]').first(),
       page.locator('[data-e2e="profile-icon"]').first(),
       page.locator('[data-e2e="top-profile-icon"]').first(),
-      page.locator('a[href*="/@"]').first(),
       page.locator('[data-e2e="user-avatar"], [data-e2e="avatar"]').first(),
     ];
     for (const loc of markers) {
@@ -109,7 +110,228 @@ async function pageLooksLoggedIn(page) {
   return false;
 }
 
-async function inspectTikTokSession(wsUrl, page = null) {
+/**
+ * 读 TikTok 页面「右上角」：显示的是 Log in 按钮还是账号头像。
+ * 只看顶部右侧区域（几何过滤），避免信息流里的 Log in 文案 / 作者链接误判。
+ */
+function urlHost(url) {
+  try { return new URL(String(url || '')).hostname.toLowerCase(); } catch { return ''; }
+}
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ __timeout: true, reason: `timeout:${label}` }), ms);
+      timer.unref?.();
+    }),
+  ]);
+}
+
+/** 服务端真相接口：TikTok 自己的「当前登录账号」 */
+const ACCOUNT_INFO_URL = 'https://www.tiktok.com/passport/web/account/info/?aid=1459&app_name=tiktok_web&device_platform=web';
+
+/**
+ * 问 TikTok 服务器「现在这个 session 还有效吗」。
+ * 有效 → {"message":"success","data":{"user_id":...}}
+ * 残留/失效 Cookie → {"message":"error","data":{"error_code":13,"name":"session_expired"}}
+ * 注意：这一步只有页面本身在 tiktok.com 上才能做（同源 + 自动带 Cookie）。
+ */
+async function probeAccountInfo(page) {
+  if (!page || page.isClosed?.()) return { ok: false, reason: 'no-page' };
+  const pageUrl = String(page.url() || '');
+  if (!/(^|\.)tiktok\.com$/i.test(urlHost(pageUrl))) {
+    return { ok: false, reason: 'not-tiktok-page', pageUrl };
+  }
+  try {
+    const res = await withTimeout(page.evaluate(async (url) => {
+      try {
+        const resp = await fetch(url, {
+          credentials: 'include',
+          headers: { accept: 'application/json' },
+        });
+        const text = await resp.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch { /* 非 JSON */ }
+        return { status: resp.status, json, text: json ? '' : text.slice(0, 200) };
+      } catch (error) {
+        return { error: String(error?.message || error) };
+      }
+    }, ACCOUNT_INFO_URL), 9000, 'account-info');
+
+    if (res?.__timeout) return { ok: false, reason: res.reason };
+    if (res?.error) return { ok: false, reason: 'fetch-error', error: res.error };
+    if (!res || typeof res !== 'object') return { ok: false, reason: 'no-result' };
+
+    const json = res.json;
+    if (!json || typeof json !== 'object') {
+      return { ok: false, reason: 'not-json', status: res.status, text: res.text || '' };
+    }
+    const message = String(json.message || '');
+    const data = json.data && typeof json.data === 'object' ? json.data : {};
+    const userId = String(data.user_id || data.uid || data.userId || '');
+    const username = String(data.username || data.unique_id || '');
+
+    if (message === 'success') {
+      // 正常登录态会带 user_id / uid / username；万一接口结构变了，别急着判「已登录」
+      if (userId || username) {
+        return { ok: true, loggedIn: true, userId, username, message, httpStatus: res.status };
+      }
+      return { ok: false, reason: 'success-without-user', message, httpStatus: res.status };
+    }
+    const reason = String(data.name || data.description || message || 'unknown');
+    return {
+      ok: true,
+      loggedIn: false,
+      reason,
+      errorCode: Number(data.error_code || 0) || null,
+      sessionExpired: /session_expired/i.test(reason) || Number(data.error_code || 0) === 13,
+      message,
+      httpStatus: res.status,
+    };
+  } catch (error) {
+    return { ok: false, reason: 'evaluate-failed', error: String(error?.message || error) };
+  }
+}
+
+/**
+ * 门禁页导航探针：/messages 是登录后页面，未登录会被踢到 /login?redirect_url=...
+ * 只有在「接口 + 右上角都判不出来」时才会用到（代价是一次页面跳转）。
+ */
+async function probeLoginGate(page, options = {}) {
+  if (!page || page.isClosed?.()) return { ok: false, reason: 'no-page' };
+  if (!/(^|\.)tiktok\.com$/i.test(urlHost(String(page.url() || '')))) {
+    return { ok: false, reason: 'not-tiktok-page' };
+  }
+  const timeout = options.timeout || 30000;
+  try {
+    const res = await withTimeout((async () => {
+      await page.goto('https://www.tiktok.com/messages', { waitUntil: 'domcontentloaded', timeout });
+      await page.waitForTimeout(1200);
+      const finalUrl = String(page.url() || '');
+      return { ok: true, loggedIn: !/\/login(\?|$|\/)/i.test(finalUrl), finalUrl };
+    })(), timeout + 6000, 'login-gate');
+    if (res?.__timeout) return { ok: false, reason: res.reason };
+    return res && typeof res === 'object' ? res : { ok: false, reason: 'no-result' };
+  } catch (error) {
+    return { ok: false, reason: 'goto-failed', error: String(error?.message || error) };
+  }
+}
+
+
+async function topRightAuthState(page) {
+  const empty = { ok: false, loginButton: false, avatar: false, loginHits: 0, avatarHits: 0, url: '' };
+  if (!page || page.isClosed?.()) return empty;
+  const url = String(page.url?.() || '');
+  try {
+    const data = await page.evaluate(() => {
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      // 顶部条：右侧 45% 且纵向在前 1/3（最多 260px）内
+      const minLeft = vw * 0.55;
+      const maxBottom = Math.max(140, Math.min(260, vh * 0.34));
+      const visibleInTopRight = (el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 4 || rect.height < 4) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        if (rect.right < minLeft || rect.bottom < 0 || rect.top > maxBottom) return false;
+        return true;
+      };
+      const textOf = (el) => String(el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
+      const loginSamples = [];
+      let loginHits = 0;
+      const loginSel = '[data-e2e="top-login-button"],[data-e2e="login-button"],[data-e2e*="login-button"],a[href*="/login"]';
+      for (const el of document.querySelectorAll(loginSel)) {
+        if (!visibleInTopRight(el)) continue;
+        loginHits += 1;
+        if (loginSamples.length < 3) loginSamples.push((textOf(el) || el.getAttribute('data-e2e') || el.tagName).slice(0, 40));
+      }
+      if (!loginHits) {
+        for (const el of document.querySelectorAll('button,a,[role="button"]')) {
+          if (!visibleInTopRight(el)) continue;
+          const text = textOf(el);
+          if (!text || text.length > 30) continue;
+          if (/^(log ?in|sign ?in|登录)$/i.test(text)) {
+            loginHits += 1;
+            if (loginSamples.length < 3) loginSamples.push(text);
+          }
+        }
+      }
+      const avatarSel = '[data-e2e="top-profile-icon"],[data-e2e="nav-profile"],[data-e2e="profile-icon"],[data-e2e*="avatar"]';
+      const avatarSamples = [];
+      let avatarHits = 0;
+      for (const el of document.querySelectorAll(avatarSel)) {
+        if (!visibleInTopRight(el)) continue;
+        avatarHits += 1;
+        if (avatarSamples.length < 3) avatarSamples.push((textOf(el) || el.getAttribute('data-e2e') || el.tagName).slice(0, 40));
+      }
+      if (!avatarHits) {
+        // 兜底：右上角的圆形头像图 / 指向个人主页的链接
+        for (const el of document.querySelectorAll('a[href^="/@"],img')) {
+          if (!visibleInTopRight(el)) continue;
+          const rect = el.getBoundingClientRect();
+          const round = Math.abs(rect.width - rect.height) <= 4 && rect.width >= 20 && rect.width <= 96;
+          if (!round && !String(el.getAttribute('href') || '').startsWith('/@')) continue;
+          avatarHits += 1;
+          if (avatarSamples.length < 3) avatarSamples.push((el.getAttribute('href') || el.tagName).slice(0, 40));
+        }
+      }
+      return { vw, vh, loginHits, loginSamples, avatarHits, avatarSamples };
+    });
+    return {
+      ok: true,
+      url,
+      host: urlHost(url),
+      onTikTok: /(^|\.)tiktok\.com$/i.test(urlHost(url)),
+      loginHits: Number(data?.loginHits || 0),
+      avatarHits: Number(data?.avatarHits || 0),
+      loginButton: Number(data?.loginHits || 0) > 0,
+      avatar: Number(data?.avatarHits || 0) > 0,
+      loginSamples: data?.loginSamples || [],
+      avatarSamples: data?.avatarSamples || [],
+    };
+  } catch (error) {
+    return { ...empty, url, host: urlHost(url), error: error?.message || String(error) };
+  }
+}
+
+/**
+ * 登录判定（纯函数，便于单测）：
+ * 1) TikTok 账号接口 = 服务端真相（唯一能证明「Cookie 还有效」的东西）
+ * 2) 页面右上角头像 / Log in 按钮 = 页面真相，可覆盖残留 Cookie
+ * 3) 登录墙 / Studio 壳 = 辅助
+ * 4) 门禁页导航探针 = 接口和页面都判不出来时的仲裁
+ * 5) 全都判不出来才退回 Cookie（旧行为）
+ */
+function decideLoginState(input = {}) {
+  const {
+    hasPage, hasSessionCookie, uiLoggedOut, uiLoggedIn, studioAuthed, topRight, apiProbe, gateProbe,
+  } = input;
+  const loginButton = Boolean(topRight?.loginButton);
+  const avatar = Boolean(topRight?.avatar);
+  // 无页面：只能看 Cookie（旧行为）；有页面时必须交叉验证，避免「检测已登录、任务却被踢登录页」
+  if (!hasPage) return hasSessionCookie;
+  // 1) 接口有明确结论时以接口为准（唯一能识破残留 sessionid）
+  if (apiProbe?.ok) return Boolean(apiProbe.loggedIn);
+  // 2) 明确未登录信号
+  if (loginButton && !avatar) return false;
+  if (uiLoggedOut) return false;
+  // 3) 右上角头像 + 会话 Cookie
+  if (avatar && !loginButton && hasSessionCookie) return true;
+  // 4) Studio 壳必须带 Cookie（无 Cookie 的 upload 页多半是跳转中间态）
+  if (studioAuthed && hasSessionCookie) return true;
+  // 5) 门禁页探针
+  if (gateProbe?.ok) return Boolean(gateProbe.loggedIn);
+  // 6) 页面已登录特征 + Cookie
+  if (uiLoggedIn && hasSessionCookie) return true;
+  // 有页面时不再「仅有 Cookie / 仅有头像」乐观判定：
+  // api 超时 + 残留 sessionid 曾导致检测已登录，一进 Studio/改资料就被踢到 /login（cookie=false）
+  return false;
+}
+
+async function inspectTikTokSession(wsUrl, page = null, options = {}) {
   const result = await command(wsUrl, 'Storage.getCookies');
   const now = Date.now() / 1000;
   const cookies = (result.cookies || []).filter((cookie) => {
@@ -127,42 +349,63 @@ async function inspectTikTokSession(wsUrl, page = null) {
   let uiLoggedOut = false;
   let uiLoggedIn = false;
   let studioAuthed = false;
+  let topRight = null;
+  let apiProbe = null;
+  let gateProbe = null;
   if (page) {
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(page);
+    } catch { /* ignore */ }
     uiLoggedOut = await pageLooksLoggedOut(page);
+    topRight = await topRightAuthState(page).catch(() => null);
+    // 服务端真相：问 TikTok 这个 session 还有效吗（能识破「Cookie 还在但已退出登录」）
+    apiProbe = await probeAccountInfo(page).catch(() => null);
     studioAuthed = !uiLoggedOut && await pageLooksLikeStudioAuthed(page);
     uiLoggedIn = !uiLoggedOut && (studioAuthed || await pageLooksLoggedIn(page));
+
+    // 只有接口没结论、右上角也没结论、但本地有 Cookie 时，才多花一次导航去门禁页仲裁
+    const uiConclusive = Boolean(topRight?.loginButton || topRight?.avatar) || uiLoggedOut;
+    if (!apiProbe?.ok && !uiConclusive && hasSessionCookie && options.gateProbe !== false) {
+      gateProbe = await probeLoginGate(page, { timeout: options.gateProbeTimeout || 30000 }).catch(() => null);
+    }
   }
 
-  // 有登录墙 → 未登录
-  // 有 page 时：页面像已登录（含 Studio 上传页）即可；Cookie 作辅助
-  // Studio 上传页往往没有主站 profile 图标，不能要求 uiLoggedIn 依赖 nav-profile
-  let loggedIn;
-  if (!page) {
-    loggedIn = hasSessionCookie;
-  } else if (uiLoggedOut) {
-    loggedIn = false;
-  } else if (studioAuthed) {
-    // 已进入 Studio 上传/后台且无登录墙 → 视为已登录（即使用户刚登完 Cookie 枚举偶发不全）
-    loggedIn = true;
-  } else if (uiLoggedIn && hasSessionCookie) {
-    loggedIn = true;
-  } else if (hasSessionCookie && !uiLoggedOut) {
-    // Cookie 有效且页面无登录墙：宽松通过（避免误杀）
-    loggedIn = true;
-  } else {
-    loggedIn = false;
-  }
-
-  return {
-    loggedIn,
+  const loggedIn = decideLoginState({
+    hasPage: Boolean(page),
     hasSessionCookie,
     uiLoggedOut,
     uiLoggedIn,
     studioAuthed,
+    topRight,
+    apiProbe,
+    gateProbe,
+  });
+
+  // 本地有 Cookie，但服务端说 session 已失效 → 这些 Cookie 是垃圾，判定后可以清掉
+  const invalidCookie = Boolean(hasSessionCookie && apiProbe?.ok && !apiProbe.loggedIn);
+  // 接口与页面互相矛盾时留个标记，方便排查（仍以接口为准）
+  const apiConflict = Boolean(
+    apiProbe?.ok
+    && ((apiProbe.loggedIn && (topRight?.loginButton || uiLoggedOut))
+      || (!apiProbe.loggedIn && topRight?.avatar && !topRight?.loginButton))
+  );
+
+  return {
+    loggedIn,
+    hasSessionCookie,
+    invalidCookie,
+    apiConflict,
+    uiLoggedOut,
+    uiLoggedIn,
+    studioAuthed,
+    topRight,
+    apiProbe,
+    gateProbe,
     cookieCount: cookies.length,
     evidence,
     pageUrl: page ? String(page.url() || '') : '',
-    checkedAt: new Date().toISOString(),
+    checkedAt: nowChinaIso(),
   };
 }
 
@@ -172,4 +415,8 @@ module.exports = {
   pageLooksLoggedOut,
   pageLooksLoggedIn,
   pageLooksLikeStudioAuthed,
+  topRightAuthState,
+  decideLoginState,
+  probeAccountInfo,
+  probeLoginGate,
 };

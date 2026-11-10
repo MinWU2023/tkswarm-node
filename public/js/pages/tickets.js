@@ -1,13 +1,16 @@
 (function () {
   if (!window.app) throw new Error('app-core must load before pages/tickets.js');
   const __methods = {
+    canViewTickets(){return this.canPermission('system.tickets')||this.canPermission('system.view')||this.canPermission('rbac.manage')},
+    canEditTickets(){return this.canPermission('system.tickets')||this.canPermission('rbac.manage')},
     async renderTickets(){
       const host=document.querySelector('#content');
       if(!host)return;
-      if(!this.canPermission('system.tickets')&&!this.canPermission('system.view')&&!this.canPermission('rbac.manage')){
+      if(!this.canViewTickets()){
         host.innerHTML=`<div class="panel"><div class="empty">当前角色无权处理工单</div></div>`;
         return;
       }
+      const canEdit=this.canEditTickets();
       try{
         const q=this.ticketStatus?`?status=${encodeURIComponent(this.ticketStatus)}`:'';
         const rows=await this.api('/tickets'+q);
@@ -56,8 +59,8 @@
                       <td class="muted">${this.esc([t.clientPlatform,t.clientVersion].filter(Boolean).join(' ')||'-')}</td>
                       <td class="muted">${this.esc(t.createdAt||'-')}</td>
                       <td style="white-space:nowrap">
-                        <button class="tiny" onclick="app.editTicketModalById(${t.id})">处理</button>
-                        <button class="tiny danger" onclick="app.deleteTicket(${t.id},'${this.esc(t.ticketNo||t.id)}')">删除</button>
+                        ${canEdit?`<button class="tiny" onclick="app.editTicketModalById(${t.id})">处理</button>
+                        <button class="tiny danger" onclick="app.deleteTicket(${t.id},'${this.esc(t.ticketNo||t.id)}')">删除</button>`:'<span class="muted">只读</span>'}
                       </td>
                     </tr>`).join(''):`<tr><td colspan="8"><div class="empty">暂无工单</div></td></tr>`}
                 </tbody>
@@ -82,6 +85,7 @@
       this.refresh();
     },
     editTicketModal(t={}){
+      if(!this.canEditTickets()){this.toast('当前角色无权处理工单',true);return}
       this.modal('处理工单 '+this.esc(t.ticketNo||('#'+t.id)),`
         <div class="form-grid">
           <input type="hidden" name="id" value="${t.id||''}">
@@ -102,6 +106,7 @@
       });
     },
     async editTicketModalById(id){
+      if(!this.canEditTickets()){this.toast('当前角色无权处理工单',true);return}
       try{
         const t=await this.api(`/tickets/${id}`);
         if(!t){this.toast('工单不存在',true);return;}
@@ -109,6 +114,7 @@
       }catch(e){this.toast(e.message,true);}
     },
     async deleteTicket(id,no){
+      if(!this.canEditTickets()){this.toast('当前角色无权删除工单',true);return}
       if(!(await this.ask(`确定删除工单 ${no} 吗？`,'danger')))return;
       try{
         await this.api(`/tickets/${id}`,{method:'DELETE'});

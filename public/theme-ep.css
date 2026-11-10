@@ -1043,6 +1043,45 @@ table td[colspan] > .empty {
   padding: 12px 14px !important;
   border-bottom: 1px solid var(--ep-border-color-lighter) !important;
 }
+.account-sidebar .group-list { padding: 6px 8px !important; }
+.account-sidebar .group-item-flat {
+  margin-bottom: 2px !important;
+  border-radius: 6px !important;
+}
+.account-sidebar .group-item-flat:hover { background: var(--ep-fill-color-light) !important; }
+.account-sidebar .group-item-flat.active {
+  background: var(--ep-color-primary-light-9) !important;
+}
+.account-sidebar .group-item-main {
+  padding: 7px 8px !important;
+  font-size: 13px !important;
+}
+.account-sidebar .group-kebab {
+  border-radius: 6px !important;
+}
+.account-sidebar .sidebar-header .group-add-btn,
+button.group-add-btn {
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: var(--ep-text-color-secondary) !important;
+  font-size: 20px !important;
+  font-weight: 400 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+}
+.account-sidebar .sidebar-header .group-add-btn:hover,
+button.group-add-btn:hover {
+  background: var(--ep-fill-color-light) !important;
+  color: var(--ep-text-color-regular) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}
 .account-sidebar .group-item-modern {
   border-radius: var(--ep-radius) !important;
   border: 1px solid transparent !important;
@@ -1086,8 +1125,37 @@ table td[colspan] > .empty {
   box-shadow: var(--ep-shadow);
 }
 .bubble.out {
-  background: var(--ep-color-primary-light-9) !important;
-  border-color: var(--ep-color-primary-light-7) !important;
+  background: #409eff !important;
+  color: #000000 !important;
+  border-color: #409eff !important;
+}
+
+.bubble:not(.out) {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border-color: #e4e7ed !important;
+}
+
+.bubble .time {
+  color: rgba(0, 0, 0, 0.45) !important;
+}
+
+.bubble-translation {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #e4e7ed !important;
+}
+
+.bubble-wrap.out .bubble-translation {
+  background: #409eff !important;
+  color: #000000 !important;
+  border-color: #409eff !important;
+}
+
+.bubble-translation.fail {
+  background: #fef0f0 !important;
+  color: #c45656 !important;
+  border-color: #fbc4c4 !important;
 }
 .agent-shell { gap: 16px !important; }
 .agent-item {
@@ -1321,7 +1389,17 @@ table td[colspan] > .empty {
   color: #303133 !important;
   line-height: 1.3 !important;
 }
-.modal-close, .modal-head .icon-btn {
+.dialog-head-actions, .modal-head-actions {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex: 0 0 auto !important;
+}
+.modal-head h2 {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+.modal-close, .modal-head .icon-btn, .dialog-head-actions .icon-btn {
   width: 32px !important;
   height: 32px !important;
   padding: 0 !important;
@@ -1335,9 +1413,55 @@ table td[colspan] > .empty {
   box-shadow: none !important;
   cursor: pointer;
 }
-.modal-close:hover, .modal-head .icon-btn:hover {
+.modal-close:hover, .modal-head .icon-btn:hover, .dialog-head-actions .icon-btn:hover {
   background: #f5f7fa !important;
   color: #409eff !important;
+}
+.dialog-head-actions .icon-btn.hidden,
+.modal-head-actions .icon-btn.hidden,
+.preview-head-actions .icon-btn.hidden {
+  display: none !important;
+}
+#modal.dialog-fullscreen, .confirm-mask.dialog-fullscreen, #preview-mask.dialog-fullscreen {
+  padding: 0 !important;
+}
+.preview-head-actions {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  z-index: 2 !important;
+}
+#preview-mask.dialog-fullscreen img {
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+}
+#modal.dialog-fullscreen .modal-card, .confirm-mask.dialog-fullscreen .confirm-card {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+}
+#modal.dialog-fullscreen .modal-body, #modal.dialog-fullscreen #modal-body {
+  max-height: none !important;
+  flex: 1 1 auto !important;
+}
+.confirm-card { position: relative !important; }
+.confirm-head-actions {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  z-index: 2 !important;
+}
+.confirm-mask.dialog-fullscreen .confirm-body {
+  flex: 1 1 auto !important;
+  overflow: auto !important;
+}
+.confirm-mask.dialog-fullscreen .confirm-card {
+  padding-top: 44px !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 .modal-body, #modal-body {
   flex: 1 1 auto;
@@ -1573,6 +1697,13 @@ table td[colspan] > .empty {
 }
 .page-loading.hidden { display: none !important; }
 .page-loading.is-visible { opacity: 1; }
+.page-loading.is-plain .loader-card {
+  min-width: 0;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
 .loader-card {
   display: flex !important;
   flex-direction: column !important;
@@ -1691,6 +1822,13 @@ table td[colspan] > .empty {
 }
 .rbac-perm-group-head {
   margin-bottom: 12px !important;
+}
+.rbac-perm-module-head {
+  border-bottom-color: var(--ep-border-color-light) !important;
+}
+.rbac-perm-subgroup {
+  border-color: var(--ep-border-color-light) !important;
+  background: var(--ep-bg-page) !important;
 }
 
 /* ---------- 登录 ---------- */
@@ -1821,7 +1959,7 @@ table td[colspan] > .empty {
   white-space: nowrap !important;
 }
 
-/* Account pick tags: last-wins override after all button theme rules */
+/* Account pick tags: 禁止矮高度 + overflow 叠卡；细节由 theme-polish 覆盖 */
 .account-pick-grid .account-pick-tag,
 .account-pick-grid button.account-pick-tag,
 .account-pick-grid button.account-pick-tag.ghost,
@@ -1830,50 +1968,50 @@ table td[colspan] > .empty {
 .account-pick-grid button.account-pick-tag.tiny {
   display: flex !important;
   flex-direction: column !important;
-  align-items: flex-start !important;
-  justify-content: center !important;
-  gap: 2px !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
   box-sizing: border-box !important;
   width: 100% !important;
-  height: auto !important;
-  min-height: 52px !important;
+  height: max-content !important;
+  min-height: max-content !important;
   max-height: none !important;
-  padding: 8px 10px !important;
+  padding: 0 !important;
   margin: 0 !important;
   border: 1px solid #dbe3f0 !important;
-  border-radius: 8px !important;
+  border-radius: 14px !important;
   background: #fff !important;
-  color: #334155 !important;
+  color: #0f172a !important;
   box-shadow: none !important;
-  line-height: 1.3 !important;
+  line-height: 1.45 !important;
   font-size: 13px !important;
   font-weight: 500 !important;
   letter-spacing: 0 !important;
   transform: none !important;
   white-space: normal !important;
-  overflow: visible !important;
+  overflow: hidden !important;
   filter: none !important;
 }
 .account-pick-grid .account-pick-tag:hover,
 .account-pick-grid button.account-pick-tag:hover,
 .account-pick-grid button.account-pick-tag.ghost:hover {
   border-color: #93c5fd !important;
-  background: #eff6ff !important;
-  color: #1d4ed8 !important;
+  background: #f8fbff !important;
+  color: #0f172a !important;
 }
 .account-pick-grid .account-pick-tag.is-on,
 .account-pick-grid button.account-pick-tag.is-on,
 .account-pick-grid button.account-pick-tag.ghost.is-on,
 .account-pick-grid .account-pick-tag.is-on:hover {
-  border-color: #2563eb !important;
-  background: #2563eb !important;
-  color: #fff !important;
+  border-color: #60a5fa !important;
+  background: #eff6ff !important;
+  color: #0f172a !important;
 }
 .account-pick-grid {
-  grid-auto-rows: minmax(52px, auto) !important;
+  grid-auto-rows: max-content !important;
   align-items: start !important;
   align-content: start !important;
-  gap: 10px !important;
+  gap: 14px !important;
 }
 .account-pick-toolbar select.input.account-pick-group,
 .account-pick-toolbar select.account-pick-group {
@@ -2149,7 +2287,7 @@ html, body {
   overflow: visible !important;
 }
 
-/* 账号/代理/UID 等左右栏：右侧列表撑开文档；左侧 position:sticky 随页滚动悬浮 */
+/* 账号/代理/UID 等左右栏：左右同高拉伸；右侧列表撑开文档高度 */
 .page-content:not(.chat-mode) > .workspace.accounts-workspace,
 .page-content:not(.chat-mode) > .workspace.proxy-workspace,
 .page-content:not(.chat-mode) > .workspace.uid-workspace,
@@ -2161,9 +2299,8 @@ html, body {
   height: auto !important;
   max-height: none !important;
   min-height: 0 !important;
-  /* sticky 祖先不可 overflow:hidden */
   overflow: visible !important;
-  align-items: start !important;
+  align-items: stretch !important;
   grid-template-rows: auto !important;
 }
 .page-content:not(.chat-mode) .account-main-panel,
@@ -2185,36 +2322,46 @@ html, body {
 }
 
 /*
- * 成熟做法：文档滚动 + 左侧 sticky
- * top = 顶栏高度(68) + 内容区内边距，贴在顶栏下方悬浮
- * max-height 限制在视口内；分组过长时仅侧栏内部滚动
+ * 左侧栏与右侧列表板块同高（grid stretch）
+ * 分组过长时仅 group-list 内部滚动
  */
 .page-content:not(.chat-mode) .workspace > .side-groups,
 .page-content:not(.chat-mode) .workspace > aside.side-groups,
 .page-content:not(.chat-mode) .workspace > .account-sidebar,
 .page-content:not(.chat-mode) .workspace > .uid-sidebar {
-  position: sticky !important;
-  top: 84px !important; /* 68px navbar + 16px gap */
-  align-self: start !important;
+  position: relative !important;
+  align-self: stretch !important;
   z-index: 40 !important;
+  /* height:auto + stretch：随右侧列表板块撑开同一行高 */
   height: auto !important;
   min-height: 0 !important;
-  max-height: calc(100vh - 96px) !important;
+  max-height: none !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important; /* 圆角裁切；内部 group-list 负责滚动 */
   box-sizing: border-box !important;
 }
+.page-content:not(.chat-mode) .workspace > .account-main-wrapper,
+.page-content:not(.chat-mode) .workspace > .proxy-main-wrapper,
+.page-content:not(.chat-mode) .workspace > .uid-main-panel {
+  align-self: stretch !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  box-sizing: border-box !important;
+}
 .page-content:not(.chat-mode) .workspace > .side-groups > .sidebar-header,
 .page-content:not(.chat-mode) .workspace > .side-groups > h3,
 .page-content:not(.chat-mode) .workspace > .side-groups > .uid-add-group,
+.page-content:not(.chat-mode) .workspace > .side-groups > .account-sidebar-owner,
+.page-content:not(.chat-mode) .workspace > .account-sidebar > .account-sidebar-owner,
 .page-content:not(.chat-mode) .workspace > .side-groups > button {
   flex-shrink: 0 !important;
 }
 .page-content:not(.chat-mode) .workspace > .side-groups .group-list,
 .page-content:not(.chat-mode) .workspace > .account-sidebar .group-list,
 .page-content:not(.chat-mode) .workspace > .uid-sidebar .group-list {
-  flex: 1 1 auto !important;
+  flex: 1 1 0% !important;
   min-height: 0 !important;
   max-height: none !important;
   overflow-x: hidden !important;
@@ -2254,11 +2401,13 @@ html:has(.page-content.chat-mode) {
 .settings-card .modal-foot,
 .settings-card form > .modal-foot,
 .inpage-form-footer,
+.af-form-footer,
 .mp-upload-foot,
 .mp-dup-preview-foot {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  flex-direction: row !important;
   flex-wrap: nowrap !important;
   gap: 12px !important;
 }
@@ -2317,4 +2466,31 @@ html:has(.page-content.chat-mode) {
   flex-direction: column !important;
   justify-content: stretch !important;
   align-items: stretch !important;
+}
+
+/* ��ȡ���ۣ���Ƶ����̶� 4:3 ���� */
+.pc-mat-thumb{
+  position:relative !important;
+  display:block !important;
+  width:100% !important;
+  height:auto !important;
+  aspect-ratio:4/3 !important;
+  border-radius:10px !important;
+  overflow:hidden !important;
+  background-color:#0f172a !important;
+  background-size:cover !important;
+  background-position:center !important;
+  background-repeat:no-repeat !important;
+  flex:none !important;
+}
+.pc-mat-thumb::before{
+  content:"" !important;
+  display:block !important;
+  width:100% !important;
+  padding-top:75% !important;
+}
+.pc-mat-item{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:stretch !important;
 }

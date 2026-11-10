@@ -1,0 +1,9 @@
+return fail(res, '没有符合条件的未绑定账号', 422);
+return fail(res, '缺少账号 ID', 422);
+return fail(res, '账号不存在', 404);
+return fail(res, error.message || '创建失败', error.status || 422);
+return ok(res, result, \`批量创建完成（\${label}）：成功 \${result.created}，失败 \${result.failed}\`);
+return ok(res, result, `批量创建完成（${label}）：成功 ${result.created}，失败 ${result.failed}`);
+return ok(res, result, `批量创建完成：成功 ${result.created}，失败 ${result.failed}`);
+return ok(res, result, asPrimary ? '已新建环境并设为主绑定' : '浏览器环境已创建并绑定', 201);
+return ok(res, { ...body, browserBackend: backend }, '环境已绑定');

@@ -2,15 +2,20 @@
  * Hash router + lazy page loader for tkswarm-node
  */
 (function () {
-  const CACHE_V = '10.42';
+  const CACHE_V = '12.26';
   const VIEW_TO_PAGE = {
     accounts: 'accounts',
     proxies: 'proxies',
+    registerEnvs: 'registerEnvs',
     groups: 'groups',
     warm: 'warm',
     aiLeads: 'aiLeads',
+    autoFollow: 'autoFollow',
+    videoBoost: 'videoBoost',
+    videoDelivery: 'videoDelivery',
     msgTemplates: 'msgTemplates',
     accountWork: 'accountWork',
+    accountWizard: 'accountWizard',
     agent: 'agent',
     publish: 'publish',
     chat: 'chat',
@@ -23,6 +28,10 @@
     aiPlatform: 'aiPlatform',
     aiPromptTemplates: 'aiPromptTemplates',
     aiCallLogs: 'aiCallLogs',
+    smtpConfig: 'smtpConfig',
+    dmWeightConfig: 'dmWeightConfig',
+    nocaptchaKeys: 'nocaptchaKeys',
+    videoDeliveryTypes: 'videoDeliveryTypes',
     templates: 'templates',
     envInstallers: 'versions',
     uids: 'chat',
@@ -61,18 +70,53 @@
       s.src = src;
       s.async = false;
       s.dataset.pageSrc = src;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('加载页面脚本失败: ' + src));
+      let done = false;
+      const finish = (err) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (err) reject(err);
+        else resolve();
+      };
+      const timer = setTimeout(() => finish(new Error('加载页面脚本超时: ' + src)), 12000);
+      s.onload = () => finish();
+      s.onerror = () => finish(new Error('加载页面脚本失败: ' + src));
       document.body.appendChild(s);
     });
   }
 
   async function ensureDeps(page) {
     const deps = [];
-    if (page === 'publish') deps.push({ kind: 'root', src: '/material-picker.js?v=' + CACHE_V });
+    if (page === 'publish' || page === 'videoDelivery') {
+      deps.push({ kind: 'root', src: '/material-picker.js?v=' + CACHE_V });
+    }
+    if (page === 'publish') { deps.push({ kind: 'page', name: 'pullVideo' }); deps.push({ kind: 'page', name: 'publishImages' }); }
     if (page === 'chat' || page === 'publish') deps.push({ kind: 'page', name: 'templates' });
-    if (['accounts', 'proxies', 'chat', 'publish', 'warm', 'aiLeads', 'msgTemplates', 'uids'].includes(page)) {
+    if (['accounts', 'proxies', 'chat', 'publish', 'warm', 'aiLeads', 'msgTemplates', 'uids', 'accountWizard'].includes(page)) {
       deps.push({ kind: 'page', name: 'groups' });
+    }
+    if (['accounts', 'proxies'].includes(page)) {
+      deps.push({ kind: 'page', name: 'countryData' });
+    }
+    if (['accounts', 'publish', 'warm', 'aiLeads'].includes(page)) {
+      deps.push({ kind: 'page', name: 'industryData' });
+    }
+    // 养号列表复用矩阵任务的三点菜单 / 批量启停等方法（toggleTaskOps、taskAction…）
+    if (page === 'warm') {
+      deps.push({ kind: 'page', name: 'publish' });
+    }
+    if (page === 'accountWizard') {
+      deps.push({ kind: 'page', name: 'accounts' });
+      deps.push({ kind: 'page', name: 'accountWork' });
+    }
+    if (page === 'aiLeads') {
+      deps.push({ kind: 'page', name: 'aiLeadClues' });
+      deps.push({ kind: 'page', name: 'aiLeadClueData' });
+    }
+    if (page === 'rbac') {
+      deps.push({ kind: 'page', name: 'countryData' });
+      deps.push({ kind: 'page', name: 'industryData' });
+      deps.push({ kind: 'page', name: 'companyData' });
     }
     for (const d of deps) {
       if (d.kind === 'root') {
@@ -97,30 +141,77 @@
     return page;
   }
 
-  /** 菜单一点就切导航+页壳，不等人脚本/接口 */
+  /** 菜单一点就切导�?页壳，不等人脚本/接口 */
   function paintNavigateChrome(view, subview) {
     const app = window.app;
-    if (!app || !app.canView(view)) return;
+    if (!app || !app.canNavigateMenu(view, subview || '')) return;
     app.syncNavActive?.(view);
-    const metaKey = (view === 'chat' && (subview === 'uids' || subview === 'uid' || app.chatPane === 'uids')) ? 'uids' : view;
+    const metaKey = (view === 'chat' && (subview === 'uids' || subview === 'uid' || app.chatPane === 'uids')) ? 'uids'
+      : (view === 'aiLeads' && (subview === 'clues' || app.aiLeadsPane === 'clues')) ? 'aiLeadClues'
+      : view;
     const [pageTitle] = app.viewPageMeta?.(metaKey) || [];
     if (pageTitle) document.title = pageTitle + ' - TKSwarm';
-    // 同页软切（矩阵 Tab）不抢壳
-    if (view === 'publish' && app.view === 'publish') return;
-    // 抬代次，作废仍在飞的旧页请求，避免盖住已展示的目标页壳
+    // 同页矩阵 Tab 软切：不抢壳；但若仍停在 page-shell-loading 或矩阵壳未就绪，必须重画壳
+    if (view === 'publish' && app.view === 'publish') {
+      const content = document.querySelector('#content');
+      const stuckShell = !!content?.querySelector?.('.page-shell-loading');
+      const matrixReady = !!(content?.querySelector?.('#matrix-body') && content?.querySelector?.('.matrix-tabs'));
+      if (!stuckShell && matrixReady) return;
+    }
+    // bump nav generation
     app._navGen = (app._navGen || 0) + 1;
     app.showPageShell?.(view);
+  }
+
+  function demotePublishShell(app, subview) {
+    if (!app || typeof app.ensureMatrixShell !== 'function') return;
+    const sv = String(subview || '');
+    let tab = app.matrixTab || 'tasks';
+    if (sv === 'materials' || sv === 'material') tab = 'materials';
+    else if (sv === 'material_import' || sv === 'folder_materials' || sv === 'import') tab = 'materialImport';
+    else if (sv === 'pull_comments' || sv === 'pull_video_detail') tab = 'pullComments';
+    else if (sv === 'pull_video_list' || sv === 'pull_image_list') tab = 'pullVideoList';
+    else if (sv === 'pull_image_details') tab = 'pullComments';
+    else if (sv === 'customer_tasks' || sv === 'customerTasks') tab = 'customerTasks';
+    else if (sv === 'tasks' || sv === 'list' || sv === '' || sv === 'mass') tab = 'tasks';
+    app.matrixTab = tab;
+    try {
+      const body = app.ensureMatrixShell(tab);
+      if (body && (body.querySelector('.page-shell-loading') || !body.children.length || body.querySelector('.tk-list-loading'))) {
+        body.innerHTML = (window.UI && UI.listLoadingHtml)
+          ? UI.listLoadingHtml({ title: '正在加载数据', desc: '同步列表中，请稍候…', fill: true })
+          : '<div class="muted" style="padding:48px;text-align:center">加载中…</div>';
+      }
+    } catch (e) {
+      console.warn('[router] demotePublishShell', e);
+    }
   }
 
   async function applyRoute(view, subview) {
     const app = window.app;
     if (!app) return;
-    if (!app.canView(view)) {
-      app.toast('当前角色无权访问该模块', true);
+    if (!app.canNavigateMenu(view, subview || '')) {
+      app.toast('当前角色无权访问该菜单', true);
       return;
     }
     paintNavigateChrome(view, subview || '');
-    await ensurePage(view);
+    try {
+      await ensurePage(view);
+    } catch (e) {
+      console.error(e);
+      app.toast(e.message || String(e), true);
+      const shell = document.querySelector('#content .page-shell-loading, #content .is-page-loading');
+      if (shell) {
+        shell.classList.add('is-fail');
+        const tip = shell.querySelector('.loader-text span') || shell.querySelector('.muted');
+        if (tip) tip.textContent = '加载失败：' + (e.message || '脚本未加载');
+        const title = shell.querySelector('.loader-text b');
+        if (title) title.textContent = '加载失败';
+      }
+      return;
+    }
+    // 脚本已就绪：立刻拆掉「正在加载页面」壳，再拉列表数据
+    if (view === 'publish') demotePublishShell(app, subview || '');
     navigating = true;
     try {
       if (typeof app._navigateInternal === 'function') {
@@ -148,7 +239,14 @@
       }
       try {
         paintNavigateChrome(view, subview);
-        await ensurePage(view);
+        try {
+          await ensurePage(view);
+        } catch (e) {
+          console.error(e);
+          app.toast(e.message || String(e), true);
+          return;
+        }
+        if (view === 'publish') demotePublishShell(app, subview);
         await app._navigateInternal(view, subview);
       } finally {
         navigating = false;
@@ -176,10 +274,19 @@
 
   async function onHash() {
     if (navigating) return;
-    const { view, subview, login } = parseHash();
+    let { view, subview, login } = parseHash();
     if (login) {
       window.app?.showLoginGate?.('请先登录');
       return;
+    }
+    const app = window.app;
+    if (app && !app.canNavigateMenu(view, subview || '')) {
+      const first = app.firstAccessibleRoute?.();
+      if (first) {
+        view = first.view;
+        subview = first.subview || '';
+        history.replaceState(null, '', toHash(view, subview));
+      }
     }
     await applyRoute(view, subview);
   }
@@ -188,7 +295,7 @@
     if (started) return;
     started = true;
     const app = window.app;
-    if (!app) throw new Error('app-core 未加载');
+    if (!app) throw new Error('app-core not loaded');
     patchApp();
     window.addEventListener('hashchange', () => {
       onHash().catch((e) => console.error(e));
@@ -197,10 +304,26 @@
     const ready = await app.init();
     if (!ready) return;
 
+    let { view, subview, login } = parseHash();
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
-      history.replaceState(null, '', '#/accounts');
+      const first = app.firstAccessibleRoute?.();
+      if (first) {
+        view = first.view;
+        subview = first.subview || '';
+        history.replaceState(null, '', toHash(view, subview));
+      } else {
+        history.replaceState(null, '', '#/accounts');
+        view = 'accounts';
+        subview = '';
+      }
+    } else if (!login && !app.canNavigateMenu(view, subview || '')) {
+      const first = app.firstAccessibleRoute?.();
+      if (first) {
+        view = first.view;
+        subview = first.subview || '';
+        history.replaceState(null, '', toHash(view, subview));
+      }
     }
-    const { view, subview, login } = parseHash();
     if (login) {
       app.showLoginGate('请先登录');
       return;

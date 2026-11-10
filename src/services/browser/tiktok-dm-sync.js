@@ -15,11 +15,12 @@ async function setting(key, fallback) {
 async function getCookieAndFingerprint(accountId) {
   const bundle = await dataStore.getAccountBundle(accountId);
   if (!bundle) throw new Error('账号不存在');
+  const { resolveProfileIdForAccount } = require('./providers');
   return {
     cookie: bundle?.cookie || '',
     fingerprint: bundle?.fingerprint || bundle?.session_fingerprint || '',
     dmChannel: bundle?.dm_channel || 'auto',
-    browserProfileId: bundle?.browser_profile_id || '',
+    browserProfileId: resolveProfileIdForAccount(bundle) || '',
     username: bundle?.username || '',
   };
 }
@@ -101,7 +102,7 @@ async function fetchInboxViaApi(cookie, fingerprint) {
   return {
     ok: false,
     status: 'unsupported',
-    reason: 'TikTok IM HTTP API 探测失败（需签名/风控）。可开启比特降级。',
+    reason: 'TikTok IM HTTP API 探测失败（需签名/风控）。可开启浏览器降级。',
     errors,
   };
 }
@@ -348,11 +349,19 @@ async function fetchInboxViaBit(accountId, opts = {}) {
   try {
     const session = await inspectTikTokSession(connection.ws);
     if (!session.loggedIn) {
-      return { ok: false, status: 'unsupported', reason: '比特环境未检测到 TikTok 登录态' };
+      return { ok: false, status: 'unsupported', reason: '浏览器环境未检测到 TikTok 登录态' };
     }
     connection.page.on('response', onResponse);
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      await solveRotateCaptchaIfPresent(connection.page, { accountId });
+    } catch { /* ignore */ }
     await connection.page.waitForTimeout(2500);
     for (let i = 0; i < 4; i += 1) {
+      try {
+        const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+        await solveRotateCaptchaIfPresent(connection.page, { accountId });
+      } catch { /* ignore */ }
       await connection.page.evaluate(() => {
         const panes = [...document.querySelectorAll('[class*="conversation"],[class*="inbox"],[data-e2e*="chat"],aside,nav')];
         const el = panes.find((n) => n.scrollHeight > n.clientHeight + 20) || document.scrollingElement;
@@ -382,7 +391,7 @@ async function fetchInboxViaBit(accountId, opts = {}) {
       return {
         ok: false,
         status: 'unsupported',
-        reason: '比特打开消息页后未解析到会话（结构变化或空收件箱）',
+        reason: '打开消息页后未解析到会话（结构变化或空收件箱）',
         capturedApis: captured.map((c) => c.url.split('?')[0]),
       };
     }
@@ -463,7 +472,7 @@ async function syncAccountDm(accountId, opts = {}) {
 
   if ((!fetched || !fetched.ok) && needBit) {
     if (!browserProfileId) {
-      const reason = fetched?.reason || '无比特环境，无法降级爬取';
+      const reason = fetched?.reason || '无浏览器环境，无法降级爬取';
       await dataStore.dmIngest({ accountId, friends: [], messages: [], lastError: reason }).catch(() => {});
       return {
         status: fetched?.status || 'unsupported',
@@ -481,7 +490,7 @@ async function syncAccountDm(accountId, opts = {}) {
       fetched = {
         ok: false,
         status: 'unsupported',
-        reason: `比特私信同步失败：${e.message}`,
+        reason: `浏览器私信同步失败：${e.message}`,
         errors: [e.message],
       };
     }

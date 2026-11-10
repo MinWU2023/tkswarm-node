@@ -11,6 +11,7 @@ const { inspectTikTokSession } = require('./cdp-client');
 const { capture } = require('../automation-guard');
 const { publish: liveLog } = require('../live-log');
 const { clickByTextDeep, dismissOverlays } = require('./tiktok-profile');
+const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
 
 const STUDIO_COMMENT_URLS = [
   'https://www.tiktok.com/tiktokstudio/comment?lang=en',
@@ -20,22 +21,11 @@ const STUDIO_COMMENT_URLS = [
 ];
 
 function log(accountId, msg, level = 'info') {
-  liveLog(`CommentReply#${accountId}: ${msg}`, level, { accountId });
+  liveLog(`评论回复#${accountId}：${msg}`, level, { accountId });
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-async function humanPause(ms, jitter = 0.2) {
-  const j = Math.max(0, Number(jitter) || 0);
-  const delta = ms * j * (Math.random() * 2 - 1);
-  await sleep(Math.max(80, Math.round(ms + delta)));
-}
+const { humanPause, randInt, sleep, typeDelay } = require('../human-pace');
+const { scaleTimeout, waitPageSettled } = require('./page-ready');
 
 async function clickPattern(page, pattern, timeoutMs = 6000) {
   const end = Date.now() + timeoutMs;
@@ -111,6 +101,7 @@ async function pageLooksLikeStudioComments(page) {
   if (isStudioCommentsUrl(page.url())) return true;
   if (!isStudioUrl(page.url())) return false;
   return page.evaluate(() => {
+    if (document.querySelector('[data-tt="components_CommentList_FlexColumn"]')) return true;
     const t = (document.body?.innerText || '').slice(0, 12000);
     // Studio Comments 页常见：筛选 Not replied / Replied，以及 Reply 操作
     const hasFilter = /Not replied|未回复|Not Replied|Replied|已回复/i.test(t);
@@ -125,9 +116,15 @@ async function enterStudio(page, accountId) {
   if (isStudioUrl(page.url())) return true;
   await page.goto('https://www.tiktok.com/tiktokstudio?lang=en', {
     waitUntil: 'domcontentloaded',
-    timeout: 60000,
+    timeout: scaleTimeout(75000, 50000),
   }).catch(() => {});
-  await humanPause(2200, 0.15);
+  await waitPageSettled(page, {
+    timeoutMs: 35000,
+    contentSelectors: ['[data-e2e]', 'nav', 'aside', 'main'],
+    reloadOnce: true,
+    label: '进入Studio',
+    log: (m) => log(accountId, m),
+  });
   await dismissOverlays(page).catch(() => {});
   if (isStudioUrl(page.url())) return true;
 
@@ -154,18 +151,28 @@ async function openStudioComments(page, accountId) {
   if (await pageLooksLikeStudioComments(page)) return true;
 
   for (const url of STUDIO_COMMENT_URLS) {
-    log(accountId, `打开 Studio Comments ${url}`);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-    await humanPause(2200, 0.15);
+    log(accountId, `打开 Studio 评论页 ${url}`);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: scaleTimeout(75000, 50000) }).catch(() => {});
+    await waitPageSettled(page, {
+      timeoutMs: 45000,
+      contentSelectors: [
+        '[data-tt="components_CommentList_FlexColumn"]',
+        '[class*="Comment"]',
+        'main',
+      ],
+      reloadOnce: true,
+      label: 'Studio评论页',
+      log: (m) => log(accountId, m),
+    });
     await dismissOverlays(page).catch(() => {});
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 20; i++) {
       if (await pageLooksLikeStudioComments(page)) return true;
-      await humanPause(450, 0.1);
+      await humanPause(600, 0.1);
     }
   }
 
   // 侧栏点 Comments
-  log(accountId, 'URL 未直达，尝试侧栏 Comments');
+  log(accountId, 'URL 未直达，尝试侧栏「评论」');
   if (!isStudioUrl(page.url())) {
     await enterStudio(page, accountId);
   }
@@ -185,6 +192,24 @@ async function openStudioComments(page, accountId) {
  * Studio 顶部筛选是下拉：「All comments」→ 打开后选「Not replied」
  */
 async function filterNotReplied(page, accountId) {
+  const studioFilter = await page.evaluate(() => {
+    const textOf = (el) => String(el?.textContent || '').replace(/\s+/g, ' ').trim();
+    for (const btn of document.querySelectorAll('[data-tt="components_FilterButton_FlexCenter"]')) {
+      const label = btn.querySelector('[data-tt="components_FilterButton_TUXText"]');
+      const t = label ? textOf(label) : textOf(btn);
+      if (/^(Not replied|未回复|Not Replied)$/i.test(t)) return 'already:' + t;
+      if (/^(All comments|全部评论)$/i.test(t)) {
+        btn.click();
+        return 'open:' + t;
+      }
+    }
+    return '';
+  }).catch(() => '');
+  if (String(studioFilter).startsWith('already:')) {
+    log(accountId, '已在「未回复」筛选');
+    return true;
+  }
+
   const filterLabel = await page.evaluate(() => {
     const visible = (el) => {
       if (!el) return false;
@@ -208,19 +233,35 @@ async function filterNotReplied(page, accountId) {
     return true;
   }
 
-  // 点开 All comments 下拉
+  if (String(studioFilter).startsWith('open:')) {
+    await humanPause(500, 0.1);
+  } else {
+  // 点开 All comments 下拉（Studio 顶部筛选 pill，可能带 ▾）
   let opened = false;
-  try {
-    const allBtn = page.getByText(/^(All comments|全部评论)$/i).first();
-    if (await allBtn.count() && await allBtn.isVisible().catch(() => false)) {
-      await allBtn.click({ timeout: 4000 });
-      opened = true;
-    }
-  } catch { /* fall through */ }
+  const openPatterns = [/^All comments$/i, /^全部评论$/, /All comments/i, /全部评论/];
+  for (const pat of openPatterns) {
+    try {
+      const allBtn = page.getByRole('button', { name: pat }).first();
+      if (await allBtn.count() && await allBtn.isVisible().catch(() => false)) {
+        await allBtn.click({ timeout: 4000 });
+        opened = true;
+        break;
+      }
+    } catch { /* next */ }
+    try {
+      const allBtn = page.locator('button, div[role="button"], div[role="combobox"]').filter({ hasText: pat }).first();
+      if (await allBtn.count() && await allBtn.isVisible().catch(() => false)) {
+        await allBtn.click({ timeout: 4000 });
+        opened = true;
+        break;
+      }
+    } catch { /* next */ }
+  }
   if (!opened) {
-    opened = !!(await clickPattern(page, '^All comments$|^全部评论$', 4000));
+    opened = !!(await clickPattern(page, '^All comments$|^全部评论$|All comments|全部评论', 4000));
   }
   await humanPause(500, 0.1);
+  }
 
   // 菜单项：Not replied / 未回复
   let hit = '';
@@ -261,11 +302,25 @@ async function filterNotReplied(page, accountId) {
   }
 
   await humanPause(1600, 0.15);
-  if (hit) {
-    log(accountId, `已筛选未回复 (${hit})`);
+  const applied = await page.evaluate(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 20 && r.height > 12 && st.visibility !== 'hidden' && st.display !== 'none';
+    };
+    for (const el of document.querySelectorAll('button, div[role="button"], span, div')) {
+      if (!visible(el)) continue;
+      const t = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (/^(Not replied|未回复|Not Replied)$/i.test(t)) return t;
+    }
+    return '';
+  }).catch(() => '');
+  if (hit || applied) {
+    log(accountId, `已筛选未回复 (${hit || applied})`);
     return true;
   }
-  log(accountId, '未点到「Not replied」，改为处理当前列表里带 Reply 的评论', 'warn');
+  log(accountId, '未点到「未回复」，改为处理当前列表里可回复的评论', 'warn');
   // 关掉可能打开的下拉
   await page.keyboard.press('Escape').catch(() => {});
   return false;
@@ -273,12 +328,10 @@ async function filterNotReplied(page, accountId) {
 
 /**
  * 标记「一级且未回复」的评论卡片。
- * - 跳过嵌套回复（含 ▸ / Reply to / 明显缩进）
- * - 跳过已有回复的一级评论（View N replies）
- * - 只点一级卡片上的 Reply，避免套娃
+ * Studio 新版 DOM：data-tt="components_CommentList_Container" + MessageCell_Container(Reply)
  */
-async function markUnrepliedRows(page, limit = 20) {
-  return page.evaluate((max) => {
+async function markUnrepliedRows(page, limit = 20, ownerUsername = '') {
+  return page.evaluate(({ max, ownerUsername: owner }) => {
     document.querySelectorAll('[data-tk-cr-row]').forEach((n) => n.removeAttribute('data-tk-cr-row'));
     const visible = (el) => {
       if (!el) return false;
@@ -288,8 +341,60 @@ async function markUnrepliedRows(page, limit = 20) {
         && Number(st.opacity || 1) > 0.1;
     };
     const textOf = (el) => String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const ownerNorm = String(owner || '').replace(/^@/, '').toLowerCase();
 
-    /** 是否为二级及以下回复行 */
+    /** Studio 评论列表（data-index 虚拟列表项） */
+    const studioItems = [...document.querySelectorAll('[data-tt="components_CommentList_Container"][data-index]')];
+    if (studioItems.length) {
+      let skippedSelf = 0;
+      let skippedReplied = 0;
+      const rows = [];
+      for (const item of studioItems) {
+        if (item.getAttribute('data-tk-cr-done') === '1') continue;
+        if (!visible(item)) continue;
+
+        const authorEl = item.querySelector('[data-tt="components_MessageCell_a"]')
+          || item.querySelector('a[href*="/@"]');
+        const author = authorEl ? textOf(authorEl).replace(/^@/, '') : '';
+
+        const hasCreatorBadge = [...item.querySelectorAll('[data-tt="components_MessageCell_TUXText"]')]
+          .some((el) => /^(Creator|创作者)$/i.test(textOf(el)));
+        if (hasCreatorBadge || (ownerNorm && author.toLowerCase() === ownerNorm)) {
+          skippedSelf += 1;
+          continue;
+        }
+
+        const blob = textOf(item);
+        if (/View\s+\d+\s+replies?|Hide\s+\d+\s+replies?|查看\s*\d+\s*条回复/i.test(blob)) {
+          skippedReplied += 1;
+          continue;
+        }
+        if (/▸|►/.test(blob) && /Reply to|回复\s*@/i.test(blob)) {
+          skippedReplied += 1;
+          continue;
+        }
+
+        const replyCtrl = [...item.querySelectorAll('[data-tt="components_MessageCell_Container"]')]
+          .find((el) => visible(el) && /^(Reply|回复)$/i.test(textOf(el)));
+        if (!replyCtrl) continue;
+
+        rows.push(item);
+        if (rows.length >= max) break;
+      }
+      rows.forEach((row, i) => row.setAttribute('data-tk-cr-row', String(i)));
+      return {
+        count: rows.length,
+        skippedNested: 0,
+        skippedReplied,
+        skippedSelf,
+        candidates: studioItems.length,
+        replyRaw: studioItems.length,
+        replyLeaf: rows.length,
+        via: 'studio-data-tt',
+      };
+    }
+
+    /** 是否为二级及以下回复行（旧版/兜底） */
     const isNestedReplyRow = (row) => {
       const t = textOf(row);
       // Studio 嵌套：A Creator ▸ B
@@ -325,82 +430,139 @@ async function markUnrepliedRows(page, limit = 20) {
         return /▸|►/.test(s);
       })) return true;
 
-      // 「View 2 replies」常在卡片外下一层兄弟节点
-      const rowBox = row.getBoundingClientRect();
-      const near = [];
-      let p = row.parentElement;
-      for (let depth = 0; p && depth < 3; depth++) {
-        near.push(p);
-        [...p.children].forEach((c) => near.push(c));
-        p = p.parentElement;
-      }
-      for (const el of near) {
-        if (!el || el === row || !visible(el)) continue;
-        if (row.contains(el)) continue;
-        const b = el.getBoundingClientRect();
-        // 仅看紧挨在下方、同一列附近的节点
-        if (b.top < rowBox.bottom - 8) continue;
-        if (b.top > rowBox.bottom + 140) continue;
-        if (Math.abs(b.left - rowBox.left) > 80) continue;
-        if (hasReplySignalIn(el)) return true;
-        const st = textOf(el);
-        if (/▸|►/.test(st) && st.length < 180) return true;
-      }
-
-      // 同一卡片内出现 2 个以上 Reply 操作，说明已展开子回复
-      const replyBtns = [...row.querySelectorAll('button, a, span, div, p')].filter((el) => {
-        if (!visible(el)) return false;
-        return /^(Reply|回复)$/i.test(textOf(el));
+      // 仅当已展开子回复线程时，多个 Reply 才表示「已有回复」
+      const hasThread = [...row.querySelectorAll('*')].some((n) => {
+        if (!visible(n)) return false;
+        const s = textOf(n);
+        return /View\s+\d+\s+replies?|Hide\s+\d+\s+replies?|查看\s*\d+\s*条回复|收起\s*\d+\s*条回复|▸|►/.test(s);
       });
-      if (replyBtns.length >= 2) return true;
+      if (hasThread) {
+        const replyBtns = [...row.querySelectorAll('button, a, span, div, p')].filter((el) => {
+          if (!visible(el)) return false;
+          return /^(Reply|回复)$/i.test(textOf(el));
+        });
+        if (replyBtns.length >= 2) return true;
+      }
 
       return false;
     };
 
-    const replyNodes = [...document.querySelectorAll('button, a, span, div, p')]
+    /** 视频创作者在自己视频下的评论（带 Creator 徽章或作者=当前账号） */
+    const isCreatorSelfComment = (row) => {
+      const authorEl = row.querySelector('a[href*="/@"]');
+      if (!authorEl) return false;
+      const author = textOf(authorEl).replace(/^@/, '').toLowerCase();
+      const owner = String(owner || '').replace(/^@/, '').toLowerCase();
+      if (owner && author && author === owner) return true;
+      const authorTop = authorEl.getBoundingClientRect().top;
+      const badges = [...row.querySelectorAll('span, div, p, strong')].filter((el) => {
+        if (!visible(el)) return false;
+        const bt = textOf(el);
+        return bt === 'Creator' || bt === '创作者';
+      });
+      for (const badge of badges) {
+        const br = badge.getBoundingClientRect();
+        if (Math.abs(br.top - authorTop) < 36 && br.left >= authorEl.getBoundingClientRect().left - 12) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isReplyControl = (el) => {
+      const t = textOf(el);
+      const aria = String(el.getAttribute('aria-label') || '').trim();
+      return /^(Reply|回复)$/i.test(t) || /^(Reply|回复)$/i.test(aria);
+    };
+
+    const findCardAround = (start) => {
+      let best = null;
+      let bestArea = Infinity;
+      let node = start;
+      for (let i = 0; i < 14 && node; i++) {
+        if (!visible(node)) {
+          node = node.parentElement;
+          continue;
+        }
+        const r = node.getBoundingClientRect();
+        const hasAuthor = !!node.querySelector('a[href*="/@"]');
+        const hasReply = [...node.querySelectorAll('button, a, [role="button"], span, div, p')]
+          .some((n) => visible(n) && isReplyControl(n));
+        if (hasAuthor && hasReply && r.height >= 48 && r.height <= 420 && r.width >= 160 && r.left >= 160) {
+          const area = r.width * r.height;
+          if (area < bestArea) {
+            best = node;
+            bestArea = area;
+          }
+        }
+        node = node.parentElement;
+      }
+      return best;
+    };
+
+    const findRowFromReplyBtn = (btn) => findCardAround(btn.parentElement || btn);
+
+    const allReplyMatches = [...document.querySelectorAll('button, a, [role="button"], span, div, p')]
       .filter(visible)
       .filter((el) => {
         if (el.getAttribute('data-tk-cr-done') === '1') return false;
         if (el.closest('[data-tk-cr-done="1"]')) return false;
-        const t = textOf(el);
-        if (!/^(Reply|回复)$/i.test(t)) return false;
-        const childHas = [...el.querySelectorAll('button, a, span, div')].some((c) => /^(Reply|回复)$/i.test(textOf(c)));
-        return !childHas;
+        if (el.closest('nav, aside, header')) return false;
+        return isReplyControl(el);
       });
+    // Studio 常见 <button><span>Reply</span></button>：保留最内层 Reply，勿用 childHas 全排除
+    const replyNodes = allReplyMatches.filter((el) =>
+      !allReplyMatches.some((other) => other !== el && other.contains(el))
+    );
 
-    // 先收集候选行，再按 left 找「最左一档」作为一级评论基准
+    const pushCandidate = (list, row) => {
+      if (!row || list.includes(row)) return;
+      if (row.closest('nav, aside, header')) return;
+      if (row.getAttribute('data-tk-cr-done') === '1') return;
+      list.push(row);
+    };
+
+    // 先收集候选行（Reply 按钮 → 最小卡片），再按 @ 链接兜底
     const candidates = [];
     for (const btn of replyNodes) {
-      let row = btn;
-      for (let i = 0; i < 10 && row; i++) {
-        row = row.parentElement;
-        if (!row || !visible(row)) continue;
-        const t = textOf(row);
-        const hasReply = /\bReply\b|回复/.test(t);
-        const hasDelete = /\bDelete\b|删除/.test(t);
-        const r = row.getBoundingClientRect();
-        if (hasReply && hasDelete && r.height >= 60 && r.height <= 600 && r.width >= 200) {
-          break;
-        }
-        if (i === 9) row = btn.parentElement;
+      pushCandidate(candidates, findRowFromReplyBtn(btn));
+    }
+    if (!candidates.length) {
+      for (const link of document.querySelectorAll('a[href*="/@"]')) {
+        if (!visible(link)) continue;
+        if (link.closest('nav, aside, header')) continue;
+        const box = link.getBoundingClientRect();
+        if (box.left < 180 || box.top < 100) continue;
+        pushCandidate(candidates, findCardAround(link));
       }
-      if (!row || candidates.includes(row)) continue;
-      if (row.closest('nav, aside')) continue;
-      if (row.getAttribute('data-tk-cr-done') === '1') continue;
-      candidates.push(row);
     }
 
-    if (!candidates.length) return 0;
+    if (!candidates.length) {
+      return {
+        count: 0,
+        skippedNested: 0,
+        skippedReplied: 0,
+        skippedSelf: 0,
+        candidates: 0,
+        replyRaw: allReplyMatches.length,
+        replyLeaf: replyNodes.length,
+      };
+    }
 
     const minLeft = Math.min(...candidates.map((r) => r.getBoundingClientRect().left));
     const rows = [];
     let skippedNested = 0;
     let skippedReplied = 0;
+    let skippedSelf = 0;
     for (const row of candidates) {
       const left = row.getBoundingClientRect().left;
       // 比最左一级明显更靠右 → 嵌套
       if (left - minLeft > 28 || isNestedReplyRow(row)) {
         skippedNested += 1;
+        continue;
+      }
+      if (isCreatorSelfComment(row)) {
+        skippedSelf += 1;
         continue;
       }
       if (alreadyHasReplies(row)) {
@@ -412,8 +574,18 @@ async function markUnrepliedRows(page, limit = 20) {
     }
 
     rows.forEach((row, i) => row.setAttribute('data-tk-cr-row', String(i)));
-    return { count: rows.length, skippedNested, skippedReplied };
-  }, limit).catch(() => ({ count: 0, skippedNested: 0, skippedReplied: 0 }));
+    return {
+      count: rows.length,
+      skippedNested,
+      skippedReplied,
+      skippedSelf,
+      candidates: candidates.length,
+      replyRaw: allReplyMatches.length,
+      replyLeaf: replyNodes.length,
+    };
+  }, { max: limit, ownerUsername }).catch(() => ({
+    count: 0, skippedNested: 0, skippedReplied: 0, skippedSelf: 0, candidates: 0, replyRaw: 0, replyLeaf: 0,
+  }));
 }
 
 async function readRowMeta(page, index) {
@@ -422,12 +594,22 @@ async function readRowMeta(page, index) {
     if (!row) return { comment_text: '', author: '', video_desc: '' };
     const textOf = (el) => String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
 
-    // 用户名：优先链接
     let author = '';
-    const authorEl = row.querySelector('a[href*="/@"]');
+    const authorEl = row.querySelector('[data-tt="components_MessageCell_a"]')
+      || row.querySelector('a[href*="/@"]');
     if (authorEl) author = textOf(authorEl).replace(/^@/, '');
 
-    // 评论文案：去掉用户名、Creator、时间、操作、视频 id
+    const bodyEl = row.querySelector('[data-tt="components_TUXTextWithMention_TUXText"]');
+    if (bodyEl) {
+      const videoEl = row.querySelector('[data-tt="components_MessageCell_TruncateText"] span[data-tt="components_MessageCell_TUXText"]');
+      return {
+        comment_text: textOf(bodyEl).slice(0, 400),
+        author: author.slice(0, 80),
+        video_desc: videoEl ? textOf(videoEl).slice(0, 200) : '',
+      };
+    }
+
+    // 兜底：从整卡文本解析
     let raw = textOf(row);
     raw = raw
       .replace(/\bCreator\b/gi, ' ')
@@ -477,15 +659,35 @@ async function openReplyOnRow(page, index) {
       return false;
     };
 
-    const nodes = [...row.querySelectorAll('button, a, span, div, p')].filter(visible);
-    // 取最靠上的一级 Reply（通常是主评论操作栏）
-    const replies = nodes.filter((el) => {
-      if (!/^(Reply|回复)$/i.test(textOf(el))) return false;
-      if (inNested(el)) return false;
-      return true;
-    });
+    // Studio：Reply 在 div[data-tt=components_MessageCell_Container] 内，非 button
+    const studioReply = [...row.querySelectorAll('[data-tt="components_MessageCell_Container"]')]
+      .find((el) => visible(el) && /^(Reply|回复)$/i.test(textOf(el)));
+    if (studioReply) {
+      studioReply.scrollIntoView({ block: 'center', inline: 'nearest' });
+      studioReply.click();
+      return 'studio-reply';
+    }
+
+    const isReplyControl = (el) => {
+      const t = textOf(el);
+      const aria = String(el.getAttribute('aria-label') || '').trim();
+      return /^(Reply|回复)$/i.test(t) || /^(Reply|回复)$/i.test(aria);
+    };
+    const toClickable = (el) => {
+      let n = el;
+      for (let i = 0; i < 6 && n && n !== row; i++) {
+        const tag = (n.tagName || '').toLowerCase();
+        if (n.getAttribute('data-tt') === 'components_MessageCell_Container') return n;
+        if (n.getAttribute('cursor') === 'pointer') return n;
+        if (tag === 'button' || tag === 'a' || n.getAttribute('role') === 'button') return n;
+        n = n.parentElement;
+      }
+      return el;
+    };
+    const nodes = [...row.querySelectorAll('button, a, [role="button"], span, div, p')].filter(visible);
+    const replies = nodes.filter((el) => isReplyControl(el) && !inNested(el));
     replies.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-    const target = replies[0];
+    const target = replies[0] ? toClickable(replies[0]) : null;
     if (!target) return '';
     target.scrollIntoView({ block: 'center', inline: 'nearest' });
     target.click();
@@ -499,7 +701,12 @@ async function openReplyOnRow(page, index) {
 
   try {
     const row = page.locator(`[data-tk-cr-row="${index}"]`).first();
-    // 用 first()：只点卡片内第一个 Reply（一级）
+    const studioReply = row.locator('[data-tt="components_MessageCell_Container"]').filter({ hasText: /^(Reply|回复)$/i }).first();
+    if (await studioReply.count()) {
+      await studioReply.click({ timeout: 4000 });
+      await humanPause(700, 0.15);
+      return true;
+    }
     const reply = row.getByText(/^(Reply|回复)$/i).first();
     if (await reply.count()) {
       await reply.click({ timeout: 4000 });
@@ -512,8 +719,12 @@ async function openReplyOnRow(page, index) {
 }
 
 async function findReplyInput(page) {
-  // Studio 点 Reply 后出现：placeholder = "Reply to comment"
+  // Studio 点 Reply 后输入框常出现在同条 CommentCell 下方空列
   const sels = [
+    '[data-tk-cr-row] [data-tt="components_CommentCell_FlexColumn"] textarea',
+    '[data-tk-cr-row] [data-tt="components_CommentCell_FlexColumn"] [contenteditable="true"]',
+    '[data-tt="components_CommentCell_FlexColumn"] textarea',
+    '[data-tt="components_CommentCell_FlexColumn"] [contenteditable="true"]',
     '[placeholder="Reply to comment"]',
     '[placeholder*="Reply to comment" i]',
     '[placeholder*="回复评论" i]',
@@ -585,7 +796,7 @@ async function fillReplyInput(page, text) {
   }, value).catch(() => false);
 
   if (!inserted) {
-    await page.keyboard.type(value, { delay: randInt(18, 40) });
+    await page.keyboard.type(value, { delay: typeDelay(80, 160) });
   }
   return true;
 }
@@ -651,7 +862,7 @@ async function replyOneRow(page, accountId, cfg, index, stats) {
 
   const opened = await openReplyOnRow(page, index);
   if (!opened) {
-    log(accountId, `第 ${index + 1} 条无法点击 Reply`, 'warn');
+    log(accountId, `第 ${index + 1} 条无法点击「回复」`, 'warn');
     return false;
   }
 
@@ -665,7 +876,7 @@ async function replyOneRow(page, accountId, cfg, index, stats) {
     await humanPause(350, 0.1);
   }
   if (!inputReady) {
-    log(accountId, '点击 Reply 后未出现「Reply to comment」输入框', 'warn');
+    log(accountId, '点击「回复」后未出现评论输入框', 'warn');
     return false;
   }
 
@@ -734,12 +945,20 @@ async function runCommentReply(accountId, payload = {}, options = {}) {
   let owned = false;
   try {
     if (!connection) {
-      log(accountId, `打开比特 → Studio Comments · 最多 ${cfg.maxReplies} 条 · 模式 ${cfg.replyMode}`);
-      connection = await connectAccount(accountId, null, 'warm');
+      log(accountId, `打开浏览器 → Studio 评论 · 最多 ${cfg.maxReplies} 条 · 模式 ${cfg.replyMode}`);
+      const { parseSaveTrafficFlag } = require('./save-traffic');
+      connection = await connectAccount(accountId, null, 'warm', {
+        saveTraffic: parseSaveTrafficFlag(
+          payload.saveTraffic ?? payload.save_traffic ?? options.saveTraffic,
+          true
+        ),
+        browserBackend: payload.browserBackend || payload.browser_backend || options.browserBackend,
+      });
       owned = true;
       await humanPause(1000, 0.15);
     }
     const page = connection.page;
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     const session = await inspectTikTokSession(connection.ws, page).catch(() => null);
     if (session && session.loggedIn === false) {
       stats.screenshot = await capture(page, `comment-reply-nologin-${accountId}`).catch(() => '');
@@ -747,20 +966,30 @@ async function runCommentReply(accountId, payload = {}, options = {}) {
     }
 
     const inStudio = await enterStudio(page, accountId);
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     if (!inStudio) {
       stats.screenshot = await capture(page, `comment-reply-nostudio-${accountId}`).catch(() => '');
       throw new Error('未能进入 TikTok Studio');
     }
 
     const opened = await openStudioComments(page, accountId);
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     if (!opened) {
       stats.screenshot = await capture(page, `comment-reply-nocomments-${accountId}`).catch(() => '');
       throw new Error('未能打开 TikTok Studio Comments 页');
     }
-    log(accountId, `已在 Studio Comments url=${page.url()}`);
+    log(accountId, `已在 Studio 评论页 url=${page.url()}`);
 
     await filterNotReplied(page, accountId);
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     await humanPause(1000, 0.15);
+
+    const ownerUsername = String(connection.account?.username || payload.accountUsername || '')
+      .replace(/^@/, '')
+      .trim();
+    if (ownerUsername) {
+      log(accountId, `当前账号 @${ownerUsername}，将跳过 Creator 自有评论`);
+    }
 
     // 诊断：页面上可见的 Reply 文字链数量
     const replyLinkCount = await page.evaluate(() => {
@@ -774,23 +1003,30 @@ async function runCommentReply(accountId, payload = {}, options = {}) {
         .filter((el) => /^(Reply|回复)$/i.test(String(el.textContent || '').replace(/\s+/g, ' ').trim()))
         .length;
     }).catch(() => 0);
-    log(accountId, `页面可见 Reply 链接约 ${replyLinkCount} 个`);
+    log(accountId, `页面可见「回复」链接约 ${replyLinkCount} 个`);
 
     // 多轮：每回复一条后重新标记（列表会变化）
     let idleRounds = 0;
     while (stats.replied < cfg.maxReplies && idleRounds < 4) {
-      const marked = await markUnrepliedRows(page, Math.min(20, cfg.maxReplies - stats.replied + 2));
+      const markLimit = Math.min(20, cfg.maxReplies - stats.replied + 2);
+      const marked = await markUnrepliedRows(page, markLimit, ownerUsername);
       const count = typeof marked === 'number' ? marked : Number(marked?.count || 0);
       const skippedReplied = typeof marked === 'object' ? Number(marked.skippedReplied || 0) : 0;
       const skippedNested = typeof marked === 'object' ? Number(marked.skippedNested || 0) : 0;
+      const skippedSelf = typeof marked === 'object' ? Number(marked.skippedSelf || 0) : 0;
+      const candidateN = typeof marked === 'object' ? Number(marked.candidates || 0) : 0;
+      const replyRaw = typeof marked === 'object' ? Number(marked.replyRaw || 0) : 0;
+      const replyLeaf = typeof marked === 'object' ? Number(marked.replyLeaf || 0) : 0;
+      const scanVia = typeof marked === 'object' ? String(marked.via || 'generic') : 'generic';
       stats.scanned += count;
-      if (skippedReplied || skippedNested) {
-        log(accountId, `跳过：已回复 ${skippedReplied} · 嵌套 ${skippedNested} · 待回一级 ${count}`);
-      }
+      log(
+        accountId,
+        `扫描[${scanVia}]：列表 ${replyRaw} · 候选 ${candidateN} · 跳过已回复 ${skippedReplied} · 嵌套 ${skippedNested} · 自有 ${skippedSelf} · 待回 ${count}`
+      );
       if (!count) {
         await page.mouse.wheel(0, randInt(500, 900)).catch(() => {});
         await humanPause(900, 0.15);
-        const moreMarked = await markUnrepliedRows(page, Math.min(20, cfg.maxReplies - stats.replied + 2));
+        const moreMarked = await markUnrepliedRows(page, markLimit, ownerUsername);
         const more = typeof moreMarked === 'number' ? moreMarked : Number(moreMarked?.count || 0);
         if (!more) {
           idleRounds += 1;
@@ -824,7 +1060,7 @@ async function runCommentReply(accountId, payload = {}, options = {}) {
       stats.screenshot = await capture(page, `comment-reply-empty-${accountId}`).catch(() => '');
       log(accountId, 'Studio 未回复列表中未成功回复任何评论', 'warn');
     } else {
-      log(accountId, `完成 replied=${stats.replied} scanned≈${stats.scanned}`);
+      log(accountId, `完成 已回复=${stats.replied} 已扫描≈${stats.scanned}`);
     }
 
     return { status: 'ok', ...stats };

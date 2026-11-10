@@ -1,15 +1,67 @@
 (function () {
   if (!window.app) throw new Error('app-core must load before pages/warm.js');
   const __methods = {
-    canWarmTasks(){return this.canPermission('account.create')||this.canPermission('publish.tasks')},
+    canWarmView(){return this.canAnyPermission('warm.view','warm.tasks','publish.tasks','account.view')},
+    canWarmCreate(){return this.canPermission('warm.create')},
+    canWarmUpdate(){return this.canPermission('warm.update')},
+    canWarmDelete(){return this.canPermission('warm.delete')},
+    canWarmTasks(){return this.canWarmCreate()||this.canWarmUpdate()||this.canWarmDelete()},
+    /** 养号页自带三点菜单开关（不依赖是否已打开过矩阵任务页） */
+    toggleTaskOps(id,e){
+      e?.stopPropagation?.();
+      // 优先用按钮旁的菜单，避免定时刷新后 body 上残留旧节点抢 id
+      const btn=e?.currentTarget||e?.target?.closest?.('button');
+      const target=btn?.closest?.('.ops-dropdown')?.querySelector?.('#task-ops-'+id)
+        || document.querySelector('.task-ops-dropdown #task-ops-'+id)
+        || document.querySelector('#task-ops-'+id);
+      const willShow=target?.classList.contains('hidden');
+      document.querySelectorAll('.dropdown-menu').forEach(el=>{
+        el.classList.add('hidden');
+        if(window.UI) UI.restoreMenu(el);
+      });
+      // 清掉 body 上已脱离表格的僵尸菜单
+      document.querySelectorAll('body > .dropdown-menu.ops-menu, body > .dropdown-menu.is-lifted').forEach(el=>{
+        if(el.id && String(el.id).startsWith('task-ops-') && el !== target){
+          el.classList.add('hidden');
+          if(window.UI) UI.restoreMenu(el);
+          if(!el._liftHome || !el._liftHome.isConnected) el.remove();
+        }
+      });
+      if(target && willShow){
+        target.classList.add('ops-menu');
+        target.classList.remove('hidden');
+        if(window.UI){
+          UI.decorate(target);
+          UI.liftMenu(target, btn || target.closest('.ops-dropdown')?.querySelector('button'), {side:'left'});
+        }
+      }
+    },
+    toggleTaskBatchMenu(e){
+      e?.stopPropagation?.();
+      const target=document.querySelector('#task-batch-menu');
+      const willShow=target?.classList.contains('hidden');
+      document.querySelectorAll('.dropdown-menu').forEach(el=>{
+        el.classList.add('hidden');
+        if(window.UI) UI.restoreMenu(el);
+      });
+      if(target && willShow){
+        target.classList.add('align-left');
+        target.classList.remove('hidden');
+        const btn=e?.currentTarget||target.closest('.dropdown')?.querySelector('button');
+        if(window.UI) UI.liftMenu(target, btn, {align:'left'});
+      }
+    },
+    toggleAllTasks(checked){document.querySelectorAll('.task-check').forEach(x=>{x.checked=!!checked})},
     async renderWarm(){
+      if(!this.canView('warm')&&!this.canWarmView()) return this.renderPageDenied('当前角色无权查看养号任务');
       document.querySelector('#content').classList.remove('chat-mode');
       if(this.warmRefreshTimer){clearInterval(this.warmRefreshTimer);this.warmRefreshTimer=null}
       if(this.warmPane==='create')return this.renderWarmCreate();
       return this.renderWarmList();
     },
     openWarmCreate(editTask){
-      if(!this.canWarmTasks()){this.toast('当前角色无权管理养号任务',true);return}
+      if(editTask?.id){if(!this.canWarmUpdate()){this.toast('当前角色无权编辑养号任务',true);return}}
+      else if(!this.canWarmCreate()){this.toast('当前角色无权创建养号任务',true);return}
       this.warmPane='create';
       this.warmCreateStep=1;
       this.warmEditId=editTask?.id||null;
@@ -54,8 +106,11 @@
       el.classList.toggle('is-on');
       this.updateWarmAccountCount();
     },
-    filterWarmAccountPick(keyword){
-      this.filterAccountPick('warm-accounts', keyword);
+    filterWarmAccountPick(){
+      this.searchAccountPick('warm-accounts',{
+        tagHtmlFn:(a,s)=>this.warmAccountPickTagHtml(a,s),
+        onLoaded:()=>this.updateWarmAccountCount(),
+      });
     },
     setWarmAccountPickAll(all){
       document.querySelectorAll('#warm-accounts .account-pick-tag').forEach(el=>{
@@ -76,16 +131,13 @@
       const el=document.querySelector('#warm-acc-count');
       if(el)el.textContent=String(n);
     },
-    fillWarmAccounts(accounts, selectedIds){
-      const box=document.querySelector('#warm-accounts');
-      if(!box)return;
-      const selected=new Set((selectedIds||[]).map(Number));
-      const list=accounts||[];
-      box.innerHTML=list.length
-        ?list.map(a=>this.warmAccountPickTagHtml(a,selected)).join('')
-        :'<div class="muted account-pick-empty" style="padding:12px;grid-column:1/-1">暂无账号</div>';
-      this.filterAccountPick('warm-accounts');
-      this.updateWarmAccountCount();
+    async fillWarmAccounts(selectedIds){
+      await this.initAccountPickToolbar('warm-accounts');
+      await this.reloadAccountPick('warm-accounts',{
+        selectedIds,
+        tagHtmlFn:(a,s)=>this.warmAccountPickTagHtml(a,s),
+        onLoaded:()=>this.updateWarmAccountCount(),
+      });
     },
     parseWarmSearchTerms(raw){
       if(Array.isArray(raw))return raw.map(x=>String(x||'').trim()).filter(Boolean);
@@ -220,15 +272,16 @@
       if(!foot)return;
       if(n===1){
         foot.innerHTML=`
-          <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()"><span class="warm-ico">✕</span>取消</button>
+          <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()">取消</button>
           <div class="warm-foot-spacer"></div>
-          <button class="primary warm-foot-btn" type="button" onclick="app.setWarmCreateStep(2)">下一步：养号设置 →</button>`;
+          <button class="primary warm-foot-btn" type="button" onclick="app.setWarmCreateStep(2)">下一步：养号设置</button>`;
       }else{
         foot.innerHTML=`
-          <button class="primary warm-foot-btn" type="button" onclick="app.submitWarmTask(true)"><span class="warm-ico">✓</span>${edit?'保存并启动':'创建并启动'}</button>
-          <button class="ghost warm-foot-btn" type="button" onclick="app.submitWarmTask(false)"><span class="warm-ico">✓</span>${edit?'仅保存':'创建为草稿'}</button>
-          <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()"><span class="warm-ico">✕</span>取消</button>`;
+          <button class="primary warm-foot-btn" type="button" onclick="app.submitWarmTask(true)">${edit?'保存并启动':'创建并启动'}</button>
+          <button class="ghost warm-foot-btn" type="button" onclick="app.submitWarmTask(false)">${edit?'仅保存':'创建为草稿'}</button>
+          <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()">取消</button>`;
       }
+      if(window.UI) UI.decorate(foot);
     },
     async renderWarmList(){
       const status=this.warmStatusFilter||'';
@@ -245,14 +298,22 @@
       const d={items:paged.items,total:paged.total,page:paged.page,pages:paged.pages,pageSize:paged.pageSize||15};
       const queued=items.filter(x=>x.status==='queued').length;
       const statusOpts=[['',`全部 (${statusCounts.all||0})`],...this.taskStatusPairs().map(([k,n])=>[k,`${n} (${statusCounts[k]||0})`])];
-      document.querySelector('#content').innerHTML=`<div class="panel warm-tasks-panel">
+      // 定时轮询会直接 renderWarm()，需保留 page-head，否则标题/副标题会被整页重写冲掉
+      const content=document.querySelector('#content');
+      // 先收起并清掉挂到 body 的浮层菜单，避免与新表格里同 id 菜单叠出两套样式
+      if(window.UI?.restorePopups) UI.restorePopups();
+      document.querySelectorAll('body > .dropdown-menu.ops-menu, body > .dropdown-menu.is-lifted').forEach(el=>{
+        if(el.id && String(el.id).startsWith('task-ops-')) el.remove();
+      });
+      const headHtml=content?.querySelector('.page-head')?.outerHTML||(typeof this.pageHead==='function'?this.pageHead('warm'):'')||'';
+      content.innerHTML=`${headHtml}<div class="panel warm-tasks-panel">
         <div class="matrix-action-bar">
           <div class="left">
-            ${this.canWarmTasks()?`<button class="primary" type="button" onclick="app.openWarmCreate()">创建养号任务</button>`:''}
+            ${this.canWarmCreate()?`<button class="primary" type="button" onclick="app.openWarmCreate()">创建养号任务</button>`:''}
             <button class="ghost" type="button" onclick="app.refresh()">刷新</button>
-            ${this.canWarmTasks()?`<div class="dropdown"><button class="ghost" type="button" onclick="app.toggleTaskBatchMenu(event)">批量操作 <span class="btn-arrow-down">▾</span></button><div id="task-batch-menu" class="dropdown-menu align-left hidden"><button type="button" onclick="app.batchTaskAction('start')">批量启动</button><button type="button" onclick="app.batchTaskAction('pause')">批量暂停</button><button type="button" onclick="app.batchTaskAction('cancel')">批量取消</button><button type="button" onclick="app.batchRetryTasks()">批量重试</button><button type="button" class="is-danger" onclick="app.batchDeleteTasks()">批量删除</button></div></div>`:''}
+            ${(this.canWarmUpdate()||this.canWarmDelete())?`<div class="dropdown"><button class="ghost" type="button" onclick="app.toggleTaskBatchMenu(event)">批量操作 <span class="btn-arrow-down">▾</span></button><div id="task-batch-menu" class="dropdown-menu align-left hidden">${this.canWarmUpdate()?`<button type="button" onclick="app.batchTaskAction('start')">启动</button><button type="button" onclick="app.batchTaskAction('pause')">暂停</button><button type="button" onclick="app.batchTaskAction('cancel')">取消</button><button type="button" onclick="app.batchRetryTasks()">重试</button><button type="button" onclick="app.batchWarmRecurringDispatch(true)">批量开启常态化</button><button type="button" onclick="app.batchWarmRecurringDispatch(false)">批量关闭常态化</button>`:''}${this.canWarmDelete()?`<button type="button" class="is-danger" onclick="app.batchDeleteTasks()">删除</button>`:''}</div></div>`:''}
           </div>
-          <div class="right"><span class="muted">养号任务由本机 Node 领取执行；需账号已绑定比特环境并保持登录</span></div>
+          <div class="right"><span class="muted">养号任务由本机 Node 领取执行；需账号已绑定浏览器环境并保持登录</span></div>
         </div>
         ${queued?`<div class="shell-note" id="warm-node-hint" style="margin:0 0 12px">有 <b>${queued}</b> 个养号任务在排队，请确认本机 Node 已启动</div>`:''}
         <div class="search-bar task-filter-bar">
@@ -264,6 +325,8 @@
         <div class="table-container">${this.warmTaskTable(d.items)}</div>
         ${UI.pager(d,'warmPage')}
       </div>`;
+      // 每次重绘后立刻装饰，避免「未装饰纯文字」与「已装饰带图标」来回跳
+      if(window.UI) UI.decorate(content);
       if(queued){
         Promise.resolve(this.probeNodeOnline()).then(ok=>{
           const el=document.querySelector('#warm-node-hint');
@@ -272,40 +335,86 @@
         }).catch(()=>{});
       }
       if(d.items.some(x=>['queued','running'].includes(x.status))||items.some(x=>['queued','running'].includes(x.status))){
-        this.warmRefreshTimer=setInterval(()=>{if(this.view==='warm'&&this.warmPane==='list')this.renderWarm();else clearInterval(this.warmRefreshTimer)},3000);
+        this.warmRefreshTimer=setInterval(()=>{
+          if(this.view!=='warm'||this.warmPane!=='list'){
+            clearInterval(this.warmRefreshTimer);
+            this.warmRefreshTimer=null;
+            return;
+          }
+          // 菜单打开时跳过本轮刷新，避免浮层被拆掉又拼出第二套
+          if(document.querySelector('.dropdown-menu.ops-menu:not(.hidden), .dropdown-menu.is-lifted:not(.hidden)')) return;
+          this.renderWarm();
+        },3000);
       }
     },
     warmTaskTable(rows){
       if(!rows.length)return '<div class="empty">还没有养号任务，点击「创建养号任务」开始</div>';
-      return `<table><thead><tr><th><input type="checkbox" onchange="app.toggleAllTasks(this.checked)" title="全选任务"></th><th>任务</th><th>类型</th><th>分组</th><th>进度</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows.map(x=>this.warmTaskRowHtml(x)).join('')}</tbody></table>`;
+      return `<table><thead><tr><th><input type="checkbox" onchange="app.toggleAllTasks(this.checked)" title="全选任务"></th><th>任务</th><th>类型</th><th>分组</th><th>进度</th><th>状态</th><th>定时</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows.map(x=>this.warmTaskRowHtml(x)).join('')}</tbody></table>`;
     },
     warmTaskRowHtml(x){
       const pct=x.total_count?Math.round((x.success_count+x.fail_count)/x.total_count*100):0;
-      const canEdit=['draft','paused','failed','completed'].includes(x.status);
+      const canUpdate=this.canWarmUpdate();
+      const canDelete=this.canWarmDelete();
+      const canEdit=canUpdate&&['draft','paused','failed','completed'].includes(x.status);
       const more=[];
       if(canEdit){
         const startLabel=x.status==='paused'?'重启':(x.status==='failed'?'重试':'启动');
         more.push(`<button type="button" onclick="app.taskAction(${x.id},'start','${this.esc(x.status)}')">${startLabel}</button>`);
       }
-      if(['queued','running'].includes(x.status)){
+      if(canUpdate&&['queued','running'].includes(x.status)){
         more.push(`<button type="button" onclick="app.taskAction(${x.id},'pause')">暂停</button>`);
         more.push(`<button type="button" class="is-danger" onclick="app.taskAction(${x.id},'cancel')">取消</button>`);
       }
       if(['queued','running','completed','failed','cancelled','paused','draft'].includes(x.status)){
         more.push(`<button type="button" onclick="app.warmTaskDetailModal(${x.id})">明细</button>`);
-        more.push(`<button type="button" onclick="app.exportTaskResultsCsv(${x.id})">结果 CSV</button>`);
-        more.push(`<button type="button" onclick="app.preflightTask(${x.id})">执行前检查</button>`);
+        if(canUpdate||this.canPermission('account.export'))more.push(`<button type="button" onclick="app.exportTaskResultsCsv(${x.id})">结果 CSV</button>`);
+        if(canUpdate)more.push(`<button type="button" onclick="app.preflightTask(${x.id})">执行前检查</button>`);
       }
-      if(x.status==='failed')more.push(`<button type="button" onclick="app.retryTask(${x.id})">重试失败</button>`);
-      const detailBtn=`<button class="tiny" type="button" title="查看明细" onclick="app.warmTaskDetailModal(${x.id})">明细</button>`;
-      const editBtn=canEdit?`<button class="tiny" type="button" title="编辑" onclick="app.editWarmTask(${x.id})">编辑</button>`:`<button class="tiny" type="button" title="编辑" disabled>编辑</button>`;
-      const delBtn=`<button class="tiny danger" type="button" title="删除" onclick="app.remove('/tasks/${x.id}','养号任务')">删除</button>`;
-      const moreBtn=more.length?`<div class="ops-dropdown task-ops-dropdown"><button class="tiny" type="button" title="更多" onclick="app.toggleTaskOps(${x.id},event)">…</button><div id="task-ops-${x.id}" class="dropdown-menu ops-menu hidden">${more.join('')}</div></div>`:'';
+      if(canUpdate&&x.status==='failed')more.push(`<button type="button" onclick="app.retryTask(${x.id})">重试失败</button>`);
       const p=x.payload||{};
       const recurring=!!(p.recurring||p.isRecurring);
       const days=Number(p.recurringDays||p.repeatDays||1)||1;
-      const recBadge=recurring?`<span class="badge online" title="常态化 · 每 ${days} 天">常态/${days}天</span>`:'';
-      return `<tr class="warm-task-row" data-id="${x.id}"><td><input class="task-check" type="checkbox" value="${x.id}" onclick="event.stopPropagation()"></td><td><button type="button" class="warm-task-name-link" onclick="app.warmTaskDetailModal(${x.id})"><b>${this.esc(x.name)}</b></button>${recBadge?`<div style="margin-top:4px">${recBadge}</div>`:''}</td><td>自动养号</td><td>${this.esc(x.group_name||'-')}</td><td><div class="progress"><i style="width:${pct}%"></i></div><span class="muted">${x.success_count}/${x.total_count}</span></td><td>${this.badge(x.status)}${this.nodeOwnedTaskHint(x.status,x.type)}</td><td>${this.esc(x.created_at)}</td><td><div class="task-ops-cell">${detailBtn}${editBtn}${delBtn}${moreBtn}</div></td></tr>`;
+      const dispatchOn=x.recurringDispatchEnabled!==false&&x.recurringDispatchEnabled!==0;
+      if(canUpdate&&recurring){
+        more.push(dispatchOn
+          ?`<button type="button" onclick="app.patchWarmRecurringDispatch(${x.id},false)">关闭常态化自动化</button>`
+          :`<button type="button" onclick="app.patchWarmRecurringDispatch(${x.id},true)">开启常态化自动化</button>`);
+      }
+      const detailBtn=`<button class="tiny" type="button" title="查看明细" onclick="app.warmTaskDetailModal(${x.id})">明细</button>`;
+      const editBtn=canEdit?`<button class="tiny" type="button" title="编辑" onclick="app.editWarmTask(${x.id})">编辑</button>`:(canUpdate?`<button class="tiny" type="button" title="编辑" disabled>编辑</button>`:'');
+      const delBtn=canDelete?`<button class="tiny danger" type="button" title="删除" onclick="app.remove('/tasks/${x.id}','养号任务')">删除</button>`:'';
+      const dispatchBtn=canUpdate&&recurring
+        ?(dispatchOn
+          ?`<button class="tiny ghost" type="button" title="关闭常态化自动化派发" onclick="app.patchWarmRecurringDispatch(${x.id},false)">关常态</button>`
+          :`<button class="tiny" type="button" title="开启常态化自动化派发" onclick="app.patchWarmRecurringDispatch(${x.id},true)">开常态</button>`)
+        :'';
+      const moreBtn=more.length?`<div class="ops-dropdown task-ops-dropdown"><button class="tiny" type="button" title="更多" onclick="app.toggleTaskOps(${x.id},event)">…</button><div id="task-ops-${x.id}" class="dropdown-menu ops-menu hidden">${more.join('')}</div></div>`:'';
+      const recBadge=recurring
+        ?`<span class="badge ${dispatchOn?'online':'muted'}" title="${dispatchOn?`常态化 · 每 ${days} 天 · 自动化开`:`常态化已配置 · 每 ${days} 天 · 自动化关`}">常态/${days}天${dispatchOn?'':'·关'}</span>`
+        :'';
+      return `<tr class="warm-task-row" data-id="${x.id}"><td><input class="task-check" type="checkbox" value="${x.id}" onclick="event.stopPropagation()"></td><td><button type="button" class="warm-task-name-link" onclick="app.warmTaskDetailModal(${x.id})"><b>${this.esc(x.name)}</b></button>${recBadge?`<div style="margin-top:4px">${recBadge}</div>`:''}</td><td>自动养号</td><td>${this.esc(x.group_name||'-')}</td><td><div class="progress"><i style="width:${pct}%"></i></div><span class="muted">${x.success_count}/${x.total_count}</span></td><td>${this.badge(x.status)}${this.nodeOwnedTaskHint(x.status,x.type)}</td><td>${this.taskScheduleCellHtml(x)}</td><td>${this.esc(x.created_at)}</td><td><div class="task-ops-cell">${detailBtn}${editBtn}${dispatchBtn}${delBtn}${moreBtn}</div></td></tr>`;
+    },
+    async patchWarmRecurringDispatch(id,enabled){
+      if(!this.canWarmUpdate()){this.toast('当前角色无权操作养号任务',true);return}
+      const on=!!enabled;
+      if(!on&&!(await this.ask(`关闭养号任务 #${id} 的常态化自动化？计划任务 warm:recurring 将不再重新入队。`)))return;
+      try{
+        const pack=await this.api(`/tasks/${id}/recurring-dispatch`,{method:'PATCH',body:JSON.stringify({recurringDispatchEnabled:on})});
+        this.toast(pack?.message||(on?'已开启常态化自动化':'已关闭常态化自动化'));
+        this.refresh();
+      }catch(e){this.toast(e.message||'切换失败',true)}
+    },
+    async batchWarmRecurringDispatch(enabled){
+      if(!this.canWarmUpdate()){this.toast('当前角色无权操作养号任务',true);return}
+      const ids=[...document.querySelectorAll('.task-check:checked')].map(x=>Number(x.value)).filter(Boolean);
+      if(!ids.length){this.toast('请先勾选任务',true);return}
+      const on=!!enabled;
+      if(!on&&!(await this.ask(`确认批量关闭 ${ids.length} 个养号任务的常态化自动化派发？`)))return;
+      try{
+        const pack=await this.api('/tasks/batch-recurring-dispatch',{method:'POST',body:JSON.stringify({taskIds:ids,recurringDispatchEnabled:on})});
+        this.toast(pack?.message||(on?`已开启 ${pack?.changed||0} 个`:`已关闭 ${pack?.changed||0} 个`));
+        this.refresh();
+      }catch(e){this.toast(e.message||'批量操作失败',true)}
     },
     warmPlanActionTags(step){
       const tags=[];
@@ -360,8 +469,8 @@
         :(commentTexts.length>1
           ?`固定轮换 ${commentTexts.length} 条`
           :`「${this.esc(commentTexts[0]||plan.commentText||'很棒的视频，点赞')}」`);
-      const stayMin=Number(cfg.staySecondsMin||plan.staySecondsMin||10);
-      const stayMax=Number(cfg.staySecondsMax||plan.staySecondsMax||20);
+      const stayMin=Number(cfg.staySecondsMin||plan.staySecondsMin||30);
+      const stayMax=Number(cfg.staySecondsMax||plan.staySecondsMax||50);
       let listedTotal=0;
       const kwCards=plan.keywords.map((kw,ki)=>{
         const norm=this.normalizeWarmPlanVideos(kw,stayMin,stayMax);
@@ -427,7 +536,9 @@
           <div class="warm-cfg-item"><small>刷视频数</small><b>${Number(p.videoCountMin||0)} ~ ${Number(p.videoCountMax||0)}</b></div>
           <div class="warm-cfg-item"><small>停留秒数</small><b>${Number(p.staySecondsMin||0)} ~ ${Number(p.staySecondsMax||0)}</b></div>
           <div class="warm-cfg-item"><small>并发线程</small><b>${Number(p.threadCount||1)}</b></div>
-          <div class="warm-cfg-item"><small>常态化</small><b>${(p.recurring||p.isRecurring)?`是 · 每 ${Number(p.recurringDays||p.repeatDays||1)||1} 天`:'否'}</b></div>
+          <div class="warm-cfg-item"><small>常态化</small><b>${(p.recurring||p.isRecurring)
+            ?`是 · 每 ${Number(p.recurringDays||p.repeatDays||1)||1} 天 · 自动化${(task.recurringDispatchEnabled!==false&&task.recurringDispatchEnabled!==0)?'开':'关'}`
+            :'否'}</b></div>
           <div class="warm-cfg-item full"><small>搜索词</small><b>${this.esc(String(p.searchTerms||'-').replace(/\n/g,' · '))}</b></div>
           <div class="warm-cfg-item full"><small>互动概率</small><div class="warm-cfg-pills">${rates}</div></div>
           <div class="warm-cfg-item full"><small>评论内容</small><b>${String(p.commentMode||'fixed')==='ai'
@@ -463,20 +574,18 @@
             <div class="task-detail-chip"><small>类型</small><b>自动养号</b></div>
             <div class="task-detail-chip"><small>状态</small><b>${this.badge(task.status)}</b></div>
             <div class="task-detail-chip"><small>进度</small><b>${task.success_count}/${task.total_count}</b></div>
-            <div class="task-detail-chip"><small>定时</small><b>${this.esc(task.scheduled_at||'立即')}</b></div>
+            <div class="task-detail-chip"><small>定时</small><b>${this.taskScheduleCellHtml(task)}</b></div>
             <div class="task-detail-chip"><small>创建时间</small><b>${this.esc(task.created_at||'-')}</b></div>
             <div class="task-detail-chip"><small>账号数</small><b>${accountIds.length||(task.group_name?`分组·${task.group_name}`:'-')}</b></div>
           </div>
           ${section('养号配置',cfgBody)}
           ${section('执行计划',planBody,'暂无执行计划。重新保存任务后会生成。')}
           <div class="task-detail-actions">
-            ${['draft','paused','failed'].includes(task.status)?`<button class="primary" type="button" onclick="app.closeModal();app.editWarmTask(${id})">编辑任务</button>`:''}
-            <button class="ghost" type="button" onclick="app.exportTaskResultsCsv(${id})">导出结果 CSV</button>
+            ${this.canWarmUpdate()&&['draft','paused','failed'].includes(task.status)?`<button class="primary" type="button" onclick="app.closeModal();app.editWarmTask(${id})">编辑任务</button>`:''}
+            ${this.canWarmUpdate()||this.canPermission('account.export')?`<button class="ghost" type="button" onclick="app.exportTaskResultsCsv(${id})">导出结果 CSV</button>`:''}
           </div>
         </div>`;
-        this.modal(`养号明细 · ${this.esc(task.name||('#'+id))}`,html,()=>{},false,{wide:true,hideSubmit:true,hideFooter:false});
-        const foot=document.querySelector('#modal .modal-foot');
-        if(foot){foot.classList.remove('hidden');const cancel=foot.querySelector('button[type=button]');if(cancel)cancel.textContent='关闭'}
+        this.modal(`养号明细 · ${this.esc(task.name||('#'+id))}`,html,()=>{},false,{wide:true,hideSubmit:true});
       }catch(e){this.toast(e.message,true)}
     },
     switchWarmPlanTab(aid){
@@ -501,15 +610,16 @@
       }catch(e){this.toast(e.message,true)}
     },
     async renderWarmCreate(){
-      if(!this.canWarmTasks()){this.toast('当前角色无权管理养号任务',true);this.warmPane='list';return this.renderWarmList()}
+      const editing=!!this.warmEditId;
+      if(editing&&!this.canWarmUpdate()){this.toast('当前角色无权编辑养号任务',true);this.warmPane='list';return this.renderWarmList()}
+      if(!editing&&!this.canWarmCreate()){this.toast('当前角色无权创建养号任务',true);this.warmPane='list';return this.renderWarmList()}
       await this.loadRefs();
       const edit=this._warmEditSnapshot||null;
       const draft=this._warmCreateDraft||null;
       const p=edit?.payload||{};
       const selected=(draft?.accountIds||p.accountIds||[]).map(Number);
-      const accounts=(await this.api('/accounts?pageSize=500').catch(()=>({items:[]}))).items||[];
       const gs=this.accountGroupFlatOptions();
-      const scheduled=draft?.scheduledAt||(edit?.scheduled_at?new Date(edit.scheduled_at).toISOString().slice(0,16):'');
+      const scheduled=draft?.scheduledAt||this.scheduleLocalInputValue(edit||{});
       const termsRaw=draft?.searchTerms!=null?draft.searchTerms:(Array.isArray(p.searchTerms)?p.searchTerms.join('\n'):(p.searchTerms||''));
       const termList=this.parseWarmSearchTerms(termsRaw);
       const step=this.warmCreateStep===2?2:1;
@@ -535,7 +645,7 @@
         <div class="warm-create-top">
           <div class="warm-create-heading">
             <h2>${edit?'编辑养号任务':'创建养号任务'}</h2>
-            <p>自动搜索并刷互动 · 需账号已绑定比特环境并保持登录</p>
+            <p>自动搜索并刷互动 · 需账号已绑定浏览器环境并保持登录</p>
           </div>
           <div class="warm-stepper" aria-label="创建步骤">
             <button type="button" class="warm-step ${step===1?'is-active':(step>1?'is-done':'')}" onclick="app.setWarmCreateStep(1)">
@@ -570,6 +680,13 @@
           </div>
 
           <div class="warm-step-pane ${step===2?'is-show':''}" data-step="2">
+            <div class="warm-card">
+              <div class="warm-card-head"><b>执行浏览器</b><span class="muted">第一页自研浏览器，账号需已绑定对应环境</span></div>
+              <div class="warm-card-body">
+                ${this.selectBrowserBackendField('browserBackend',val('browserBackend',p.browserBackend||this.defaultTaskBrowserBackend()))}
+                ${this.saveTrafficField(draft?draft.saveTraffic:p.saveTraffic,true)}
+              </div>
+            </div>
             <div class="warm-card">
               <div class="warm-card-head"><b>搜索</b><span class="muted">按搜索词在 TikTok 视频结果中刷视频互动</span></div>
               <div class="warm-card-body">
@@ -629,12 +746,12 @@
               <div class="warm-card-head"><b>数量与节奏</b><span class="muted">刷视频量、停留时间与并发</span></div>
               <div class="warm-card-body warm-grid-3">
                 ${this.field('videoCountMin','刷视频数量(最小)',val('videoCountMin',p.videoCountMin??10),'number',true)}
-                ${this.field('videoCountMax','刷视频数量(最大)',val('videoCountMax',p.videoCountMax??10),'number',true)}
+                ${this.field('videoCountMax','刷视频数量(最大)',val('videoCountMax',p.videoCountMax??20),'number',true)}
                 ${this.field('commentPages','看评论页数',val('commentPages',p.commentPages??3),'number')}
-                ${this.field('staySecondsMin','停留时间(秒)最小',val('staySecondsMin',p.staySecondsMin??10),'number',true)}
-                ${this.field('staySecondsMax','停留时间(秒)最大',val('staySecondsMax',p.staySecondsMax??20),'number',true)}
+                ${this.field('staySecondsMin','停留时间(秒)最小',val('staySecondsMin',p.staySecondsMin??30),'number',true)}
+                ${this.field('staySecondsMax','停留时间(秒)最大',val('staySecondsMax',p.staySecondsMax??50),'number',true)}
                 ${this.field('threadCount','并发线程(1-3)',val('threadCount',p.threadCount??1),'number')}
-          ${this.field('scheduledAt','定时启动（可空）',scheduled,'datetime-local')}
+          ${this.scheduleAtFieldHtml('scheduledAt','定时启动（可空）',scheduled,{preview:'warm'})}
                 <div class="field full"><label class="warm-check-line"><input type="checkbox" name="diagnoseAfterWarm" value="1" ${diag?'checked':''}> 养号结束后诊断账号（Studio Account Check 截图入库）</label></div>
                 <div class="field full"><label class="warm-check-line"><input type="checkbox" name="recurring" value="1" ${recurring?'checked':''} onchange="app.toggleWarmRecurringFields()"> 常态化养号（结束后按间隔自动重新入队）</label></div>
                 <div class="field ${recurring?'':'hidden'}" id="warm-recurring-days-field">
@@ -648,18 +765,18 @@
 
           <div class="warm-create-footer">
             ${step===1?`
-              <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()"><span class="warm-ico">✕</span>取消</button>
+              <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()">取消</button>
               <div class="warm-foot-spacer"></div>
-              <button class="primary warm-foot-btn" type="button" onclick="app.setWarmCreateStep(2)">下一步：养号设置 →</button>
+              <button class="primary warm-foot-btn" type="button" onclick="app.setWarmCreateStep(2)">下一步：养号设置</button>
             `:`
-              <button class="primary warm-foot-btn" type="button" onclick="app.submitWarmTask(true)"><span class="warm-ico">✓</span>${edit?'保存并启动':'创建并启动'}</button>
-              <button class="ghost warm-foot-btn" type="button" onclick="app.submitWarmTask(false)"><span class="warm-ico">✓</span>${edit?'仅保存':'创建为草稿'}</button>
-              <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()"><span class="warm-ico">✕</span>取消</button>
+              <button class="primary warm-foot-btn" type="button" onclick="app.submitWarmTask(true)">${edit?'保存并启动':'创建并启动'}</button>
+              <button class="ghost warm-foot-btn" type="button" onclick="app.submitWarmTask(false)">${edit?'仅保存':'创建为草稿'}</button>
+              <button class="ghost warm-foot-btn" type="button" onclick="app.closeWarmCreate()">取消</button>
             `}
           </div>
         </form>
       </div>`;
-      this.fillWarmAccounts(accounts, selected);
+      await this.fillWarmAccounts(selected);
       this.renderWarmSearchTermTags(termList);
       this.setWarmCommentMode(commentMode);
     },
@@ -760,11 +877,11 @@
       };
     },
     async submitWarmTask(autoStart){
-      if(!this.canWarmTasks()){this.toast('当前角色无权管理养号任务',true);return}
+      if(this.warmEditId){if(!this.canWarmUpdate()){this.toast('当前角色无权编辑养号任务',true);return}}
+      else if(!this.canWarmCreate()){this.toast('当前角色无权创建养号任务',true);return}
       this.captureWarmCreateDraft?.();
       const form=document.querySelector('#warm-create-form');
       if(!form)return;
-      if(!(await this.ensureBitOnline('自动养号')))return;
       const fd=new FormData(form);
       const d=Object.fromEntries(fd.entries());
       const draft=this._warmCreateDraft||{};
@@ -794,13 +911,17 @@
         this.toast('请至少勾选一条固定评论模板',true);
         return;
       }
+      const be=this.normalizeTaskBackend(form.querySelector('[name=browserBackend]')?.value||d.browserBackend);
+      if(!(await this.ensureBrowserBackendOnline(be,'养号')))return;
       const payload={
         accountIds:picked.length?picked:undefined,
+        browserBackend:be,
+        saveTraffic:this.parseSaveTrafficInput(form.querySelector('[name=saveTraffic]')?.value??draft.saveTraffic,true),
         searchType:'video',
         searchTerms,
         matchKeywords:'',
         videoCountMin:num('videoCountMin',10),
-        videoCountMax:num('videoCountMax',10),
+        videoCountMax:num('videoCountMax',20),
         followRate:num('followRate',0),
         likeRate:num('likeRate',0),
         favoriteRate:num('favoriteRate',0),
@@ -808,8 +929,8 @@
         commentRate:num('viewCommentRate',0),
         commentPages:num('commentPages',0),
         commentLikeRate:num('commentLikeRate',0),
-        staySecondsMin:num('staySecondsMin',10),
-        staySecondsMax:num('staySecondsMax',20),
+        staySecondsMin:num('staySecondsMin',30),
+        staySecondsMax:num('staySecondsMax',50),
         threadCount:num('threadCount',1),
         diagnoseAfterWarm:!!(form.querySelector('[name=diagnoseAfterWarm]')?.checked??draft.diagnoseAfterWarm),
         recurring:!!(form.querySelector('[name=recurring]')?.checked??draft.recurring),
@@ -833,35 +954,44 @@
           ||0;
       }
       const scheduledRaw=d.scheduledAt||draft.scheduledAt||'';
+      const sch=await this.resolveTaskScheduleFromLocal(scheduledRaw,picked);
+      Object.assign(payload,sch.scheduleFields);
       const body={
         name:d.name||draft.name||'自动养号',
         type:'warm',
         groupId,
         totalCount:Number(totalCount)||0,
-        scheduledAt:scheduledRaw?new Date(scheduledRaw).toISOString():null,
+        scheduledAt:sch.scheduledAt,
         payload,
       };
       try{
-        const id=Number(d.id||draft.id||0);
-        let taskId=id;
-        if(id){
-          await this.api(`/tasks/${id}`,{method:'PUT',body:JSON.stringify(body)});
-          this.toast('养号任务已保存');
-        }else{
-          const created=await this.api('/tasks',{method:'POST',body:JSON.stringify(body)});
-          taskId=created.id;
-          this.toast(`养号任务 #${taskId} 已创建`);
-        }
-        if(autoStart&&taskId){
-          await this.api(`/tasks/${taskId}/start`,{method:'POST'});
-          this.toast(`养号任务 #${taskId} 已加入队列`);
-        }
-        this.warmPane='list';
-        this.warmCreateStep=1;
-        this.warmEditId=null;
-        this._warmEditSnapshot=null;
-        this._warmCreateDraft=null;
-        this.refresh();
+        await this.runFormSubmit(async()=>{
+          const id=Number(d.id||draft.id||0);
+          let taskId=id;
+          if(id){
+            await this.api(`/tasks/${id}`,{method:'PUT',body:JSON.stringify(body)});
+            this.toast('养号任务已保存');
+          }else{
+            const created=await this.api('/tasks',{method:'POST',body:JSON.stringify(body)});
+            taskId=created.id;
+            this.toast(`养号任务 #${taskId} 已创建`);
+          }
+          if(autoStart&&taskId){
+            await this.api(`/tasks/${taskId}/start`,{method:'POST'});
+            this.toast(`养号任务 #${taskId} 已加入队列`);
+          }
+          this.warmPane='list';
+          this.warmCreateStep=1;
+          this.warmEditId=null;
+          this._warmEditSnapshot=null;
+          this._warmCreateDraft=null;
+        },{
+          title:autoStart?'正在保存并启动':'正在保存',
+          desc:'请稍候，正在提交养号任务…',
+          successTitle:'提交成功',
+          successDesc:'即将返回养号列表…',
+          after:async()=>{await this.refresh()},
+        });
       }catch(e){this.toast(e.message,true)}
     },
     /** @deprecated 养号已抽离到独立页面，保留空实现防旧入口报错 */

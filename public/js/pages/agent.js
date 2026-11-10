@@ -2,6 +2,7 @@
   if (!window.app) throw new Error('app-core must load before pages/agent.js');
   const __methods = {
     async renderAgent(){
+      if(!this.canView('agent')&&!this.canAnyPermission('agent.view','agent.manage')) return this.renderPageDenied('当前角色无权查看AI智能体');
       document.querySelector('#content').classList.remove('chat-mode');
       const page=this.agentPage||1;
       const [pack, platPack]=await Promise.all([
@@ -72,7 +73,7 @@
             <div><h3>${this.esc(f.name||(this.agentCreating?'新建智能体':'未命名'))}</h3><div class="muted">${summary}</div></div>
             <div class="agent-head-actions">
               ${canManage&&this.agentId?`<button class="tiny" onclick="app.toggleAgentStatus()">${f.enabled?'禁用':'启用'}</button>`:''}
-              ${this.agentId?`<button class="tiny" onclick="app.openTestChat()">测试聊天</button>`:''}
+              ${canManage&&this.agentId?`<button class="tiny" onclick="app.openTestChat()">测试聊天</button>`:''}
               ${canManage&&this.agentId?`<button class="tiny danger" onclick="app.deleteAgent()">删除</button>`:''}
               ${canManage?`<button class="primary tiny" onclick="app.saveAgent()">保存</button>`:'<span class="muted">当前角色只可查看</span>'}
             </div>
@@ -294,6 +295,7 @@
       }catch(e){this.toast(e.message,true)}
     },
     async openTestChat(skipSave=false){
+      if(!this.canPermission('agent.manage')){this.toast('当前角色无权测试智能体',true);return}
       if(!this.agentId){this.toast('请先保存智能体',true);return}
       if(!skipSave&&this.canPermission('agent.manage')){
         try{
@@ -307,6 +309,7 @@
       setTimeout(()=>{const el=document.querySelector('#test-chat-thread');if(el)el.scrollTop=el.scrollHeight},0);
     },
     async sendTestChat(){
+      if(!this.canPermission('agent.manage')){this.toast('当前角色无权测试智能体',true);return}
       const input=document.querySelector('#test-chat-input');
       const content=input?.value?.trim();
       if(!content){this.toast('请输入消息',true);return}

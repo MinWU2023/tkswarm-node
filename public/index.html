@@ -3,33 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#f3f6f9">
   <title>TKSwarm</title>
   <link rel="icon" href="/images/favicon.png?v=2" type="image/png" sizes="64x64">
   <link rel="icon" href="/images/icon.png?v=2" type="image/png" sizes="256x256">
   <link rel="shortcut icon" href="/images/favicon.png?v=2" type="image/png">
   <link rel="apple-touch-icon" href="/images/apple-touch-icon.png?v=2" sizes="180x180">
-  <link rel="stylesheet" href="/styles.css?v=6.38">
-  <link rel="stylesheet" href="/ui.css?v=5.11">
-  <link rel="stylesheet" href="/theme-tech.css?v=5.24">
-  <link rel="stylesheet" href="/theme-ep.css?v=5.36">
-  <link rel="stylesheet" href="/material-picker.css?v=1.16">
-  <script src="/config.js?v=6.0"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/styles.css?v=6.60">
+  <link rel="stylesheet" href="/ui.css?v=5.33">
+  <link rel="stylesheet" href="/theme-tech.css?v=5.29">
+  <link rel="stylesheet" href="/theme-ep.css?v=5.39">
+  <link rel="stylesheet" href="/material-picker.css?v=1.22">
+  <link rel="stylesheet" href="/theme-polish.css?v=2.11" data-tk-polish="1">
+  <link rel="stylesheet" href="/theme-premium.css?v=1.7" data-tk-premium="1">
+  <script src="/config.js?v=6.4"></script>
 </head>
 <body>
   <div class="app-container">
     <header class="navbar">
-      <a class="logo" href="/" title="第一页科技 · TkSwarm">
-        <img class="brand-logo" src="/images/logo.png?v=2" alt="第一页科技 TkSwarm" width="140" height="54">
+      <a class="logo" href="/" title="????? ?TkSwarm">
+        <img class="brand-logo" src="/images/logo.png?v=2" alt="????? TkSwarm" width="140" height="54">
       </a>
-      <nav id="nav" class="nav-menu">
-        <button class="active" data-view="accounts">账号管理</button>
-        <button data-view="agent">AI机器人</button>
-        <button data-view="publish">AI矩阵</button>
-        <button data-view="chat">客服聊天</button>
-        <button data-view="logs">实时日志</button>
-        <button data-view="rbac">权限与系统</button>
-      </nav>
+      <nav id="nav" class="nav-menu nav-pending" aria-label="???"></nav>
       <div class="user-info">
         <div id="clock" class="username"></div>
       </div>
@@ -45,54 +43,82 @@
         <svg viewBox="25 25 50 50"><circle cx="50" cy="50" r="20" fill="none" stroke-width="4"></circle></svg>
       </div>
       <div class="loader-text">
-        <b id="loading-title">正在处理</b>
-        <span id="loading-desc">请稍候，不要关闭页面</span>
+        <b id="loading-title">????</b>
+        <span id="loading-desc">??????????</span>
       </div>
     </div>
   </div>
   <div id="confirm-mask" class="confirm-mask hidden" role="dialog" aria-modal="true">
     <div class="confirm-card">
+      <div class="dialog-head-actions confirm-head-actions">
+        <button type="button" class="dialog-fs icon-btn" data-dialog-fs onclick="UI.toggleDialogFullscreen('#confirm-mask',true)" aria-label="??" title="??">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="dialog-restore icon-btn hidden" data-dialog-restore onclick="UI.toggleDialogFullscreen('#confirm-mask',false)" aria-label="????" title="????">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
       <div class="confirm-body">
         <div class="confirm-icon" id="confirm-icon" aria-hidden="true"></div>
         <div class="confirm-content">
-          <h3 id="confirm-title">请确认</h3>
+          <h3 id="confirm-title">???</h3>
           <p id="confirm-desc"></p>
         </div>
       </div>
       <div class="confirm-foot">
-        <button type="button" class="ep-btn ep-btn-default" id="confirm-cancel">取消</button>
-        <button type="button" class="ep-btn ep-btn-primary" id="confirm-ok">确定</button>
+        <button type="button" class="ep-btn ep-btn-default" id="confirm-cancel">??</button>
+        <button type="button" class="ep-btn ep-btn-primary" id="confirm-ok">??</button>
       </div>
     </div>
   </div>
-  <div id="preview-mask" class="preview-mask hidden"><button type="button" class="preview-close" onclick="UI.closePreview()">关闭</button><img id="preview-image" alt="预览"></div>
+  <div id="preview-mask" class="preview-mask hidden">
+    <div class="preview-head-actions dialog-head-actions">
+      <button type="button" class="dialog-fs icon-btn" data-dialog-fs onclick="UI.toggleDialogFullscreen('#preview-mask',true)" aria-label="??" title="??">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button type="button" class="dialog-restore icon-btn hidden" data-dialog-restore onclick="UI.toggleDialogFullscreen('#preview-mask',false)" aria-label="????" title="????">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button type="button" class="preview-close icon-btn" onclick="UI.closePreview()" aria-label="??" title="??">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <img id="preview-image" alt="??">
+  </div>
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-card">
       <div class="modal-head">
         <h2 id="modal-title"></h2>
-        <button type="button" class="modal-close icon-btn" onclick="app.closeModal()" aria-label="关闭">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
+        <div class="dialog-head-actions modal-head-actions">
+          <button type="button" class="dialog-fs icon-btn" data-dialog-fs onclick="app.toggleModalFullscreen(true)" aria-label="??" title="??">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="dialog-restore icon-btn hidden" data-dialog-restore onclick="app.toggleModalFullscreen(false)" aria-label="????" title="????">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="modal-close icon-btn" onclick="app.closeModal()" aria-label="??">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
       </div>
       <form id="modal-form">
         <div id="modal-body" class="modal-body"></div>
         <div class="modal-foot">
-          <button type="button" class="ep-btn ep-btn-default" onclick="app.closeModal()">取消</button>
-          <button class="ep-btn ep-btn-primary" type="submit">保存</button>
+          <button class="ep-btn ep-btn-primary" type="submit">??</button>
         </div>
       </form>
     </div>
   </div>
   <div id="scope-switcher" class="scope-switcher hidden" aria-live="polite"></div>
-  <script src="/ui.js?v=5.17"></script>
+  <script src="/ui.js?v=5.27"></script>
   <script src="/vendor/lucide.min.js?v=0.468"></script>
-  <script src="/vendor/tk-icons.js?v=1.0"></script>
-  <script src="/js/app-core.js?v=10.18"></script>
-  <script src="/js/router.js?v=10.42"></script>
+  <script src="/vendor/tk-icons.js?v=1.1"></script>
+  <script src="/js/app-core.js?v=12.26"></script>
+  <script src="/js/router.js?v=12.26"></script>
   <script>
     TkRouter.start().catch(function (e) {
       console.error(e);
-      if (window.UI) UI.notify({ type: 'error', title: '启动失败', message: String(e && e.message || e), duration: 5000 });
+      if (window.UI) UI.notify({ type: 'error', title: '????', message: String(e && e.message || e), duration: 5000 });
     });
   </script>
 </body>

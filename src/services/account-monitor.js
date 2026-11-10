@@ -1,6 +1,6 @@
 const phpApi = require('./php-api');
 const dataStore = require('./data-store');
-const { syncProfile, syncVideos } = require('./browser/tiktok-data');
+const { pullProfile, syncVideos } = require('./browser/tiktok-data');
 
 let running = false;
 
@@ -16,7 +16,7 @@ async function runAccountMonitor() {
     try {
       const page = await phpApi.get('/accounts?page=1&pageSize=50');
       accountIds = (page?.items || [])
-        .filter((a) => a.browser_profile_id && a.enabled !== 0)
+        .filter((a) => (a.browser_profile_id || a.tkswarm_browser_profile_id) && a.enabled !== 0)
         .map((a) => Number(a.id));
     } catch {
       accountIds = [];
@@ -26,7 +26,8 @@ async function runAccountMonitor() {
   for (const id of accountIds) {
     try {
       if (cfg.syncProfile !== false && cfg.sync_profile !== 0) {
-        await syncProfile(id);
+        // 只拉取 TikTok 实际资料入库，绝不把系统库旧值推回 TikTok
+        await pullProfile(id);
         result.profile += 1;
       }
       if (cfg.syncVideos || cfg.sync_videos) {

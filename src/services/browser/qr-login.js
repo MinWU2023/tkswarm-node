@@ -1,7 +1,8 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { chromium } = require('playwright-core');
-const { BitBrowserProvider } = require('./bit-browser-provider');
+const { connectPlaywrightOverCDP, ensurePlaywrightPage } = require('./cdp-connect');
+const { getProvider, resolvePreferredCreateProvider, resolveAccountBrowser } = require('./providers');
 const { inspectTikTokSession, command } = require('./cdp-client');
 const { publish: liveLog } = require('../live-log');
 const { isHeadless } = require('./headless');
@@ -36,25 +37,31 @@ async function captureQr(page) {
 }
 
 async function createQrSession({ groupId = null, proxyId = null, accountId = null } = {}) {
-  const provider = new BitBrowserProvider();
   let account = null;
   if (accountId) {
     account = await dataStore.getAccountBundle(accountId);
   }
-  let profileId = account?.browser_profile_id || '';
   let proxy = null;
   if (account?.proxy_host) {
-    proxy = {
-      id: account.proxy_id,
-      protocol: account.proxy_protocol,
-      host: account.proxy_host,
-      port: account.proxy_port,
-      username: account.proxy_username,
-      password: account.proxy_password,
-    };
+    const { buildSyncProxyFromBundle } = require('./proxy-sync');
+    proxy = await buildSyncProxyFromBundle(account);
   }
 
+  let provider = getProvider();
+  let backend = provider.backendId === 'tkswarm' ? 'tkswarm' : 'bit';
+  let profileId = '';
+  if (account) {
+    try {
+      const resolved = resolveAccountBrowser(account, { requireProfile: false });
+      provider = resolved.provider;
+      backend = resolved.backend === 'tkswarm' ? 'tkswarm' : 'bit';
+      profileId = resolved.profileId;
+    } catch { /* create below */ }
+  }
   if (!profileId) {
+    const pack = await resolvePreferredCreateProvider();
+    provider = pack.provider;
+    backend = pack.backend === 'tkswarm' ? 'tkswarm' : 'bit';
     const name = `QR-${Date.now().toString(36)}`;
     const created = await provider.create({
       name,
@@ -69,19 +76,32 @@ async function createQrSession({ groupId = null, proxyId = null, accountId = nul
     });
     profileId = created.id || created;
     if (account?.id) {
-      await dataStore.updateBrowserBinding(account.id, profileId, false);
+      await dataStore.updateBrowserBinding(account.id, profileId, false, true, backend);
     }
   }
 
-  const connection = await provider.open(profileId, { headless: isHeadless('scan') });
-  if (!connection?.ws) throw new Error('比特浏览器未返回 CDP WebSocket');
-  const browser = await chromium.connectOverCDP(connection.ws);
-  const context = browser.contexts()[0] || await browser.newContext();
-  const page = context.pages()[0] || await context.newPage();
+  if (account && profileId) {
+    const { ensureAccountProxySynced } = require('./proxy-sync');
+    const synced = await ensureAccountProxySynced(account, { profileId, provider, accountId: account.id });
+    provider = synced.provider;
+    profileId = synced.profileId;
+  }
+  const connection = await provider.open(profileId, {
+    headless: isHeadless('scan'),
+    forceRelaunch: Boolean(account),
+  });
+  const label = provider.backendLabel || (backend === 'tkswarm' ? '第一页自研浏览器' : '本地浏览器');
+  if (!connection?.ws && !connection?.http) throw new Error(`${label}未返回 CDP WebSocket 地址`);
+  const browser = await connectPlaywrightOverCDP(connection, { timeoutMs: 45000 });
+  const page = await ensurePlaywrightPage(browser, { preferUrl: /tiktok\.com/i });
   await page.goto('https://www.tiktok.com/login/qrcode', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(async () => {
     await page.goto('https://www.tiktok.com/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
   });
   await page.waitForTimeout(1500);
+  try {
+    const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+    await solveRotateCaptchaIfPresent(page, { accountId: account?.id || 0 });
+  } catch { /* ignore */ }
   const shot = await captureQr(page);
   const id = `qr_${Date.now().toString(36)}`;
   const expiresAt = Date.now() + 5 * 60 * 1000;
@@ -93,12 +113,12 @@ async function createQrSession({ groupId = null, proxyId = null, accountId = nul
     proxyId: proxyId || proxy?.id || null,
     status: 'waiting',
     qrImage: publicShot(shot),
-    message: '请使用 TikTok App 扫描二维码，或在已打开的浏览器窗口完成扫码',
+    message: '??? TikTok App ?????????????????????',
     expiresAt,
     browser,
     provider,
   });
-  liveLog(`扫码登录会话已创建：${id}`);
+  liveLog(`??????????${id}`);
   return {
     id,
     profileId,
@@ -106,27 +126,27 @@ async function createQrSession({ groupId = null, proxyId = null, accountId = nul
     status: 'waiting',
     qrImage: publicShot(shot),
     expiresIn: 300,
-    message: '请使用 TikTok App 扫描二维码',
+    message: '??? TikTok App ?????',
   };
 }
 
 async function checkQrSession(id) {
   const session = sessions.get(id);
-  if (!session) throw new Error('扫码会话不存在或已关闭');
+  if (!session) throw new Error('???????????');
   if (Date.now() > session.expiresAt) {
     session.status = 'expired';
     await closeQrSession(id).catch(() => {});
-    return { id, status: 'expired', message: '二维码已过期' };
+    return { id, status: 'expired', message: '扫码登录成功' };
   }
   const connection = await session.provider.open(session.profileId, { headless: isHeadless('scan') });
   const status = await inspectTikTokSession(connection.ws);
   if (!status.loggedIn) {
-    return { id, status: 'waiting', qrImage: session.qrImage, message: '等待扫码…', expiresIn: Math.max(0, Math.round((session.expiresAt - Date.now()) / 1000)) };
+    return { id, status: 'waiting', qrImage: session.qrImage, message: '?????', expiresIn: Math.max(0, Math.round((session.expiresAt - Date.now()) / 1000)) };
   }
 
   let username = '';
   try {
-    const browser = await chromium.connectOverCDP(connection.ws);
+    const browser = await connectPlaywrightOverCDP(connection, { timeoutMs: 30000, retries: 1, settleMs: 0 });
     const page = browser.contexts()[0]?.pages()?.[0];
     if (page) {
       username = await page.evaluate(() => {
@@ -162,7 +182,7 @@ async function checkQrSession(id) {
   await session.provider.close(session.profileId).catch(() => {});
   if (session.browser) await session.browser.close().catch(() => {});
   sessions.delete(id);
-  liveLog(`扫码登录成功：${username}`);
+  liveLog(`扫码登录成功：@${username}`);
   return { id, status: 'success', accountId, username, message: '扫码登录成功' };
 }
 

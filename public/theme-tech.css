@@ -1090,18 +1090,28 @@ body.in-auth-mode .main-container {
   justify-content: center;
   width: 28px;
   height: 28px;
+  border: none;
   border-radius: 6px;
   background: #f8fafc;
   color: #475569;
   flex-shrink: 0;
   transition: all 0.2s ease;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
 }
 .user-info #clock .clock-icon svg {
   display: block;
+  pointer-events: none;
 }
+.user-info #clock .clock-icon:hover,
 .user-info:hover #clock .clock-icon {
-  background: #f1f5f9;
+  background: #e2e8f0;
   color: #0f172a;
+}
+.user-info #clock .clock-icon:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 .user-info #clock .clock-stacked {
   display: flex;
@@ -1147,12 +1157,159 @@ body.in-auth-mode .main-container {
 .user-info #clock .clock-zone {
   font-size: 9.5px !important;
   font-weight: 700 !important;
-  color: #94a3b8 !important;
-  text-transform: uppercase;
+  color: #64748b !important;
+  text-transform: none;
   background: #f1f5f9;
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: 3px;
   line-height: 1;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 顶栏时钟：按国家选择（用户级偏好）— 用 #modal 提高优先级，压过全局 button 样式 */
+#modal .clock-country-picker,
+.clock-country-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 280px;
+  width: 100%;
+  box-sizing: border-box;
+}
+#modal .clock-country-picker-hint,
+.clock-country-picker-hint {
+  font-size: 12px;
+  line-height: 1.5;
+}
+#modal .clock-country-search,
+.clock-country-search {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+#modal .clock-country-grid,
+.clock-country-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  max-height: min(56vh, 480px);
+  overflow: auto;
+  padding: 4px 2px 8px;
+  align-content: start;
+}
+#modal button.clock-country-card,
+button.clock-country-card,
+.clock-country-card {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 76px !important;
+  margin: 0 !important;
+  text-align: left !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  padding: 10px 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease, transform .12s ease;
+}
+#modal button.clock-country-card:hover,
+button.clock-country-card:hover {
+  border-color: #93c5fd !important;
+  background: #f8fbff !important;
+  transform: translateY(-1px);
+}
+#modal button.clock-country-card.is-active,
+button.clock-country-card.is-active {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px #2563eb inset !important;
+  background: #eff6ff !important;
+}
+#modal button.clock-country-card.is-hidden,
+button.clock-country-card.is-hidden {
+  display: none !important;
+}
+#modal .clock-country-card-top,
+.clock-country-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+#modal .clock-country-card-name,
+.clock-country-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#modal .clock-country-card-code,
+.clock-country-card-code {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 2px 5px;
+  line-height: 1.2;
+}
+#modal .clock-country-card-live,
+.clock-country-card-live {
+  display: block;
+  width: 100%;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: "JetBrains Mono", Consolas, Monaco, monospace;
+  color: #2563eb;
+  letter-spacing: .6px;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#modal .clock-country-card-tz,
+.clock-country-card-tz {
+  display: block;
+  width: 100%;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  #modal .clock-country-grid,
+  .clock-country-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  #modal .clock-country-card-live,
+  .clock-country-card-live {
+    font-size: 16px;
+  }
 }
 
 /* 右上角管理员触发按钮：彻底去除彩色背景，白底黑字/通透极简风格 */
@@ -1250,6 +1407,130 @@ body.in-auth-mode .main-container {
 .user-dropdown-menu.hidden {
   display: none !important;
 }
+
+/* 顶栏人工验证铃铛 */
+.hv-bell-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  user-select: none;
+}
+.hv-bell-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: #fff;
+  border-radius: 8px;
+  color: #475569;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.hv-bell-btn:hover,
+.hv-bell-btn.active {
+  color: #0f172a;
+  background: #f8fafc;
+}
+.hv-bell-btn.has-alert {
+  color: #b45309;
+}
+.hv-bell-btn.has-alert svg {
+  animation: hvBellPulse 1.4s ease-in-out infinite;
+}
+@keyframes hvBellPulse {
+  0%, 100% { transform: rotate(0); }
+  12% { transform: rotate(12deg); }
+  24% { transform: rotate(-10deg); }
+  36% { transform: rotate(8deg); }
+  48% { transform: rotate(0); }
+}
+.hv-bell-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #fff;
+}
+.hv-bell-badge.hidden { display: none !important; }
+.hv-bell-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 360px;
+  max-width: min(360px, 92vw);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, .12);
+  z-index: 340;
+  padding: 8px;
+  animation: userMenuDrop .18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hv-bell-panel.hidden { display: none !important; }
+.hv-bell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 6px;
+}
+.hv-bell-head b {
+  font-size: 13px;
+  color: #0f172a;
+}
+.hv-bell-list {
+  max-height: 360px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hv-bell-empty {
+  padding: 18px 10px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+}
+.hv-bell-item {
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fafbfc;
+}
+.hv-bell-item-main b {
+  display: block;
+  font-size: 12.5px;
+  color: #0f172a;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+.hv-bell-item-main small {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.35;
+}
+.hv-bell-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 @keyframes userMenuDrop {
   from {
     opacity: 0;
@@ -1478,14 +1759,13 @@ body.in-auth-mode .main-container {
 }
 
 /* 客服聊天四列经典布局：
-   - 第一列（账号列）：固定 240px
-   - 第二列（好友筛选列）：加宽至 230px，完整展示筛选文案与计数
-   - 第三列（好友列表列）：固定 280px
-   - 第四列（聊天/会话框）：自适应占满右侧全部剩余空间（1fr），绝不在右侧留空！
+   - 第一列（账号列）：固定 300px
+   - 第二列（好友列表列）：固定 360px
+   - 第三列（聊天/会话框）：自适应占满右侧全部剩余空间（1fr），绝不在右侧留空！
 */
 .chat-shell {
   display: grid !important;
-  grid-template-columns: 240px 230px 280px 1fr !important;
+  grid-template-columns: 300px 360px 1fr !important;
   height: calc(100vh - 64px);
   width: 100% !important;
   background: #ffffff;
@@ -1593,7 +1873,7 @@ body.in-auth-mode .main-container {
 @media(max-width: 1200px) {
   .chat-shell {
     grid-template-columns: 200px 1fr !important;
-    grid-template-rows: auto auto 1fr !important;
+    grid-template-rows: auto 1fr !important;
   }
 }
 
@@ -2336,7 +2616,7 @@ html, body {
   max-height: 100% !important;
   min-height: 0 !important;
   display: grid !important;
-  grid-template-columns: 240px 230px 280px 1fr !important;
+  grid-template-columns: 300px 360px 1fr !important;
   overflow: hidden !important;
   background: #ffffff !important;
 }
@@ -2624,8 +2904,10 @@ html, body {
   box-sizing: border-box !important;
 }
 
-.inpage-form-footer {
+.inpage-form-footer,
+.af-form-footer {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   flex-wrap: nowrap;
@@ -3636,15 +3918,37 @@ input[type="radio"]:checked::after {
 }
 
 .bubble.out {
-  background: #2563eb !important;
-  color: #ffffff !important;
-  border: none !important;
+  background: #409eff !important;
+  color: #000000 !important;
+  border: 1px solid #409eff !important;
 }
 
 .bubble:not(.out) {
   background: #ffffff !important;
-  color: #0f172a !important;
-  border: 1px solid #e2e8f0 !important;
+  color: #000000 !important;
+  border: 1px solid #e4e7ed !important;
+}
+
+.bubble .time {
+  color: rgba(0, 0, 0, 0.45) !important;
+}
+
+.bubble-translation {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #e4e7ed !important;
+}
+
+.bubble-wrap.out .bubble-translation {
+  background: #409eff !important;
+  color: #000000 !important;
+  border: 1px solid #409eff !important;
+}
+
+.bubble-translation.fail {
+  background: #fef0f0 !important;
+  color: #c45656 !important;
+  border-color: #fbc4c4 !important;
 }
 
 /* 8. 空状态美化 (Empty States) */
@@ -3816,4 +4120,59 @@ select:not(.ui-native):not([multiple]):focus {
   min-width:240px !important;
   max-width:280px !important;
   flex:0 0 240px !important;
+}
+
+/* ������ʱ������ʱ�� + �й�ʱ��Ԥ�� */
+.schedule-tz-field .schedule-tz-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+}
+.schedule-tz-field .schedule-tz-input-row .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.schedule-tz-preview-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.schedule-tz-preview-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+.schedule-tz-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.schedule-tz-preview .table-container {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+}
+.task-schedule-cell {
+  min-width: 148px;
+  line-height: 1.35;
+}
+.task-schedule-local {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.task-schedule-china {
+  font-size: 11px;
+  margin-top: 2px;
 }

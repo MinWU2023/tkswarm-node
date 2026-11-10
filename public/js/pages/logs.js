@@ -33,6 +33,10 @@
     },
     async renderLogs(){
       document.querySelector('#content').classList.remove('chat-mode');
+      if(!this.canPermission('logs.view')&&!this.canPermission('account.view')&&!this.canPermission('rbac.manage')&&!this.canPermission('rbac.log')){
+        document.querySelector('#content').innerHTML=`<div class="panel"><div class="empty">当前角色无权查看实时操作日志</div></div>`;
+        return;
+      }
       const filter = this.logLevelFilter || 'all';
       const totalCount = this.liveLogs.length;
   

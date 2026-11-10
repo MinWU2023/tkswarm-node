@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TKSwarm · Premium QA Shell</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/styles.css?v=6.54">
+  <link rel="stylesheet" href="/ui.css?v=5.23">
+  <link rel="stylesheet" href="/theme-tech.css?v=5.28">
+  <link rel="stylesheet" href="/theme-ep.css?v=5.39">
+  <link rel="stylesheet" href="/theme-polish.css?v=2.8">
+  <link rel="stylesheet" href="/theme-premium.css?v=1.7">
+  <style>
+    body { margin: 0; }
+    .qa-note { font-size: 12px; color: #7b8799; margin: 0 0 16px; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="navbar">
+      <a class="logo" href="/premium-qa-shell.html">TkSwarm QA</a>
+      <nav class="nav-menu" aria-label="导航">
+        <button type="button" class="nav-root-btn active"><span class="nav-label">账号中心</span></button>
+        <button type="button" class="nav-root-btn"><span class="nav-label">AI营销</span></button>
+        <button type="button" class="nav-root-btn"><span class="nav-label">AI矩阵</span></button>
+        <button type="button" class="nav-root-btn"><span class="nav-label">系统管理</span></button>
+      </nav>
+      <div class="user-info"><div class="username">QA · Arctic Blue</div></div>
+    </header>
+    <div class="main-container">
+      <section class="page-content">
+        <p class="qa-note">内部样式验收壳（无业务接口）。对照 §4 / F5。</p>
+        <div class="page-head">
+          <h1>账号列表</h1>
+          <p>维护 TikTok 账号、分组与浏览器环境</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><small>在线</small><b>128</b></div>
+          <div class="stat"><small>离线</small><b>34</b></div>
+          <div class="stat"><small>异常</small><b>6</b></div>
+          <div class="stat"><small>今日新增</small><b>12</b></div>
+        </div>
+        <div class="panel list-panel">
+          <div class="matrix-action-bar">
+            <div class="left"><span class="muted">共 180 个账号</span></div>
+            <div class="right">
+              <button class="ghost tiny" type="button">批量编辑</button>
+              <button class="primary tiny" type="button">添加账号</button>
+            </div>
+          </div>
+          <div class="search-bar task-filter-bar">
+            <input class="input" placeholder="搜索账号 / 备注">
+            <select class="input"><option>全部状态</option></select>
+            <button class="primary" type="button">查询</button>
+            <button class="ghost" type="button">重置</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr><th>账号</th><th>状态</th><th>分组</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>demo.user.01</td><td><span class="badge online">在线</span></td><td>默认组</td><td><button class="tiny" type="button">编辑</button></td></tr>
+                <tr><td>demo.user.02</td><td><span class="badge offline">离线</span></td><td>北美</td><td><button class="tiny" type="button">编辑</button></td></tr>
+                <tr><td>demo.user.03</td><td><span class="badge running">运行中</span></td><td>东南亚</td><td><button class="tiny" type="button">编辑</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <div class="pager-inner">
+              <button class="pager-nav" type="button" disabled>上一页</button>
+              <button class="pager-num is-on" type="button">1</button>
+              <button class="pager-num" type="button">2</button>
+              <button class="pager-nav" type="button">下一页</button>
+              <span class="pager-meta">共 3 页</span>
+              <input class="pager-jump-input" value="1">
+              <button class="pager-jump-go" type="button">跳转</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-head" style="margin-top:28px">
+          <h1>拓客 / 增粉 Hero</h1>
+          <p>业务页卡片材质</p>
+        </div>
+        <div class="ai-clue-hero" style="margin-bottom:14px">
+          <div class="ai-clue-hero__title">拓客线索</div>
+          <p class="ai-clue-hero__desc">查看拓客跑出的意向用户与评论，支持换号与导出。</p>
+        </div>
+        <div class="msg-tpl-hero" style="margin-bottom:14px">
+          <b>消息模板</b>
+          <p class="muted" style="margin:6px 0 0">评论 / 私信模板与 AI 提示词统一观感。</p>
+        </div>
+        <div class="rbac-tip" role="note"><b>权限说明：</b>模块 → 子分组 → 单节点三级勾选；菜单可见性单独勾选 menu.* 节点。</div>
+        <div class="rbac-perm-groups">
+          <section class="rbac-perm-group">
+            <div class="rbac-perm-module-head">
+              <label class="rbac-perm-group-title"><b>账号中心</b> <small class="muted">account · 3/5</small></label>
+            </div>
+            <div class="chip-row rbac-perm-group-chips">
+              <label class="chip"><input type="checkbox" checked> 查看</label>
+              <label class="chip"><input type="checkbox" checked> 创建</label>
+              <label class="chip"><input type="checkbox"> 删除</label>
+            </div>
+          </section>
+        </div>
+
+        <div class="page-head" style="margin-top:28px">
+          <h1>设置侧栏 / 平台卡</h1>
+          <p>长尾页一致性</p>
+        </div>
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px">
+          <div class="panel" style="padding:0">
+            <div class="settings-menu">
+              <button class="settings-menu-item active" type="button">基础设置</button>
+              <button class="settings-menu-item" type="button">SMTP</button>
+              <button class="settings-menu-item" type="button">开放平台</button>
+            </div>
+          </div>
+          <div class="ai-platform-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+            <button class="ai-platform-card active" type="button">
+              <div class="ai-platform-card-top"><b>OpenAI</b><code class="ai-platform-code">openai</code></div>
+              <p class="ai-platform-desc">官方兼容接口，适合通用对话与提示词。</p>
+            </button>
+            <button class="ai-platform-card" type="button">
+              <div class="ai-platform-card-top"><b>DeepSeek</b><code class="ai-platform-code">deepseek</code></div>
+              <p class="ai-platform-desc">高性价比推理模型。</p>
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

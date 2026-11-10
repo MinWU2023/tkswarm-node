@@ -1,3 +1,5 @@
+const { nowChinaIso } = require('../utils/china-time');
+
 const clients = new Set();
 
 function attachChat(socket) {
@@ -6,7 +8,7 @@ function attachChat(socket) {
 }
 
 function broadcast(type, data = {}) {
-  const raw = JSON.stringify({ type, data, time: new Date().toISOString() });
+  const raw = JSON.stringify({ type, data, time: nowChinaIso() });
   for (const socket of clients) {
     if (socket.readyState === 1) socket.send(raw);
   }

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>清空代理关联用户</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; line-height: 1.6; }
+    h1 { font-size: 20px; }
+    .warn { background: #fff7e6; border: 1px solid #ffd591; padding: 12px; border-radius: 8px; margin: 16px 0; }
+    button { padding: 10px 18px; font-size: 15px; cursor: pointer; border-radius: 6px; border: 1px solid #409eff; background: #409eff; color: #fff; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow: auto; font-size: 13px; }
+    .ok { color: #389e0d; }
+    .err { color: #cf1322; }
+  </style>
+</head>
+<body>
+  <h1>清空代理关联用户（owner_id）</h1>
+  <div class="warn">
+    <strong>说明：</strong>运营管理/超管只能看到 <code>owner_id</code> 为空或 0 的公共池代理。
+    若代理已分配给运营专员/企业客户，或历史数据写成 <code>owner_id=1</code>，列表会显示 0 条。
+    本工具将所有代理的 <code>owner_id</code> 清空，恢复公共池。
+    <br><br>
+    <strong>请先：</strong>用超管或运营管理账号登录 TkSwarm；若右下角显示「切换中」，执行前会自动切回本人。
+  </div>
+  <p>登录状态：<span id="auth-status">检测中…</span></p>
+  <button id="run-btn" type="button">清空全部代理关联用户</button>
+  <p id="result"></p>
+  <h2>或在已登录页面控制台执行</h2>
+  <pre id="snippet"></pre>
+  <script>
+    (function () {
+      const token = localStorage.getItem('tkswarm_token') || '';
+      const apiBase = (typeof window.getTkswarmApiBase === 'function' && window.getTkswarmApiBase())
+        || window.TKSWARM_API_BASE
+        || window.__TKSWARM_CONFIG__?.defaultApiBase
+        || '';
+      const statusEl = document.getElementById('auth-status');
+      const resultEl = document.getElementById('result');
+      const btn = document.getElementById('run-btn');
+      const snippet = `localStorage.removeItem('tkswarm_acting_as');
+const token = localStorage.getItem('tkswarm_token');
+const base = ${JSON.stringify(apiBase)};
+const r = await fetch(base + '/api/proxies/batch-unassign-owner', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+  body: JSON.stringify({ confirm: true })
+});
+console.log(await r.json());
+location.reload();`;
+      document.getElementById('snippet').textContent = snippet;
+
+      if (!token) {
+        statusEl.innerHTML = '<span class="err">未登录：请先在 TkSwarm 主站登录，再打开本页（同域名下可共享 token）</span>';
+        btn.disabled = true;
+        return;
+      }
+      statusEl.textContent = '已读取 token，可执行';
+
+      btn.addEventListener('click', async () => {
+        if (!confirm('确定清空全部代理的关联用户 ID？此操作不可自动撤销。')) return;
+        btn.disabled = true;
+        resultEl.textContent = '执行中…';
+        localStorage.removeItem('tkswarm_acting_as');
+        try {
+          const r = await fetch(apiBase + '/api/proxies/batch-unassign-owner', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: 'Bearer ' + token,
+            },
+            body: JSON.stringify({ confirm: true }),
+          });
+          const j = await r.json();
+          if (!r.ok || !j.success) throw new Error(j.message || '请求失败');
+          resultEl.innerHTML = '<span class="ok">成功：' + (j.message || '') + '（cleared=' + (j.data?.cleared ?? '?') + '）</span><br>请返回代理页刷新查看。';
+        } catch (e) {
+          resultEl.innerHTML = '<span class="err">失败：' + (e.message || e) + '</span>';
+          btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

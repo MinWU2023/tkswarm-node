@@ -36,6 +36,11 @@ window.__TKSWARM_CONFIG__ = {
 
   getApiBase: function () {
     const fallback = this.defaultApiBase || 'http://tkswarm-api.dyyweb.com';
+    // 本机 Node 页面走同源 /api，由 Node 转发至 PHP，避免跨域与混合内容
+    try {
+      const host = (location.hostname || '').toLowerCase();
+      if (host === '127.0.0.1' || host === 'localhost') return '';
+    } catch { /* ignore */ }
     let envMode = localStorage.getItem('tkswarm_env_mode') || this.env || 'php';
     if (envMode === 'local' || envMode === 'production') envMode = 'php';
 
@@ -94,4 +99,23 @@ window.__TKSWARM_CONFIG__ = {
   } catch { /* ignore */ }
 })();
 
-window.TKSWARM_API_BASE = window.__TKSWARM_CONFIG__.getApiBase();
+/** 每次调用取当前 API 根地址；本机 Node 下返回 ''（同源 /api 代理） */
+window.getTkswarmApiBase = function () {
+  return window.__TKSWARM_CONFIG__?.getApiBase?.() ?? '';
+};
+window.TKSWARM_API_BASE = window.getTkswarmApiBase();
+
+/**
+ * 统一美化层：在所有样式表之后追加 theme-polish.css（保证最后加载、覆盖冲突样式）。
+ * index.html 编码非 UTF-8，故通过此处注入，避免直接改动该文件。
+ */
+(function injectPolishTheme() {
+  try {
+    if (document.querySelector('link[data-tk-polish], link[href*="theme-polish.css"]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/theme-polish.css?v=2.6';
+    link.setAttribute('data-tk-polish', '1');
+    (document.head || document.documentElement).appendChild(link);
+  } catch { /* ignore */ }
+})();

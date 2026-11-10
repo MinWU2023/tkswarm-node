@@ -1,12 +1,49 @@
+# dependencies
 node_modules/
+
+# local env / secrets
+.env
+.env.local
+.env.*.local
+data/.secret-key
+
+# local DB & runtime state
 data/*.db
 data/*.db-shm
 data/*.db-wal
-data/.secret-key
+data/local-settings.json
+data/pack-revisions.json
+data/browser-backend-compare-*.json
 data/client-versions/
-.env
+data/local-materials/
+data/materials/
+data/uploads/
+data/backups/
+
+# automation screenshots / debug dumps
+src/data/automation/
+src/data/last-mark-published.json
+htmls/
+
+# logs & temp
 *.log
+logs/
+tmp/
+temp/
+.cache/
+*.tmp
+*.temp
+
+# local archives / dumps
+*.zip
+*.7z
+*.rar
+
+# OS / editor
 .DS_Store
+Thumbs.db
 **/.vscode/sftp.json
+
+# nested packages
 tkswarm-exe/dist/
 tkswarm-exe/node_modules/

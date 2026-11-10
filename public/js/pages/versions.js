@@ -1,13 +1,16 @@
 (function () {
   if (!window.app) throw new Error('app-core must load before pages/versions.js');
   const __methods = {
+    canViewVersions(){return this.canPermission('system.versions')||this.canPermission('system.view')||this.canPermission('rbac.manage')},
+    canEditVersions(){return this.canPermission('system.versions')||this.canPermission('rbac.manage')},
     async renderVersions(){
       const host=document.querySelector('#content');
       if(!host)return;
-      if(!this.canPermission('system.versions')&&!this.canPermission('system.view')&&!this.canPermission('rbac.manage')){
+      if(!this.canViewVersions()){
         host.innerHTML=`<div class="panel"><div class="empty">当前角色无权管理客户端版本</div></div>`;
         return;
       }
+      const canEdit=this.canEditVersions();
       try{
         const rows=await this.api('/client-versions');
         const list=Array.isArray(rows)?rows:[];
@@ -27,7 +30,7 @@
             <div class="matrix-action-bar">
               <div class="left"><span class="muted">共 ${filtered.length} / ${list.length} 个版本 · 上传 zip 后发布供 EXE 下载</span></div>
               <div class="right">
-                <button class="primary tiny" type="button" onclick="app.editVersionModal()">新建版本</button>
+                ${canEdit?`<button class="primary tiny" type="button" onclick="app.editVersionModal()">新建版本</button>`:''}
               </div>
             </div>
             <div class="search-bar task-filter-bar">
@@ -73,11 +76,11 @@
                       <td>${v.download_count||v.downloadCount||0}</td>
                       <td class="muted">${this.esc(v.updated_at||'-')}</td>
                       <td style="white-space:nowrap">
-                        <button class="tiny" onclick='app.editVersionModal(${JSON.stringify(v)})'>编辑</button>
+                        ${canEdit?`<button class="tiny" onclick='app.editVersionModal(${JSON.stringify(v)})'>编辑</button>
                         <button class="tiny" onclick="app.uploadVersionPackage(${v.id})">上传包</button>
                         ${v.status!=='published'?`<button class="tiny primary" onclick="app.publishVersion(${v.id})">发布</button>`:''}
                         ${v.status==='published'&&!(v.is_latest||v.isLatest)?`<button class="tiny" onclick="app.setLatestVersion(${v.id})">设为最新</button>`:''}
-                        <button class="tiny danger" onclick="app.deleteVersion(${v.id},'${this.esc(v.version)}')">删除</button>
+                        <button class="tiny danger" onclick="app.deleteVersion(${v.id},'${this.esc(v.version)}')">删除</button>`:'<span class="muted">只读</span>'}
                       </td>
                     </tr>
                   `).join(''):`<tr><td colspan="9"><div class="empty">暂无版本，请先新建并上传 zip 代码包</div></td></tr>`}
@@ -105,6 +108,7 @@
       this.refresh();
     },
     editVersionModal(v={}){
+      if(!this.canEditVersions()){this.toast('当前角色无权编辑版本',true);return}
       this.modal(v.id?'编辑版本':'新建版本',`
         <div class="form-grid">
           <input type="hidden" name="id" value="${v.id||''}">
@@ -125,6 +129,7 @@
       });
     },
     uploadVersionPackage(id){
+      if(!this.canEditVersions()){this.toast('当前角色无权上传版本包',true);return}
       const input=document.createElement('input');
       input.type='file';
       input.accept='.zip,application/zip';
@@ -144,6 +149,7 @@
       input.click();
     },
     async publishVersion(id){
+      if(!this.canEditVersions()){this.toast('当前角色无权发布版本',true);return}
       if(!(await this.ask('发布后客服客户端即可下载该版本，确认发布？')))return;
       try{
         await this.api(`/client-versions/${id}/publish`,{method:'POST',body:JSON.stringify({})});
@@ -152,6 +158,7 @@
       }catch(e){this.toast(e.message,true);}
     },
     async setLatestVersion(id){
+      if(!this.canEditVersions()){this.toast('当前角色无权设置最新版本',true);return}
       try{
         await this.api(`/client-versions/${id}/latest`,{method:'POST',body:JSON.stringify({})});
         this.toast('已设为最新版本');
@@ -159,6 +166,7 @@
       }catch(e){this.toast(e.message,true);}
     },
     async deleteVersion(id,version){
+      if(!this.canEditVersions()){this.toast('当前角色无权删除版本',true);return}
       if(!(await this.ask(`确定删除版本 ${version} 及其代码包吗？`,'danger')))return;
       try{
         await this.api(`/client-versions/${id}`,{method:'DELETE'});

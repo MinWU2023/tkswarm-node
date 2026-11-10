@@ -52,6 +52,7 @@
     key: 'key-round',
     link: 'link',
     copy: 'copy',
+    mail: 'mail',
     save: 'save',
     logout: 'log-out',
     login: 'log-in',
@@ -61,6 +62,8 @@
     clock: 'clock',
     calendar: 'calendar',
     image: 'image',
+    smile: 'smile',
+    emoji: 'smile',
     music: 'music',
     mic: 'mic',
     hash: 'hash',
@@ -141,31 +144,25 @@
       createIcons(r === document ? document.body : r);
     };
 
-    // Expand guessIcon coverage
+    // guessIcon 已在 ui.js 统一维护；此处仅补充 Lucide 别名映射
     const _guess = UI.guessIcon.bind(UI);
     UI.guessIcon = function (text) {
       const hit = _guess(text);
       if (hit) return hit;
       const t = UI.stripEmoji(text);
-      if (/复制|拷贝/.test(t)) return 'copy';
       if (/保存/.test(t)) return 'save';
       if (/退出|登出|注销/.test(t)) return 'logout';
-      if (/登录|进入/.test(t)) return 'login';
-      if (/禁用|封禁|拉黑|禁止/.test(t)) return 'ban';
+      if (/进入/.test(t)) return 'login';
+      if (/禁用|封禁|禁止/.test(t)) return 'ban';
       if (/警告|注意/.test(t)) return 'warn';
       if (/时间|时钟/.test(t)) return 'clock';
       if (/图片|封面|缩略/.test(t)) return 'image';
+      if (/表情|Emoji/i.test(t)) return 'smile';
       if (/标签/.test(t)) return 'tag';
-      if (/筛选|过滤/.test(t)) return 'filter';
-      if (/链接|绑定/.test(t)) return 'link';
-      if (/密钥|密码|鉴权/.test(t)) return 'key';
       if (/AI|智能|提示词/.test(t)) return 'sparkles';
-      if (/返回|后退/.test(t)) return 'arrowLeft';
       if (/下一步|继续/.test(t)) return 'arrowRight';
-      if (/关闭|取消/.test(t)) return 'close';
-      if (/批量/.test(t)) return 'layers';
-      if (/检测|测试|连通/.test(t)) return 'wifi';
       if (/统计|报表|图表/.test(t)) return 'chart';
+      if (/文件|模板/.test(t)) return 'file-text';
       return '';
     };
 

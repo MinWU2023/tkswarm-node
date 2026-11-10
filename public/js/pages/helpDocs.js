@@ -1,13 +1,16 @@
 (function () {
   if (!window.app) throw new Error('app-core must load before pages/helpDocs.js');
   const __methods = {
+    canViewHelpDocs(){return this.canPermission('system.help')||this.canPermission('system.view')||this.canPermission('rbac.manage')},
+    canEditHelpDocs(){return this.canPermission('system.help')||this.canPermission('rbac.manage')},
     async renderHelpDocs(){
       const host=document.querySelector('#content');
       if(!host)return;
-      if(!this.canPermission('system.help')&&!this.canPermission('system.view')&&!this.canPermission('rbac.manage')){
+      if(!this.canViewHelpDocs()){
         host.innerHTML=`<div class="panel"><div class="empty">当前角色无权管理帮助文档</div></div>`;
         return;
       }
+      const canEdit=this.canEditHelpDocs();
       const tab=this.helpDocsTab||'docs';
       try{
         const cats=await this.api('/help-categories');
@@ -26,7 +29,7 @@
                 <div class="left"><span class="muted">共 ${filtered.length} / ${catList.length} 个帮助分类</span></div>
                 <div class="right">
                   <button class="ghost tiny" type="button" onclick="app.helpDocsTab='docs';app.refresh()">文档列表</button>
-                  <button class="primary tiny" type="button" onclick="app.editHelpCategoryModal()">新建分类</button>
+                  ${canEdit?`<button class="primary tiny" type="button" onclick="app.editHelpCategoryModal()">新建分类</button>`:''}
                 </div>
               </div>
               <div class="search-bar task-filter-bar">
@@ -46,8 +49,8 @@
                         <td>${c.sortOrder??c.sort_order??0}</td>
                         <td>${c.visible?'显示':'隐藏'}</td>
                         <td style="white-space:nowrap">
-                          <button class="tiny" onclick='app.editHelpCategoryModal(${JSON.stringify(c)})'>编辑</button>
-                          <button class="tiny danger" onclick="app.deleteHelpCategory(${c.id},'${this.esc(c.name)}')">删除</button>
+                          ${canEdit?`<button class="tiny" onclick='app.editHelpCategoryModal(${JSON.stringify(c)})'>编辑</button>
+                          <button class="tiny danger" onclick="app.deleteHelpCategory(${c.id},'${this.esc(c.name)}')">删除</button>`:'<span class="muted">只读</span>'}
                         </td>
                       </tr>`).join(''):`<tr><td colspan="6"><div class="empty">暂无分类</div></td></tr>`}
                   </tbody>
@@ -75,7 +78,7 @@
               <div class="left"><span class="muted">共 ${filtered.length} / ${list.length} 篇文档 · 发布后客户端可查看</span></div>
               <div class="right">
                 <button class="ghost tiny" type="button" onclick="app.helpDocsTab='cats';app.refresh()">管理分类</button>
-                <button class="primary tiny" type="button" onclick="app.editHelpDocumentModal()">新建文档</button>
+                ${canEdit?`<button class="primary tiny" type="button" onclick="app.editHelpDocumentModal()">新建文档</button>`:''}
               </div>
             </div>
             <div class="search-bar task-filter-bar">
@@ -106,8 +109,8 @@
                       <td>${d.viewCount??0}</td>
                       <td class="muted">${this.esc(d.updatedAt||'-')}</td>
                       <td style="white-space:nowrap">
-                        <button class="tiny" onclick="app.editHelpDocumentModalById(${d.id})">编辑</button>
-                        <button class="tiny danger" onclick="app.deleteHelpDocument(${d.id},'${this.esc(d.title)}')">删除</button>
+                        ${canEdit?`<button class="tiny" onclick="app.editHelpDocumentModalById(${d.id})">编辑</button>
+                        <button class="tiny danger" onclick="app.deleteHelpDocument(${d.id},'${this.esc(d.title)}')">删除</button>`:'<span class="muted">只读</span>'}
                       </td>
                     </tr>`).join(''):`<tr><td colspan="8"><div class="empty">暂无文档</div></td></tr>`}
                 </tbody>
@@ -144,6 +147,7 @@
       this.refresh();
     },
     editHelpCategoryModal(c={}){
+      if(!this.canEditHelpDocs()){this.toast('当前角色无权编辑帮助分类',true);return}
       this.modal(c.id?'编辑分类':'新建分类',`
         <div class="form-grid">
           <input type="hidden" name="id" value="${c.id||''}">
@@ -164,6 +168,7 @@
       });
     },
     async deleteHelpCategory(id,name){
+      if(!this.canEditHelpDocs()){this.toast('当前角色无权删除帮助分类',true);return}
       if(!(await this.ask(`确定删除分类「${name}」吗？分类下有文档时无法删除。`,'danger')))return;
       try{
         await this.api(`/help-categories/${id}`,{method:'DELETE'});
@@ -172,6 +177,7 @@
       }catch(e){this.toast(e.message,true);}
     },
     editHelpDocumentModal(d={}){
+      if(!this.canEditHelpDocs()){this.toast('当前角色无权编辑帮助文档',true);return}
       const run=async()=>{
         let cats=[];
         try{cats=await this.api('/help-categories')||[];}catch{}
@@ -200,6 +206,7 @@
       run();
     },
     async editHelpDocumentModalById(id){
+      if(!this.canEditHelpDocs()){this.toast('当前角色无权编辑帮助文档',true);return}
       try{
         const rows=await this.api('/help-documents');
         const d=(Array.isArray(rows)?rows:[]).find(x=>Number(x.id)===Number(id));
@@ -208,6 +215,7 @@
       }catch(e){this.toast(e.message,true);}
     },
     async deleteHelpDocument(id,title){
+      if(!this.canEditHelpDocs()){this.toast('当前角色无权删除帮助文档',true);return}
       if(!(await this.ask(`确定删除文档「${title}」吗？`,'danger')))return;
       try{
         await this.api(`/help-documents/${id}`,{method:'DELETE'});

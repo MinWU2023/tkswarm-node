@@ -18,6 +18,7 @@ const {
   persistProfile,
 } = require('./tiktok-profile');
 const phpApi = require('../php-api');
+const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
 
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -234,6 +235,7 @@ async function runAccountDiagnose(accountId, options = {}) {
       timeout: 60000,
     }).catch(() => {});
     await delay(2000);
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     await dismissOverlays(page);
 
     const onProfile = await goToPersonalCenter(page, handle).catch(() => false);
@@ -244,6 +246,7 @@ async function runAccountDiagnose(accountId, options = {}) {
       }).catch(() => {});
       await delay(2200);
     }
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     await dismissOverlays(page);
 
     // 个人主页粉丝/关注等统计入库（不替代 Studio 检测）
@@ -265,6 +268,7 @@ async function runAccountDiagnose(accountId, options = {}) {
 
     // 2+3) ≡ → TikTok Studio（创作者中心）—— 不要先点 Settings
     const inStudio = await enterTikTokStudioFromProfile(page);
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     if (!inStudio) {
       const shot = await capture(page, accountId, 'diagnose', 'studio-miss').catch(() => '');
       throw new Error(`未进入 TikTok Studio（创作者中心）${shot ? `（截图：${path.basename(shot)}）` : ''}`);
@@ -272,6 +276,7 @@ async function runAccountDiagnose(accountId, options = {}) {
 
     // 4) More tools → Account Check
     const onCheck = await openAccountCheck(page);
+    await solveRotateCaptchaIfPresent(page, { accountId }).catch(() => {});
     if (!onCheck) {
       const shot = await capture(page, accountId, 'diagnose', 'account-check-miss').catch(() => '');
       throw new Error(`未打开 Account Check（账号检测）页${shot ? `（截图：${path.basename(shot)}）` : ''}`);

@@ -4,6 +4,8 @@
  * - 只把属于该 owner 的总任务推给对应前台
  * - 按本机并发槽位控制，避免重复推送
  */
+const { nowChinaIso } = require('../utils/china-time');
+
 const clients = new Map(); // socket -> state
 
 function defaultState() {
@@ -54,7 +56,7 @@ function handleMessage(socket, message) {
         ownerId: st.ownerId,
         userId: st.userId,
         onlineExecutors: countEnabled(),
-        time: new Date().toISOString(),
+        time: nowChinaIso(),
       },
     }));
     return true;
@@ -115,7 +117,15 @@ function clearOfferedEverywhere(batchId) {
  * @returns {{ ok: boolean, socket?: WebSocket, reason?: string }}
  */
 function pushWork(batch) {
-  const ownerId = Number(batch?.owner_id || batch?.ownerId || 0);
+  let ownerId = Number(batch?.owner_id || batch?.ownerId || 0);
+  if (!ownerId) {
+    const enabled = listEnabledClients();
+    if (enabled.length === 1 && enabled[0].ownerId > 0) {
+      ownerId = Number(enabled[0].ownerId);
+    } else {
+      return { ok: false, reason: '任务未绑定用户，无法推送' };
+    }
+  }
   let best = null;
   let bestLoad = Infinity;
 
@@ -123,7 +133,7 @@ function pushWork(batch) {
     if (!st.enabled || socket.readyState !== 1) continue;
     if (!st.ownerId) continue;
     // 必须推给「当前登录身份」对应 owner 的前台
-    if (ownerId > 0 && Number(st.ownerId) !== ownerId) continue;
+    if (Number(st.ownerId) !== ownerId) continue;
     if (st.offeredBatchIds.has(Number(batch.id))) continue;
     const load = Number(st.running || 0) + st.offeredBatchIds.size;
     if (load < bestLoad) {
@@ -148,7 +158,7 @@ function pushWork(batch) {
         username: batch.account?.username || '',
         browserProfileId: batch.browser_profile_id || batch.account?.browser_profile_id || '',
         taskLabel,
-        time: new Date().toISOString(),
+        time: nowChinaIso(),
       },
     }));
     markOffered(best, batch.id);
@@ -164,7 +174,7 @@ function notifyWorkDone(batchId, extra = {}) {
     type: 'work-done',
     data: {
       batchId: Number(batchId),
-      time: new Date().toISOString(),
+      time: nowChinaIso(),
       ...extra,
     },
   });
@@ -180,7 +190,7 @@ function broadcastExecutorStatus(extra = {}) {
     type: 'executor-hub',
     data: {
       onlineExecutors: countEnabled(),
-      time: new Date().toISOString(),
+      time: nowChinaIso(),
       ...extra,
     },
   });

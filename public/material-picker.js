@@ -9,9 +9,16 @@
     published: '已发布',
   };
 
+  function dialogFsButtons(rootSelector) {
+    if (window.UI && typeof UI.dialogFullscreenButtonsHtml === 'function') {
+      return UI.dialogFullscreenButtonsHtml(rootSelector);
+    }
+    return '';
+  }
+
   function ensureDom() {
     let mask = document.querySelector('#material-picker-mask');
-    if (mask && (!mask.querySelector('#mp-grid') || mask.querySelector('#mp-file') || !mask.querySelector('#mp-pager') || !mask.querySelector('#mp-loading') || !mask.querySelector('#mp-publish-filter'))) {
+    if (mask && (!mask.querySelector('#mp-grid') || mask.querySelector('#mp-file') || !mask.querySelector('#mp-pager') || !mask.querySelector('#mp-loading') || !mask.querySelector('#mp-publish-filter') || !mask.querySelector('[data-dialog-fs]'))) {
       mask.remove();
       mask = null;
     }
@@ -23,9 +30,12 @@
       <div class="mp-card" role="dialog" aria-modal="true">
         <div class="mp-head">
           <h2 id="mp-title">选择视频素材</h2>
-          <button type="button" class="mp-close" id="mp-close" aria-label="关闭" title="关闭">
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
+          <div class="dialog-head-actions mp-head-actions">
+            ${dialogFsButtons('#material-picker-mask')}
+            <button type="button" class="mp-close icon-btn" id="mp-close" aria-label="关闭" title="关闭">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
         </div>
         <div class="mp-toolbar">
           <input class="input" id="mp-search" type="search" placeholder="搜索 ID / 文件名 / 后缀">
@@ -35,7 +45,7 @@
             <button type="button" class="mp-pub-btn" data-v="published">已发布</button>
           </div>
           <button type="button" class="ghost" id="mp-refresh">刷新</button>
-          <button type="button" class="primary" id="mp-upload-btn">上传视频</button>
+          <button type="button" class="primary" id="mp-upload-btn">添加本机视频</button>
         </div>
         <div class="mp-body">
           <div id="mp-dup-panel" class="mp-dup hidden"></div>
@@ -56,18 +66,22 @@
           <div class="mp-foot-right">
             <span class="mp-count" id="mp-count">已选 0</span>
             <div style="display:flex;gap:8px">
-              <button type="button" class="ep-btn ep-btn-default" id="mp-cancel">取消</button>
               <button type="button" class="ep-btn ep-btn-primary" id="mp-ok">确定</button>
             </div>
           </div>
         </div>
       </div>`;
     document.body.appendChild(mask);
+    let pickerMaskDown = false;
+    mask.addEventListener('mousedown', (e) => {
+      pickerMaskDown = e.target === mask;
+    });
     mask.addEventListener('click', (e) => {
-      if (e.target === mask) app.closeMaterialPicker(false);
+      const pressedOnMask = pickerMaskDown;
+      pickerMaskDown = false;
+      if (e.target === mask && pressedOnMask) app.closeMaterialPicker(false);
     });
     mask.querySelector('#mp-close').onclick = () => app.closeMaterialPicker(false);
-    mask.querySelector('#mp-cancel').onclick = () => app.closeMaterialPicker(false);
     mask.querySelector('#mp-ok').onclick = () => app.confirmMaterialPicker();
     mask.querySelector('#mp-refresh').onclick = () => app.reloadMaterialPickerList();
     mask.querySelector('#mp-search').oninput = (e) => {
@@ -97,7 +111,7 @@
 
   function ensureUploadDom() {
     let mask = document.querySelector('#mp-upload-mask');
-    if (mask && (!mask.querySelector('#mp-up-frames') || !mask.querySelector('#mp-up-cover-file') || !mask.querySelector('#mp-up-locked'))) {
+    if (mask && (!mask.querySelector('#mp-up-frames') || !mask.querySelector('#mp-up-cover-file') || !mask.querySelector('#mp-up-locked') || !mask.querySelector('[data-dialog-fs]'))) {
       mask.remove();
       mask = null;
     }
@@ -108,10 +122,13 @@
     mask.innerHTML = `
       <div class="mp-upload-card" role="dialog" aria-modal="true">
         <div class="mp-upload-head">
-          <h3>上传视频素材</h3>
-          <button type="button" class="mp-close" id="mp-up-close" aria-label="关闭" title="关闭">
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
+          <h3>添加本机视频</h3>
+          <div class="dialog-head-actions mp-head-actions">
+            ${dialogFsButtons('#mp-upload-mask')}
+            <button type="button" class="mp-close icon-btn" id="mp-up-close" aria-label="关闭" title="关闭">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
         </div>
         <div class="mp-upload-body">
           <div class="mp-upload-layout">
@@ -208,8 +225,19 @@
         </div>
       </div>`;
     document.body.appendChild(mask);
+    // 只有「按下」和「松开」都落在遮罩上才算点击遮罩：
+    // 在输入框拖选文字 / 拖文本域缩放手柄后在卡片外松开，click 会落到遮罩上，不能因此关闭并清空表单
+    let upMaskDown = false;
+    mask.addEventListener('mousedown', (e) => {
+      upMaskDown = e.target === mask;
+    });
     mask.addEventListener('click', (e) => {
-      if (e.target === mask) app.closeMaterialUploadDialog();
+      const pressedOnMask = upMaskDown;
+      upMaskDown = false;
+      if (e.target !== mask || !pressedOnMask) return;
+      // 已选视频或已填内容时，点遮罩不关闭，避免误触丢失（请用右上角关闭/取消）
+      if (app._mpUpload?.file || app._mpUpload?.cover) return;
+      app.closeMaterialUploadDialog();
     });
     const drop = mask.querySelector('#mp-up-drop');
     const fileInput = mask.querySelector('#mp-up-file');
@@ -250,6 +278,10 @@
 
   function ensureDupPreviewDom() {
     let mask = document.querySelector('#mp-dup-preview-mask');
+    if (mask && (!mask.querySelector('[data-dialog-fs]') || !mask.querySelector('#mp-dup-preview-status'))) {
+      mask.remove();
+      mask = null;
+    }
     if (mask) return mask;
     mask = document.createElement('div');
     mask.id = 'mp-dup-preview-mask';
@@ -258,11 +290,15 @@
       <div class="mp-dup-preview-card" role="dialog" aria-modal="true">
         <div class="mp-dup-preview-head">
           <h3 id="mp-dup-preview-title">素材预览</h3>
-          <button type="button" class="mp-close" id="mp-dup-preview-close" aria-label="关闭" title="关闭">
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
+          <div class="dialog-head-actions mp-head-actions">
+            ${dialogFsButtons('#mp-dup-preview-mask')}
+            <button type="button" class="mp-close icon-btn" id="mp-dup-preview-close" aria-label="关闭" title="关闭">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
         </div>
         <div class="mp-dup-preview-body">
+          <div class="muted" id="mp-dup-preview-status" style="padding:12px 16px;text-align:center">正在加载…</div>
           <video id="mp-dup-preview-video" controls playsinline></video>
         </div>
         <div class="mp-dup-preview-foot">
@@ -271,8 +307,14 @@
       </div>`;
     document.body.appendChild(mask);
     const close = () => app.closeMaterialDupPreview();
+    let previewMaskDown = false;
+    mask.addEventListener('mousedown', (e) => {
+      previewMaskDown = e.target === mask;
+    });
     mask.addEventListener('click', (e) => {
-      if (e.target === mask) close();
+      const pressedOnMask = previewMaskDown;
+      previewMaskDown = false;
+      if (e.target === mask && pressedOnMask) close();
     });
     mask.querySelector('#mp-dup-preview-close').onclick = close;
     mask.querySelector('#mp-dup-preview-ok').onclick = close;
@@ -282,22 +324,58 @@
   Object.assign(window.AppPrototype || {}, {});
 
   const methods = {
+    /** 表单回显：已选视频用卡片（封面/标题/大小/状态），不用简单标签 */
+    materialPickerSelectedCardHtml(m, fieldId) {
+      const id = Number(m?.id || 0);
+      if (!id) return '';
+      const title = m.name || m.fileName || m.file_name || ('素材 #' + id);
+      const ext = String(m.fileExt || m.file_ext || '').toLowerCase() || 'video';
+      const sizeRaw = m.sizeBytes || m.size_bytes || 0;
+      const size = this.formatFileSize ? this.formatFileSize(sizeRaw) : (sizeRaw ? Math.round(Number(sizeRaw) / 1024) + ' KB' : '-');
+      const created = m.createdAt || m.created_at || '';
+      const ps = m.publishStatus || m.publish_status || 'unused';
+      const psMap = { unused: '未发布', published: '已发布', publishing: '发布中' };
+      const psLabel = psMap[ps] || ps;
+      const thumb = this.materialThumbHtml(m, {
+        imgClass: 'mp-scard-cover',
+        emptyClass: 'mp-scard-no',
+        allowVideo: false,
+      });
+      const removeBtn = fieldId
+        ? `<button type="button" class="mp-scard-remove" title="移除" aria-label="移除" onclick="event.stopPropagation();app.removeMaterialPickerChip('${fieldId}',${id})">×</button>`
+        : '';
+      return `<div class="mp-scard" data-id="${id}" title="${this.esc(title)}">
+        <div class="mp-scard-thumb">
+          <span class="mp-scard-id">#${id}</span>
+          ${thumb}
+          <span class="mp-scard-ext">${this.esc(ext)}</span>
+          ${removeBtn}
+        </div>
+        <div class="mp-scard-body">
+          <div class="mp-scard-name">${this.esc(title)}</div>
+          <div class="mp-scard-meta"><span>${this.esc(String(size))}</span><span class="mp-status-${this.esc(ps)}">${this.esc(psLabel)}</span></div>
+          ${created ? `<div class="mp-scard-meta muted">${this.esc(String(created).slice(0, 19))}</div>` : ''}
+        </div>
+      </div>`;
+    },
+
+    materialPickerSelectedListHtml(items, fieldId) {
+      const list = (items || []).filter((m) => Number(m?.id));
+      if (!list.length) return '<div class="mp-empty mp-field-empty">尚未选择视频素材</div>';
+      return `<div class="mp-scard-grid">${list.map((m) => this.materialPickerSelectedCardHtml(m, fieldId)).join('')}</div>`;
+    },
+
     materialPickerFieldHtml(opts = {}) {
       const multiple = opts.multiple !== false;
       const max = Number(opts.max || 0) || 0;
       const fieldId = opts.fieldId || 'material-picker-field';
       const ids = (opts.selectedIds || []).map(Number).filter(Boolean);
-      const items = (this.materials || []).filter((m) => ids.includes(Number(m.id)));
-      const chips = items.length
-        ? items
-            .map(
-              (m) =>
-                `<span class="mp-chip" data-id="${m.id}">#${m.id} ${this.esc(m.name || m.fileName || m.file_name || '')}<button type="button" title="移除" onclick="app.removeMaterialPickerChip('${fieldId}',${m.id})">×</button></span>`
-            )
-            .join('')
-        : '<span class="mp-empty">尚未选择视频素材</span>';
+      const items = this.ownedMaterials().filter((m) => ids.includes(Number(m.id)));
+      // 保持与 selectedIds 顺序一致
+      const ordered = ids.map((id) => items.find((m) => Number(m.id) === id) || { id }).filter(Boolean);
+      const cards = this.materialPickerSelectedListHtml(ordered, fieldId);
       return `<div class="mp-field" id="${fieldId}" data-multiple="${multiple ? 1 : 0}" data-max="${max}">
-        <div class="mp-field-box" id="${fieldId}-chips">${chips}</div>
+        <div class="mp-field-box mp-field-box--cards" id="${fieldId}-chips">${cards}</div>
         <div class="action-bar" style="margin:0">
           <button type="button" class="primary" onclick="app.openMaterialPickerFromField('${fieldId}')">选择视频素材</button>
           <button type="button" class="ghost" onclick="app.clearMaterialPickerField('${fieldId}')">清空</button>
@@ -335,14 +413,8 @@
       const max = Number(el?.getAttribute('data-max') || 0) || 0;
       if (hidden) hidden.value = ids.join(',');
       if (box) {
-        box.innerHTML = ids.length
-          ? items
-              .map(
-                (m) =>
-                  `<span class="mp-chip" data-id="${m.id}">#${m.id} ${this.esc(m.name || m.fileName || m.file_name || '')}<button type="button" title="移除" onclick="app.removeMaterialPickerChip('${fieldId}',${m.id})">×</button></span>`
-              )
-              .join('')
-          : '<span class="mp-empty">尚未选择视频素材</span>';
+        box.classList.add('mp-field-box--cards');
+        box.innerHTML = this.materialPickerSelectedListHtml(items || [], fieldId);
       }
       if (hint) hint.textContent = ids.length ? `已选 ${ids.length}${max ? ' / 最多 ' + max : ''} 个` : max ? `最多可选 ${max} 个` : '';
       if (typeof this.onMaterialPickerFieldChange === 'function') {
@@ -356,7 +428,7 @@
         .split(',')
         .map((x) => Number(x))
         .filter((x) => x && x !== Number(id));
-      const items = (this.materials || []).filter((m) => ids.includes(Number(m.id)));
+      const items = this.ownedMaterials().filter((m) => ids.includes(Number(m.id)));
       this.applyMaterialPickerField(fieldId, items);
     },
 
@@ -379,7 +451,7 @@
       const selectedIds = (opts.selectedIds || []).map(Number).filter(Boolean);
       const excludeIds = new Set((opts.excludeIds || []).map(Number).filter(Boolean));
       const selectedMap = new Map();
-      (this.materials || []).forEach((m) => {
+      this.ownedMaterials().forEach((m) => {
         if (selectedIds.includes(Number(m.id))) selectedMap.set(Number(m.id), m);
       });
       this._mp = {
@@ -406,6 +478,7 @@
         b.classList.toggle('is-on', (b.getAttribute('data-v') || '') === '');
       });
       document.querySelector('#mp-dup-panel')?.classList.add('hidden');
+      if (window.UI) UI.resetDialogFullscreen('#material-picker-mask');
       mask.classList.remove('hidden');
       this.setMaterialPickerLoading(true);
       this.reloadMaterialPickerList();
@@ -414,7 +487,10 @@
     closeMaterialPicker() {
       this.closeMaterialUploadDialog?.();
       const mask = document.querySelector('#material-picker-mask');
-      if (mask) mask.classList.add('hidden');
+      if (mask) {
+        mask.classList.add('hidden');
+        if (window.UI) UI.resetDialogFullscreen(mask);
+      }
       this.setMaterialPickerLoading(false);
       this._mp = null;
     },
@@ -462,10 +538,15 @@
         this._mp.page = Array.isArray(pack) ? 1 : Number(pack?.page || page);
         this._mp.pageSize = Array.isArray(pack) ? items.length || pageSize : Number(pack?.pageSize || pageSize);
         this._mp.pages = Array.isArray(pack) ? 1 : Number(pack?.pages || 1);
-        // 合并到缓存，便于跨页回显已选
-        const cache = new Map((this.materials || []).map((m) => [Number(m.id), m]));
-        rawItems.forEach((m) => cache.set(Number(m.id), m));
-        this.materials = [...cache.values()].sort((a, b) => Number(b.id) - Number(a.id));
+        // 仅把本页/已选项并入轻量缓存，避免每次整表 sort 卡顿
+        if (!Array.isArray(this.materials)) this.materials = [];
+        const byId = new Map(this.materials.map((m) => [Number(m.id), m]));
+        rawItems.forEach((m) => {
+          const id = Number(m.id);
+          if (!id) return;
+          byId.set(id, Object.assign({}, byId.get(id) || {}, m, { coverBase64: '', cover_base64: '' }));
+        });
+        this.materials = this.ownedMaterials([...byId.values()]);
         items.forEach((m) => {
           if (this._mp.selected.has(Number(m.id))) this._mp.selectedMap.set(Number(m.id), m);
         });
@@ -504,7 +585,6 @@
       const grid = document.querySelector('#mp-grid');
       const empty = document.querySelector('#mp-empty');
       if (!grid) return;
-      const apiBase = window.TKSWARM_API_BASE || window.__TKSWARM_CONFIG__?.defaultApiBase || '';
       if (!rows.length) {
         grid.innerHTML = '';
         grid.style.display = 'none';
@@ -522,16 +602,7 @@
             const owner = m.ownerName || m.owner_name || (m.ownerId || m.owner_id ? '#' + (m.ownerId || m.owner_id) : '-');
             const pubAcc = m.publishAccount || m.publish_account || m.publish_account_name || '-';
             const title = m.name || m.fileName || m.file_name || ('#' + id);
-            const canPreview = (m.status || 'ready') === 'ready';
-            const stream = this.materialStreamUrl
-              ? this.materialStreamUrl(id)
-              : `${apiBase}/api/materials/${id}/stream`;
-            const cover = m.coverBase64 || m.cover_base64 || '';
-            const thumb = cover
-              ? `<img class="mp-vcard-cover" src="${cover}" alt="cover" loading="lazy">`
-              : canPreview
-                ? `<video src="${stream}" muted preload="metadata" onclick="event.stopPropagation()"></video>`
-                : `<div class="mp-vcard-no">无预览</div>`;
+            const thumb = this.materialThumbHtml(m, { allowVideo: false });
             return `<div class="mp-vcard ${on ? 'is-on' : ''}" data-id="${id}" onclick="app.toggleMaterialPickerItem(${id})">
               <div class="mp-vcard-thumb">
                 <span class="mp-vcard-id">#${id}</span>
@@ -544,7 +615,7 @@
                 <div class="mp-vcard-meta">用户 ${this.esc(String(owner))} · <span class="mp-status-${this.esc(ps)}">${this.esc(publishStatusLabel[ps] || ps)}</span></div>
                 <div class="mp-vcard-meta">发布账号：${this.esc(String(pubAcc))}</div>
                 <div class="mp-vcard-actions" onclick="event.stopPropagation()">
-                  <button type="button" class="tiny" onclick="app.previewMaterial(${id})">预览</button>
+                  <button type="button" class="tiny" data-preview-title="${this.esc(title)}" onclick="app.openMaterialDupPreview(${id}, this.getAttribute('data-preview-title'))">预览</button>
                   <button type="button" class="tiny" onclick="app.renameMaterialPickerItem(${id})">重命名</button>
                   <button type="button" class="tiny danger" onclick="app.deleteMaterialPickerItem(${id})">删除</button>
                 </div>
@@ -600,7 +671,7 @@
       this.renderMaterialPickerList();
     },
 
-    confirmMaterialPicker() {
+    async confirmMaterialPicker() {
       if (!this._mp) return;
       const ids = [...this._mp.selected];
       if (!ids.length) {
@@ -611,8 +682,16 @@
         this.toast(`最多选择 ${this._mp.max} 个素材`, true);
         return;
       }
+      // 发布前确认本机文件还在
+      for (const id of ids) {
+        const check = await this.checkMaterialExists(id);
+        if (!check.ok) {
+          this.toast(`素材 #${id}：${check.message || '本机文件不存在'}`, true);
+          return;
+        }
+      }
       const ordered = ids
-        .map((id) => this._mp.selectedMap?.get(id) || (this.materials || []).find((m) => Number(m.id) === id) || { id })
+        .map((id) => this._mp.selectedMap?.get(id) || this.ownedMaterials().find((m) => Number(m.id) === id) || { id })
         .filter(Boolean);
       const cb = this._mp.onConfirm;
       this.closeMaterialPicker();
@@ -620,7 +699,7 @@
     },
 
     async renameMaterialPickerItem(id) {
-      const row = (this.materials || []).find((m) => Number(m.id) === Number(id));
+      const row = this.ownedMaterials().find((m) => Number(m.id) === Number(id));
       const cur = row?.name || '';
       const name = window.prompt('重命名素材', cur);
       if (name == null) return;
@@ -687,18 +766,19 @@
       this._mpUploadOpts = {
         mode: isEdit ? 'edit' : 'upload',
         defaultTags: options.defaultTags != null ? String(options.defaultTags) : (this._mp ? 'material-picker' : 'materials'),
-        title: options.title || (isEdit ? '编辑视频素材' : '上传视频素材'),
+        title: options.title || (isEdit ? '编辑视频素材' : '添加本机视频'),
         onUploaded: typeof options.onUploaded === 'function' ? options.onUploaded : null,
         onSaved: typeof options.onSaved === 'function' ? options.onSaved : null,
       };
       const mask = document.querySelector('#mp-upload-mask');
       const titleEl = mask.querySelector('.mp-upload-head h3');
       if (titleEl) titleEl.textContent = this._mpUploadOpts.title;
+      if (window.UI) UI.resetDialogFullscreen('#mp-upload-mask');
       mask.classList.remove('hidden');
       document.querySelector('#mp-up-drop')?.classList.toggle('hidden', isEdit);
       document.querySelector('#mp-up-locked')?.classList.toggle('hidden', !isEdit);
       document.querySelector('#mp-up-status-wrap')?.toggleAttribute('hidden', !isEdit);
-      document.querySelector('#mp-up-ok-label').textContent = isEdit ? '保存修改' : '开始上传';
+      document.querySelector('#mp-up-ok-label').textContent = isEdit ? '保存修改' : '添加到本机素材库';
       document.querySelector('#mp-up-progress').classList.remove('is-on');
       document.querySelector('#mp-up-bar').style.width = '0%';
       document.querySelector('#mp-up-dup')?.classList.add('hidden');
@@ -725,7 +805,7 @@
         document.querySelector('#mp-up-preview').classList.add('is-on');
         document.querySelector('#mp-up-ok').disabled = false;
         document.querySelector('#mp-up-frames').innerHTML = '';
-        document.querySelector('#mp-up-frames-tip').textContent = '正在从视频解帧…';
+        document.querySelector('#mp-up-frames-tip').textContent = '正在按秒分批解帧…';
         if (initialCover) {
           this.applyMaterialUploadCoverPreview(initialCover, '当前封面 · 可截帧或改传封面图');
         } else {
@@ -808,7 +888,11 @@
 
     closeMaterialUploadDialog() {
       this.closeMaterialDupPreview?.();
-      document.querySelector('#mp-upload-mask')?.classList.add('hidden');
+      const mask = document.querySelector('#mp-upload-mask');
+      if (mask) {
+        mask.classList.add('hidden');
+        if (window.UI) UI.resetDialogFullscreen(mask);
+      }
       this._mpUpload = null;
       this._mpUploadOpts = null;
     },
@@ -874,16 +958,54 @@
       });
     },
 
+    /** 列表封面：独立接口，避免把 base64 塞进列表 JSON */
+    materialCoverUrl(id, coverUrl) {
+      const mid = Number(id);
+      if (!mid) return '';
+      let path = String(coverUrl || '').trim();
+      if (!path || path.startsWith('data:')) {
+        path = `/api/materials/${mid}/cover`;
+      }
+      try {
+        const u = new URL(path, window.location.origin);
+        if (this.authToken) u.searchParams.set('token', this.authToken);
+        const acting = this.getActingAsId?.();
+        if (acting) u.searchParams.set('actingAs', String(acting));
+        return u.toString();
+      } catch (_) {
+        return path;
+      }
+    },
+
+    materialThumbHtml(m, opts = {}) {
+      const id = Number(m?.id || 0);
+      const coverData = String(m?.coverBase64 || m?.cover_base64 || '');
+      const hasCover = !!(m?.hasCover || m?.has_cover || (coverData && coverData.startsWith('data:')));
+      const imgClass = opts.imgClass || 'mp-vcard-cover';
+      const videoClass = opts.videoClass || '';
+      const emptyClass = opts.emptyClass || 'mp-vcard-no';
+      if (coverData.startsWith('data:')) {
+        return `<img class="${imgClass}" src="${coverData}" alt="cover" loading="lazy" decoding="async">`;
+      }
+      if (hasCover && id) {
+        const src = this.materialCoverUrl(id, m.coverUrl || m.cover_url || '');
+        return `<img class="${imgClass}" src="${this.esc(src)}" alt="cover" loading="lazy" decoding="async">`;
+      }
+      if (opts.allowVideo && (m?.status || 'ready') === 'ready' && id) {
+        // 列表禁止挂 video src（会并发打流接口）；仅点预览再播
+        return `<div class="${emptyClass}">点击预览</div>`;
+      }
+      return `<div class="${emptyClass}">无封面</div>`;
+    },
+
+    /** 线下素材预览：始终走本机 Node，避免远程 PHP 读不到 Windows 路径 */
     materialStreamUrl(id, streamUrl) {
-      const apiBase = String(window.TKSWARM_API_BASE || window.__TKSWARM_CONFIG__?.defaultApiBase || '').replace(/\/+$/, '');
       let path = String(streamUrl || '').trim();
-      if (!path) path = `/api/materials/${Number(id)}/stream`;
-      if (/^https?:\/\//i.test(path)) {
-        // already absolute
-      } else if (path.startsWith('/')) {
-        path = apiBase + path;
-      } else {
-        path = `${apiBase}/api/materials/${Number(id)}/stream`;
+      // 旧数据可能仍指向 /api/materials/*/stream，统一改本机
+      if (!path || /\/api\/materials\/\d+\/stream/i.test(path)) {
+        path = `/api/local-materials/${Number(id)}/stream`;
+      } else if (!/^https?:\/\//i.test(path) && !path.startsWith('/')) {
+        path = `/api/local-materials/${Number(id)}/stream`;
       }
       try {
         const u = new URL(path, window.location.origin);
@@ -897,7 +1019,8 @@
         const acting = this.getActingAsId?.();
         if (acting) q.set('actingAs', String(acting));
         const qs = q.toString();
-        return path + (qs ? (path.includes('?') ? '&' : '?') + qs : '');
+        const base = path.startsWith('/') ? (window.location.origin + path) : path;
+        return base + (qs ? (base.includes('?') ? '&' : '?') + qs : '');
       }
     },
 
@@ -910,8 +1033,77 @@
       }
     },
 
-    async loadMaterialPreviewVideo(video, id, streamUrl) {
-      if (!video || !id) return;
+    materialAuthHeaders() {
+      const headers = {};
+      if (this.authToken) headers.Authorization = 'Bearer ' + this.authToken;
+      const acting = this.getActingAsId?.();
+      if (acting) headers['X-Acting-As'] = String(acting);
+      return headers;
+    },
+
+    /** 预览/发布前：检查本机 Node 能否读到线下素材文件 */
+    async checkMaterialExists(id) {
+      const mid = Number(id);
+      if (!mid) return { ok: false, message: '素材无效', sizeBytes: 0 };
+      try {
+        const res = await fetch(`/api/local-materials/${mid}/check`, {
+          method: 'POST',
+          headers: { ...this.materialAuthHeaders(), 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const json = await res.json().catch(() => ({}));
+        const r = json?.data || json;
+        if (res.ok && (json?.success !== false)) {
+          return {
+            ok: !!r?.exists,
+            message: r?.message || json?.message || (r?.exists ? '本机素材文件存在' : '未找到本机素材文件'),
+            sizeBytes: Number(r?.sizeBytes || r?.size_bytes || 0),
+            filePath: r?.filePath || r?.file_path || '',
+            raw: r,
+          };
+        }
+        throw new Error(json?.message || `检查失败 HTTP ${res.status}`);
+      } catch (e) {
+        try {
+          const src = this.materialStreamUrl(mid);
+          const res = await fetch(src, {
+            method: 'GET',
+            headers: { ...this.materialAuthHeaders(), Range: 'bytes=0-0' },
+          });
+          if (res.ok || res.status === 206) {
+            return { ok: true, message: '本机素材文件存在', sizeBytes: 0 };
+          }
+          if (res.status === 404) {
+            return { ok: false, message: '未找到本机素材文件', sizeBytes: 0 };
+          }
+        } catch (_) {}
+        return { ok: false, message: e.message || '本机素材检测失败', sizeBytes: 0 };
+      }
+    },
+
+    /**
+     * 本机线下素材：一律用 Node Range 直链，禁止整文件拉成 blob（会卡死大视频）。
+     * 浏览器安全策略不允许 http 页直接用 file:///D:/xxx.mp4。
+     */
+    async resolveMaterialPlayUrl(id, streamUrl, opts = {}) {
+      const mid = Number(id);
+      const direct = this.materialStreamUrl(mid, streamUrl);
+      if (opts.forceStream !== false) {
+        return { url: direct, via: 'stream', revoke: false };
+      }
+      return { url: direct, via: 'stream', revoke: false };
+    },
+
+    async loadMaterialPreviewVideo(video, id, streamUrl, opts = {}) {
+      if (!video || !id) return false;
+      const statusEl = opts.statusEl || null;
+      const setStatus = (t) => {
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.style.display = '';
+          statusEl.textContent = t;
+        }
+      };
       this.revokeMaterialPreviewBlob();
       try {
         video.pause();
@@ -919,26 +1111,102 @@
       video.onerror = null;
       video.removeAttribute('src');
       video.load();
-      const src = this.materialStreamUrl(id, streamUrl);
-      video.src = src;
+
+      // 已检查过则跳过；否则只做轻量存在性探测（不再整包下载）
+      let check = opts.check || null;
+      if (!check && opts.skipCheck !== true) {
+        setStatus('正在检测本机文件…');
+        check = await this.checkMaterialExists(id);
+        if (!check.ok) {
+          setStatus(check.message || '素材文件不存在');
+          this.toast?.(check.message || '素材文件不存在', true);
+          return false;
+        }
+      }
+
+      setStatus('正在打开本机视频…');
+      const play = await this.resolveMaterialPlayUrl(id, streamUrl, { forceStream: true });
+      video.setAttribute('playsinline', '');
+      video.controls = true;
+      video.style.display = '';
+      // 同源本机流，不要设 crossOrigin，避免多余预检
+      try { video.removeAttribute('crossorigin'); } catch (_) {}
       video.onerror = () => {
-        this.toast?.('视频预览加载失败：请确认素材文件存在且已登录', true);
+        setStatus('视频预览失败：请确认本机文件仍在且 Node 已重启');
+        this.toast?.('视频预览失败', true);
       };
+      video.src = play.url;
+      try { video.load(); } catch (_) {}
+
+      // 尽快露出画面：不等整段缓冲，canplay/loadeddata 任一即可
+      const ready = await new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          video.removeEventListener('loadeddata', onOk);
+          video.removeEventListener('canplay', onOk);
+          video.removeEventListener('loadedmetadata', onOk);
+          video.removeEventListener('error', onErr);
+          resolve(ok);
+        };
+        const onOk = () => finish(true);
+        const onErr = () => finish(false);
+        const timer = setTimeout(() => finish(video.readyState >= 1), 8000);
+        video.addEventListener('loadedmetadata', onOk);
+        video.addEventListener('loadeddata', onOk);
+        video.addEventListener('canplay', onOk);
+        video.addEventListener('error', onErr);
+      });
+      if (!ready && video.readyState < 1) {
+        setStatus('视频加载失败');
+        return false;
+      }
+      if (statusEl) {
+        try {
+          statusEl.remove();
+        } catch (_) {
+          statusEl.textContent = '';
+          statusEl.hidden = true;
+          statusEl.style.display = 'none';
+        }
+      }
       try {
         await video.play?.();
       } catch (_) {}
+      return true;
     },
 
-    openMaterialDupPreview(id, title, streamUrl) {
+    async openMaterialDupPreview(id, title, streamUrl) {
       const mid = Number(id);
       if (!mid) return;
+      // 先弹窗再检测，避免“点了没反应”
       ensureDupPreviewDom();
       const mask = document.querySelector('#mp-dup-preview-mask');
       const video = document.querySelector('#mp-dup-preview-video');
       const titleEl = document.querySelector('#mp-dup-preview-title');
+      const statusEl = document.querySelector('#mp-dup-preview-status');
       if (titleEl) titleEl.textContent = title ? `预览 · ${title}` : `预览素材 #${mid}`;
+      if (window.UI) UI.resetDialogFullscreen('#mp-dup-preview-mask');
       mask?.classList.remove('hidden');
-      this.loadMaterialPreviewVideo(video, mid, streamUrl);
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.style.display = '';
+        statusEl.textContent = '正在打开本机视频…';
+      }
+      if (video) {
+        video.style.display = '';
+        video.removeAttribute('src');
+      }
+      const ok = await this.loadMaterialPreviewVideo(video, mid, streamUrl, { statusEl });
+      if (ok && statusEl) {
+        statusEl.hidden = true;
+        statusEl.style.display = 'none';
+      }
+      if (!ok) {
+        this.closeMaterialDupPreview();
+      }
     },
 
     closeMaterialDupPreview() {
@@ -953,7 +1221,10 @@
         video.load();
       }
       this.revokeMaterialPreviewBlob();
-      mask?.classList.add('hidden');
+      if (mask) {
+        mask.classList.add('hidden');
+        if (window.UI) UI.resetDialogFullscreen(mask);
+      }
     },
 
     applyMaterialUploadCoverPreview(cover, tip) {
@@ -1067,91 +1338,233 @@
       document.querySelector('#mp-up-preview')?.classList.add('is-on');
     },
 
-    async extractVideoFramesList(source, count = 16) {
+    _mpSleep(ms) {
+      return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
+    },
+
+    /**
+     * 在指定秒数截一帧：seeked + 轮询 readyState/currentTime，避免长视频 seek 卡住。
+     */
+    _mpCaptureVideoFrameAt(video, timeSec, opts = {}) {
+      const timeoutMs = Math.max(800, Number(opts.timeoutMs) || 4500);
+      const maxW = Math.max(80, Number(opts.maxW) || 320);
+      const quality = Number(opts.quality) || 0.78;
+      const target = Math.max(0.05, Number(timeSec) || 0.05);
       return new Promise((resolve) => {
-        if (!source) {
-          resolve([]);
-          return;
-        }
-        const isFile = typeof File !== 'undefined' && source instanceof File;
-        const url = isFile ? URL.createObjectURL(source) : String(source);
-        const sourceKey = isFile ? source : url;
-        if (this._mpUpload) this._mpUpload.frameSource = sourceKey;
-        const video = document.createElement('video');
-        video.muted = true;
-        video.playsInline = true;
-        video.crossOrigin = 'anonymous';
-        video.preload = 'auto';
-        video.src = url;
-        const frames = [];
-        let finished = false;
-        const done = (list) => {
-          if (finished) return;
-          finished = true;
-          if (isFile) {
-            try {
-              URL.revokeObjectURL(url);
-            } catch (_) {}
-          }
-          resolve(list || []);
-        };
-        const stillCurrent = () => this._mpUpload?.frameSource === sourceKey;
-        const timer = setTimeout(() => done(frames), 45000);
-        const captureAt = (t) =>
-          new Promise((res) => {
-            const onSeeked = () => {
-              video.removeEventListener('seeked', onSeeked);
-              try {
-                const w = video.videoWidth || 0;
-                const h = video.videoHeight || 0;
-                if (!w || !h) {
-                  res(null);
-                  return;
-                }
-                const maxW = 320;
-                const scale = Math.min(1, maxW / w);
-                const canvas = document.createElement('canvas');
-                canvas.width = Math.max(1, Math.round(w * scale));
-                canvas.height = Math.max(1, Math.round(h * scale));
-                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-                res({ time: t, dataUrl: canvas.toDataURL('image/jpeg', 0.78) });
-              } catch (_) {
-                res(null);
-              }
-            };
-            video.addEventListener('seeked', onSeeked);
-            try {
-              video.currentTime = Math.max(0.05, t);
-            } catch (_) {
-              video.removeEventListener('seeked', onSeeked);
-              res(null);
-            }
-          });
-        video.addEventListener('error', () => {
+        let settled = false;
+        const finish = (val) => {
+          if (settled) return;
+          settled = true;
+          clearInterval(poll);
           clearTimeout(timer);
-          done([]);
-        });
-        video.addEventListener('loadedmetadata', async () => {
+          video.removeEventListener('seeked', onSeeked);
+          resolve(val || null);
+        };
+        const draw = () => {
           try {
-            const dur = Number(video.duration);
-            const safeDur = Number.isFinite(dur) && dur > 0 ? dur : 1;
-            const n = Math.max(8, Math.min(24, count));
-            for (let i = 0; i < n; i++) {
-              if (!stillCurrent()) break;
-              const t = safeDur * ((i + 0.5) / n);
-              const frame = await captureAt(Math.min(t, Math.max(0.05, safeDur - 0.05)));
-              if (frame?.dataUrl) frames.push(frame);
-              const tip = document.querySelector('#mp-up-frames-tip');
-              if (tip) tip.textContent = `正在解帧 ${frames.length}/${n}…`;
-            }
-            clearTimeout(timer);
-            done(frames);
+            const w = video.videoWidth || 0;
+            const h = video.videoHeight || 0;
+            if (!w || !h || video.readyState < 2) return false;
+            const scale = Math.min(1, maxW / w);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(w * scale));
+            canvas.height = Math.max(1, Math.round(h * scale));
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+            finish({
+              time: target,
+              dataUrl: canvas.toDataURL('image/jpeg', quality),
+            });
+            return true;
           } catch (_) {
-            clearTimeout(timer);
-            done(frames);
+            return false;
+          }
+        };
+        const onSeeked = () => {
+          // 尚未 ready 时交给轮询，勿立刻判失败（长视频常见）
+          draw();
+        };
+        const poll = setInterval(() => {
+          if (settled) return;
+          if (Math.abs((video.currentTime || 0) - target) <= 0.55 && video.readyState >= 2) {
+            draw();
+          }
+        }, 90);
+        const timer = setTimeout(() => {
+          if (settled) return;
+          if (Math.abs((video.currentTime || 0) - target) <= 1.2 && video.readyState >= 2) {
+            draw();
+          } else {
+            finish(null);
+          }
+        }, timeoutMs);
+        video.addEventListener('seeked', onSeeked);
+        try {
+          // 已接近目标时强制微调，确保触发 seeked / 轮询
+          if (Math.abs((video.currentTime || 0) - target) < 0.02) {
+            video.currentTime = Math.max(0.05, target + 0.01);
+          } else {
+            video.currentTime = target;
+          }
+        } catch (_) {
+          finish(null);
+        }
+      });
+    },
+
+    /** 同一秒位失败时，在邻近视口再试几次 */
+    async _mpCaptureVideoFrameWithRetry(video, timeSec, opts = {}) {
+      const dur = Number(opts.duration) || 0;
+      const base = Math.max(0.05, Number(timeSec) || 0.05);
+      const deltas = opts.quick
+        ? [0, 0.25, -0.25]
+        : [0, 0.2, -0.2, 0.45, -0.45, 0.8];
+      for (const d of deltas) {
+        let t = base + d;
+        if (dur > 0) t = Math.min(Math.max(0.05, t), Math.max(0.05, dur - 0.05));
+        else t = Math.max(0.05, t);
+        const frame = await this._mpCaptureVideoFrameAt(video, t, opts);
+        if (frame?.dataUrl) return { ...frame, time: base };
+        await this._mpSleep(15);
+      }
+      return null;
+    },
+
+    /**
+     * 按「秒」取样封面帧；长视频按 6s 一批分段解析 + 轮询 seek，避免 >10s 视频整段 seek 失败。
+     * 例：60s → 约 10 批，每批窗口 6s。
+     */
+    async extractVideoFramesList(source, count = 16) {
+      if (!source) return [];
+      const isFile = typeof File !== 'undefined' && source instanceof File;
+      const url = isFile ? URL.createObjectURL(source) : String(source);
+      const sourceKey = isFile ? source : url;
+      if (this._mpUpload) this._mpUpload.frameSource = sourceKey;
+      const stillCurrent = () => this._mpUpload?.frameSource === sourceKey;
+
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+      video.src = url;
+
+      const cleanupUrl = () => {
+        if (!isFile) return;
+        try {
+          URL.revokeObjectURL(url);
+        } catch (_) {}
+      };
+
+      try {
+        await new Promise((resolve, reject) => {
+          const onMeta = () => {
+            cleanup();
+            resolve();
+          };
+          const onErr = () => {
+            cleanup();
+            reject(new Error('video load error'));
+          };
+          const cleanup = () => {
+            video.removeEventListener('loadedmetadata', onMeta);
+            video.removeEventListener('error', onErr);
+          };
+          video.addEventListener('loadedmetadata', onMeta);
+          video.addEventListener('error', onErr);
+          // 部分浏览器 blob 已缓存时可能错过事件
+          if (video.readyState >= 1) {
+            cleanup();
+            resolve();
           }
         });
-      });
+      } catch (_) {
+        cleanupUrl();
+        return [];
+      }
+
+      const dur = Number(video.duration);
+      const safeDur = Number.isFinite(dur) && dur > 0 ? dur : 1;
+      const n = Math.max(8, Math.min(24, Number(count) || 16));
+      // 目标时刻：按整段均匀取「秒」点
+      const targets = [];
+      for (let i = 0; i < n; i += 1) {
+        const t = safeDur * ((i + 0.5) / n);
+        targets.push(Math.min(Math.max(0.05, t), Math.max(0.05, safeDur - 0.05)));
+      }
+
+      const BATCH_SEC = 6;
+      const batchCount = Math.max(1, Math.ceil(safeDur / BATCH_SEC));
+      const overallMs = Math.min(180000, Math.max(60000, Math.ceil(safeDur) * 2500 + batchCount * 1500));
+      const startedAt = Date.now();
+      const frames = [];
+      const tipEl = () => document.querySelector('#mp-up-frames-tip');
+
+      try {
+        for (let b = 0; b < batchCount; b += 1) {
+          if (!stillCurrent()) break;
+          if (Date.now() - startedAt > overallMs) break;
+
+          const batchStart = b * BATCH_SEC;
+          const batchEnd = Math.min(safeDur, (b + 1) * BATCH_SEC);
+          // 末批用闭区间，避免最后一帧落在终点被漏掉
+          const inBatch = targets.filter((t) => {
+            if (b === batchCount - 1) return t >= batchStart && t <= batchEnd + 0.001;
+            return t >= batchStart && t < batchEnd;
+          });
+          if (!inBatch.length) continue;
+
+          const tip = tipEl();
+          if (tip) {
+            tip.textContent = `正在解帧 第 ${b + 1}/${batchCount} 批（${batchStart.toFixed(0)}–${batchEnd.toFixed(0)}s）· ${frames.length}/${n}`;
+          }
+
+          // 先 seek 到本批起点预热解码器，再轮询等到接近起点
+          try {
+            video.currentTime = Math.max(0.05, batchStart || 0.05);
+          } catch (_) {}
+          await this._mpSleep(60);
+          const warmDeadline = Date.now() + 1200;
+          while (Date.now() < warmDeadline) {
+            if (video.readyState >= 2 && Math.abs((video.currentTime || 0) - (batchStart || 0.05)) <= 1) break;
+            await this._mpSleep(80);
+          }
+
+          for (const t of inBatch) {
+            if (!stillCurrent()) break;
+            if (Date.now() - startedAt > overallMs) break;
+            // 跳过已成功截到的近似时刻
+            if (frames.some((f) => Math.abs(f.time - t) < 0.08)) continue;
+            const frame = await this._mpCaptureVideoFrameWithRetry(video, t, {
+              duration: safeDur,
+              timeoutMs: safeDur > 20 ? 4200 : 3200,
+              maxW: 320,
+              quality: 0.78,
+              quick: true,
+            });
+            if (frame?.dataUrl) frames.push(frame);
+            const tip2 = tipEl();
+            if (tip2) {
+              tip2.textContent = `正在解帧 第 ${b + 1}/${batchCount} 批 · ${frames.length}/${n}（${t.toFixed(1)}s）`;
+            }
+            // 帧与帧之间让出主线程，避免 UI 卡死
+            await this._mpSleep(20);
+          }
+
+          // 批与批之间短暂停顿，给浏览器释放解码缓冲
+          await this._mpSleep(40);
+        }
+      } finally {
+        try {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        } catch (_) {}
+        cleanupUrl();
+      }
+
+      // 按时间排序，保证封面帧顺序稳定
+      frames.sort((a, b) => a.time - b.time);
+      return frames;
     },
 
     async onMaterialUploadFilePicked(file) {
@@ -1187,10 +1600,10 @@
       document.querySelector('#mp-up-fmeta').textContent = `${file.type || 'video'} · ${this.formatFileSize?.(file.size) || file.size}`;
       document.querySelector('#mp-up-preview').classList.add('is-on');
       document.querySelector('#mp-up-cover-clear')?.toggleAttribute('hidden', true);
-      document.querySelector('#mp-up-cover-tip').textContent = '正在逐帧解析封面…也可先手动上传封面图';
+      document.querySelector('#mp-up-cover-tip').textContent = '正在按秒分段解析封面…也可先手动上传封面图';
       document.querySelector('#mp-up-cover-wrap').innerHTML = '<div class="mp-upload-cover-ph">解帧中…</div>';
       document.querySelector('#mp-up-frames').innerHTML = '';
-      document.querySelector('#mp-up-frames-tip').textContent = '正在解帧…';
+      document.querySelector('#mp-up-frames-tip').textContent = '正在按秒分批解帧…';
       document.querySelector('#mp-up-ok').disabled = false;
       const frames = await this.extractVideoFramesList(file, 16);
       if (this._mpUpload?.file !== file) return;
@@ -1309,25 +1722,45 @@
           }
           return;
         }
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('name', name);
-        fd.append('tags', tags);
-        fd.append('description', description);
-        fd.append('shareTitle', shareTitle);
-        fd.append('shareCaption', shareCaption);
-        fd.append('reuseExisting', '0');
-        if (forceUpload) fd.append('forceUpload', '1');
-        if (cover) fd.append('coverBase64', cover);
-        const mat = await this.uploadVideoWithProgress(fd, (pct) => {
-          if (bar) bar.style.width = pct + '%';
-        });
+        // 有本机绝对路径（Electron file.path）只登记路径；否则落到本机 Node ingest，不上传 PHP
+        const nativePath = String(file.path || file._path || '').trim();
+        let mat = null;
+        if (nativePath) {
+          if (bar) bar.style.width = '40%';
+          mat = await this.api('/local-materials/register', {
+            method: 'POST',
+            body: JSON.stringify({
+              filePath: nativePath,
+              name,
+              tags,
+              description,
+              shareTitle,
+              shareCaption,
+              coverBase64: cover || '',
+            }),
+          });
+          if (bar) bar.style.width = '100%';
+        } else {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('name', name);
+          fd.append('tags', tags);
+          fd.append('description', description);
+          fd.append('shareTitle', shareTitle);
+          fd.append('shareCaption', shareCaption);
+          fd.append('reuseExisting', '0');
+          if (forceUpload) fd.append('forceUpload', '1');
+          if (cover) fd.append('coverBase64', cover);
+          mat = await this.uploadVideoWithProgress(fd, (pct) => {
+            if (bar) bar.style.width = pct + '%';
+          });
+        }
         if (mat?.id && cover && !(mat.coverBase64 || mat.cover_base64)) {
           try {
             await this.api(`/materials/${mat.id}/cover`, { method: 'PUT', body: JSON.stringify({ coverBase64: cover }) });
           } catch (_) {}
         }
-        this.toast(`已上传：${mat?.name || name}`);
+        this.toast(`已添加本机素材：${mat?.name || name}`);
         this.closeMaterialUploadDialog();
         if (this._mp) this._mp.page = 1;
         if (typeof this.reloadMaterialPickerList === 'function' && this._mp) {
@@ -1376,66 +1809,140 @@
       }
     },
 
+    /**
+     * 单帧封面兜底：按秒候选点分批尝试（前 6s 一批，再试中段），配合轮询 seek。
+     */
     async captureVideoCoverBase64(file, seekSec = 0.8) {
-      return new Promise((resolve) => {
-        if (!file) {
-          resolve('');
-          return;
-        }
-        const url = URL.createObjectURL(file);
-        const video = document.createElement('video');
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = 'auto';
-        video.src = url;
-        let done = false;
-        const finish = (val) => {
-          if (done) return;
-          done = true;
+      if (!file) return '';
+      const url = URL.createObjectURL(file);
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+      video.src = url;
+      try {
+        await new Promise((resolve, reject) => {
+          const onReady = () => {
+            cleanup();
+            resolve();
+          };
+          const onErr = () => {
+            cleanup();
+            reject(new Error('video load error'));
+          };
+          const cleanup = () => {
+            video.removeEventListener('loadedmetadata', onReady);
+            video.removeEventListener('loadeddata', onReady);
+            video.removeEventListener('error', onErr);
+          };
+          video.addEventListener('loadedmetadata', onReady);
+          video.addEventListener('loadeddata', onReady);
+          video.addEventListener('error', onErr);
+          if (video.readyState >= 1) {
+            cleanup();
+            resolve();
+          }
+        });
+      } catch (_) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (_) {}
+        return '';
+      }
+
+      const dur = Number(video.duration);
+      const safeDur = Number.isFinite(dur) && dur > 0 ? dur : 1;
+      const prefer = Math.max(0.1, Number(seekSec) || 0.8);
+      // 按秒候选：前 6 秒优先，再中段，避免长视频一次 seek 到很远失败
+      const candidates = [
+        prefer,
+        0.5,
+        1,
+        2,
+        3,
+        4,
+        5,
+        Math.min(safeDur * 0.08, 6),
+        Math.min(safeDur * 0.25, Math.max(6, safeDur / 2)),
+        Math.min(safeDur * 0.5, Math.max(0.1, safeDur - 0.1)),
+      ]
+        .map((t) => Math.min(Math.max(0.05, t), Math.max(0.05, safeDur - 0.05)))
+        .filter((t, i, arr) => arr.findIndex((x) => Math.abs(x - t) < 0.05) === i);
+
+      // 分两批：≤6s 与 >6s
+      const batches = [
+        candidates.filter((t) => t <= 6.01),
+        candidates.filter((t) => t > 6.01),
+      ].filter((b) => b.length);
+
+      let cover = '';
+      try {
+        for (const batch of batches) {
+          const warm = Math.max(0.05, batch[0] || 0.05);
           try {
-            URL.revokeObjectURL(url);
+            video.currentTime = warm;
           } catch (_) {}
-          resolve(val || '');
-        };
-        const timer = setTimeout(() => finish(''), 12000);
-        video.addEventListener('error', () => {
-          clearTimeout(timer);
-          finish('');
-        });
-        video.addEventListener('loadeddata', () => {
-          try {
-            const dur = Number(video.duration);
-            const t = Number.isFinite(dur) && dur > 0 ? Math.min(seekSec, Math.max(0.1, dur * 0.08)) : seekSec;
-            video.currentTime = t;
-          } catch (_) {
-            clearTimeout(timer);
-            finish('');
-          }
-        });
-        video.addEventListener('seeked', () => {
-          try {
-            const w = video.videoWidth || 0;
-            const h = video.videoHeight || 0;
-            if (!w || !h) {
-              clearTimeout(timer);
-              finish('');
-              return;
+          await this._mpSleep(80);
+          for (const t of batch) {
+            const frame = await this._mpCaptureVideoFrameWithRetry(video, t, {
+              duration: safeDur,
+              timeoutMs: 5000,
+              maxW: 480,
+              quality: 0.82,
+            });
+            if (frame?.dataUrl) {
+              cover = frame.dataUrl;
+              break;
             }
-            const maxW = 480;
-            const scale = Math.min(1, maxW / w);
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.max(1, Math.round(w * scale));
-            canvas.height = Math.max(1, Math.round(h * scale));
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-            clearTimeout(timer);
-            finish(dataUrl);
-          } catch (_) {
-            clearTimeout(timer);
-            finish('');
+            await this._mpSleep(20);
           }
-        });
+          if (cover) break;
+          await this._mpSleep(40);
+        }
+      } finally {
+        try {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        } catch (_) {}
+        try {
+          URL.revokeObjectURL(url);
+        } catch (_) {}
+      }
+      return cover;
+    },
+
+    /**
+     * 浏览器 FormData 上传到本机 Node ingest（带进度）。
+     * 必须挂在 material-picker：videoDelivery 等页不加载 publish.js。
+     */
+    uploadVideoWithProgress(formData, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/local-materials/ingest');
+        if (this.authToken) xhr.setRequestHeader('Authorization', 'Bearer ' + this.authToken);
+        const actingAs = this.getActingAsId?.();
+        if (actingAs) xhr.setRequestHeader('X-Acting-As', String(actingAs));
+        if (xhr.upload && typeof onProgress === 'function') {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+          };
+        }
+        xhr.onload = () => {
+          let json = null;
+          try { json = JSON.parse(xhr.responseText); } catch (_) {}
+          if (xhr.status >= 200 && xhr.status < 300 && json && json.success) {
+            resolve(json.data);
+            return;
+          }
+          const err = new Error(json?.message || `上传失败 (HTTP ${xhr.status})`);
+          err.data = json?.data || null;
+          err.code = json?.code || json?.data?.code;
+          reject(err);
+        };
+        xhr.onerror = () => reject(new Error('网络请求异常，请检查接口服务'));
+        xhr.send(formData);
       });
     },
 
@@ -1444,14 +1951,29 @@
       try {
         this.toast('正在截取封面…', 'info', 1200);
         const cover = await this.captureVideoCoverBase64(file);
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('name', file.name.replace(/\.[^/.]+$/, ''));
-        fd.append('tags', 'material-picker');
-        fd.append('reuseExisting', '0');
-        if (forceUpload) fd.append('forceUpload', '1');
-        if (cover) fd.append('coverBase64', cover);
-        const mat = await this.uploadVideoWithProgress(fd, null);
+        const nativePath = String(file.path || file._path || '').trim();
+        const name = file.name.replace(/\.[^/.]+$/, '');
+        let mat = null;
+        if (nativePath) {
+          mat = await this.api('/local-materials/register', {
+            method: 'POST',
+            body: JSON.stringify({
+              filePath: nativePath,
+              name,
+              tags: 'material-picker',
+              coverBase64: cover || '',
+            }),
+          });
+        } else {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('name', name);
+          fd.append('tags', 'material-picker');
+          fd.append('reuseExisting', '0');
+          if (forceUpload) fd.append('forceUpload', '1');
+          if (cover) fd.append('coverBase64', cover);
+          mat = await this.uploadVideoWithProgress(fd, null);
+        }
         if (mat?.id && cover && !(mat.coverBase64 || mat.cover_base64)) {
           try {
             await this.api(`/materials/${mat.id}/cover`, { method: 'PUT', body: JSON.stringify({ coverBase64: cover }) });
@@ -1461,7 +1983,7 @@
           panel.classList.add('hidden');
           panel.innerHTML = '';
         }
-        this.toast(`已上传：${mat?.name || file.name}`);
+        this.toast(`已添加本机素材：${mat?.name || file.name}`);
         await this.reloadMaterialPickerList();
         await this.loadRefs?.();
         if (mat?.id && this._mp) {

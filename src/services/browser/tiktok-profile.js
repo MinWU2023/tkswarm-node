@@ -2,13 +2,13 @@
  * TikTok 资料同步 / 编辑资料 浏览器封装
  * 同步资料流程：个人中心 → 编辑资料 → 填入信息 → 保存提交 → 回写本地
  */
-const { chromium } = require('playwright-core');
-const { BitBrowserProvider } = require('./bit-browser-provider');
+const { resolveAccountBrowser } = require('./providers');
 const { inspectTikTokSession, pageLooksLoggedOut, pageLooksLoggedIn } = require('./cdp-client');
 const { capture } = require('../automation-guard');
 const dataStore = require('../data-store');
 const phpApi = require('../php-api');
-const { isHeadless } = require('./headless');
+const { nowChinaSql } = require('../../utils/china-time');
+const { typeDelay, humanPause } = require('../human-pace');
 
 function numberFromText(value) {
   const text = String(value || '').replace(/,/g, '').trim().toUpperCase();
@@ -33,47 +33,64 @@ function extractStat(text, labels) {
 async function loadAccount(accountId) {
   const bundle = await dataStore.getAccountBundle(accountId);
   if (!bundle) throw new Error('账号不存在');
+  const { profileId } = resolveAccountBrowser(bundle, { requireProfile: false });
   return {
     id: bundle.id,
     username: bundle.username,
     nickname: String(bundle.nickname || '').trim(),
     profileBio: String(bundle.profile_bio || bundle.profileBio || '').trim(),
     profileAvatar: String(bundle.profile_avatar || bundle.profileAvatar || '').trim(),
-    browser_profile_id: bundle.browser_profile_id,
+    browser_profile_id: profileId,
+    _bundle: bundle,
   };
 }
 
-async function openBitPage(account, action = 'profile') {
-  if (!account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
-  const provider = new BitBrowserProvider();
-  const opened = await provider.open(account.browser_profile_id, { headless: isHeadless(action) });
-  if (!opened?.ws) throw new Error('比特浏览器未返回 CDP WebSocket 地址');
-  const browser = await chromium.connectOverCDP(opened.ws, { timeout: 30000 });
-  const context = browser.contexts()[0];
-  const page = context.pages().find((item) => /tiktok\.com/i.test(item.url()))
-    || context.pages()[0]
-    || await context.newPage();
-  await page.bringToFront().catch(() => {});
-  return { provider, browser, page, ws: opened.ws };
+async function openBitPage(account, action = 'profile', url = null) {
+  const { connectAccount } = require('./tiktok-actions');
+  const accountId = Number(account?.id || 0);
+  if (!accountId) throw new Error('账号不存在');
+  // 统一走 connectAccount：总任务 keepBrowser 时复用已开环境
+  const connection = await connectAccount(accountId, url, action);
+  account.browser_profile_id = connection.account?.browser_profile_id || account.browser_profile_id;
+  return {
+    provider: connection.provider,
+    browser: connection.browser,
+    page: connection.page,
+    ws: connection.ws,
+    profileId: connection.account?.browser_profile_id || '',
+    label: connection.provider?.backendLabel || '本地浏览器',
+    _connection: connection,
+  };
 }
 
 async function closeBitPage(session, account) {
   if (!session) return;
-  if (session.browser) await session.browser.close().catch(() => {});
-  if (session.provider && account?.browser_profile_id) {
-    let keep = false;
-    try {
-      const { shouldKeepBrowserOpen } = require('../session-context');
-      keep = shouldKeepBrowserOpen();
-    } catch { /* ignore */ }
-    if (!keep) await session.provider.close(account.browser_profile_id).catch(() => {});
+  const { closeConnection } = require('./tiktok-actions');
+  if (session._connection) {
+    await closeConnection(session._connection).catch(() => {});
+    return;
   }
+  // 兼容旧会话对象
+  const fake = {
+    browser: session.browser,
+    provider: session.provider,
+    account: { browser_profile_id: session.profileId || account?.browser_profile_id },
+  };
+  await closeConnection(fake).catch(() => {});
 }
 
 /**
- * 编辑资料弹框内操作：只改 Name / Bio / Logo，绝不改 Username。
+ * 编辑资料弹框内操作：Username / Name / Bio / Logo。
+ * Username 若占用冲突：恢复原值后再次保存，避免拖累昵称/头像提交。
  * Logo：头像右下角编辑图标 → filechooser / input[type=file]
  */
+
+const USERNAME_TAKEN_RE = /username.{0,40}(taken|unavailable|already|exist|in use|not available)|this username isn.?t available|unique.?id.{0,40}(taken|unavailable)|用户名.{0,20}(已被|占用|不可用|已存在|重复)|该用户名|账号名.{0,10}(已被|占用|不可用)/i;
+const NICKNAME_LOCK_RE = /nickname can only be changed|can change it again after|每\s*7\s*天|7\s*天.*改|天后.*改|暂时无法修改|cannot be changed/i;
+
+function normalizeHandle(value) {
+  return String(value || '').replace(/^@+/, '').trim();
+}
 
 async function waitBrief(page, ms = 200) {
   await page.waitForTimeout(ms).catch(() => {});
@@ -115,7 +132,7 @@ async function setReactInputValue(locator, value) {
   if (!ok) {
     await el.fill(String(value ?? '')).catch(async () => {
       await el.press('Control+A').catch(() => {});
-      await el.type(String(value ?? ''), { delay: 15 }).catch(() => {});
+      await el.type(String(value ?? ''), { delay: typeDelay(80, 160) }).catch(() => {});
     });
   }
   const cur = await el.inputValue().catch(async () => (await el.textContent().catch(() => '')) || '');
@@ -139,6 +156,31 @@ function looksLikeName(meta) {
 function looksLikeBio(meta, tag = '') {
   return /bio|签名|简介|desc|edit-profile-bio/.test(meta) || tag === 'textarea';
 }
+
+/**
+ * 编辑资料弹框里的 Name 输入框定位器。
+ * 现行 TikTok DOM 把 data-e2e 挂在**包裹 div** 上，真正的输入框在它内部：
+ *   <div data-e2e="edit-profile-name-input"><input placeholder="Name" value="..."></div>
+ * 所以必须用 `[data-e2e="edit-profile-name-input"] input`，
+ * 直接 `input[data-e2e="edit-profile-name-input"]` 是匹配不到的（历史 bug）。
+ */
+const NAME_INPUT_SELECTORS = [
+  '[data-e2e="edit-profile-name-input"] input',
+  '[data-e2e="edit-profile-name"] input',
+  'input[data-e2e="edit-profile-name-input"]',
+  '[role="dialog"] input[placeholder="Name"]',
+  '[role="dialog"] input[placeholder*="name" i]:not([placeholder*="user" i]):not([placeholder*="unique" i])',
+  '[role="dialog"] input[aria-label*="name" i]:not([aria-label*="user" i]):not([aria-label*="unique" i])',
+];
+
+/** 同理，Bio 的 data-e2e 也挂在包裹容器上 */
+const BIO_INPUT_SELECTORS = [
+  '[data-e2e="edit-profile-bio-input"] textarea',
+  '[data-e2e="edit-profile-bio-input"] input',
+  'textarea[data-e2e="edit-profile-bio-input"]',
+  '[role="dialog"] textarea[placeholder*="bio" i]',
+  '[role="dialog"] textarea',
+];
 
 async function listEditInputs(page) {
   return page.evaluate(() => {
@@ -165,17 +207,25 @@ async function listEditInputs(page) {
   }).catch(() => []);
 }
 
-/** Name 是否因 7 天限制变成只读文案（非 input） */
+/**
+ * Name 输入框是否可输入。
+ * 判定只看输入框本身（存在 / 可见 / disabled / readonly），不看页面文案：
+ * TikTok 编辑资料弹框里常驻一行 "Your nickname can only be changed once every 7 days."，
+ * 那只是提示语，输入框仍然可以正常输入并提交。
+ *   - reason=name-input-locked  输入框存在但被禁用/只读 → 官方确实限制修改
+ *   - reason=no-name-input      没识别到输入框（DOM 变化），不代表被限制，调用方应继续尝试填写
+ */
 async function isNameFieldEditable(page) {
   const dialog = page.locator('[role="dialog"]').first();
   const scope = (await dialog.count().catch(() => 0)) ? dialog : page;
 
-  const byE2e = scope.locator('input[data-e2e="edit-profile-name-input"]').first();
-  if (await byE2e.count().catch(() => 0)) {
-    const visible = await byE2e.isVisible().catch(() => false);
-    const disabled = await byE2e.isDisabled().catch(() => true);
-    const readonly = await byE2e.getAttribute('readonly').catch(() => null);
-    if (visible && !disabled && readonly == null) return { editable: true, locator: byE2e };
+  for (const sel of NAME_INPUT_SELECTORS) {
+    const el = scope.locator(sel).first();
+    if (!(await el.count().catch(() => 0))) continue;
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const disabled = await el.isDisabled().catch(() => false);
+    const readonly = await el.getAttribute('readonly').catch(() => null);
+    if (!disabled && readonly == null) return { editable: true, locator: el };
     return { editable: false, reason: 'name-input-locked' };
   }
 
@@ -206,49 +256,142 @@ async function isNameFieldEditable(page) {
       for (let d = 0; d < 6 && row; d++) {
         const inputs = [...row.querySelectorAll('input:not([type="hidden"]):not([type="file"]), textarea')]
           .filter((el) => visible(el) && !n.contains(el));
+        const candidates = [];
         for (const el of inputs) {
           const meta = `${el.getAttribute('data-e2e') || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('aria-label') || ''}`.toLowerCase();
           if (isUsernameish(meta) || /bio|简介/.test(meta)) continue;
-          if (el.disabled || el.readOnly) continue;
-          return { editable: true };
+          candidates.push(el);
         }
-        const rowText = (row.innerText || '').replace(/\s+/g, ' ');
-        if (/nickname can only be changed|can change it again after|每\s*7\s*天|天后/i.test(rowText)) {
-          return { editable: false, reason: 'cooldown' };
+        if (candidates.length) {
+          // 文案（含 7 天提示）不参与判定，只看输入框能不能输入
+          const usable = candidates.find((el) => !el.disabled && !el.readOnly);
+          if (usable) return { editable: true };
+          return { editable: false, reason: 'name-input-locked' };
         }
         row = row.parentElement;
       }
-    }
-    const body = (root.innerText || '');
-    if (/nickname can only be changed|can change it again after|每\s*7\s*天/i.test(body)) {
-      return { editable: false, reason: 'cooldown' };
     }
     return { editable: false, reason: 'no-name-input' };
   }).catch(() => ({ editable: false, reason: 'probe-failed' }));
 }
 
+/** 兜底：有些受控输入只认真实键盘事件，聚焦后逐字输入 */
+async function typeIntoValue(page, locator, value, log = () => {}) {
+  try {
+    await locator.click({ timeout: 5000 });
+    await page.waitForTimeout(120);
+    await locator.press('Control+A').catch(() => {});
+    await locator.press('Delete').catch(() => {});
+    await locator.type(String(value), { delay: typeDelay(80, 160) });
+    await humanPause(500, 0.2);
+    const cur = String(await locator.inputValue().catch(() => '')).trim();
+    if (cur === String(value).trim()) return true;
+    // 有些输入会把新内容拼在旧值后面，清空重来一次
+    await locator.press('Control+A').catch(() => {});
+    await locator.press('Delete').catch(() => {});
+    await locator.type(String(value), { delay: typeDelay(80, 160) });
+    await humanPause(500, 0.2);
+    const cur2 = String(await locator.inputValue().catch(() => '')).trim();
+    if (cur2 !== String(value).trim()) log(`name: keyboard type left value "${cur2}"`);
+    return cur2 === String(value).trim();
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
- * 仅当 Name 是可编辑 input 时才填写；7 天限制变成只读文案时直接跳过，不强填。
+ * 昵称填写后 TikTok 会弹「Set nickname?」二次确认框：
+ *   <div data-e2e="set-username-popup">
+ *     <p data-e2e="set-username-popup-title">Set nickname?</p>
+ *     <button data-e2e="set-username-popup-cancel">Cancel</button>
+ *     <button data-e2e="set-username-popup-confirm">Confirm</button>
+ * 出现即点 Confirm（点 Cancel 会导致昵称不生效）。
+ * 注意：这个弹框的说明文字同样含 "once every 7 days"，所以必须按 data-e2e / 标题识别，
+ * 不能按文案判锁。
+ */
+async function confirmSetNicknamePopup(page, log = () => {}, timeoutMs = 4000) {
+  const CONFIRM_SELECTORS = [
+    '[data-e2e="set-username-popup-confirm"]',
+    '[data-e2e="set-username-popup"] button:has-text("Confirm")',
+    '[role="dialog"]:has-text("Set nickname?") button:has-text("Confirm")',
+  ];
+  const end = Date.now() + timeoutMs;
+  // 让当前焦点离开输入框，TikTok 是在 blur 之后才弹这个确认框的
+  await page.evaluate(() => {
+    const el = document.activeElement;
+    if (el && typeof el.blur === 'function') el.blur();
+  }).catch(() => {});
+  while (Date.now() < end) {
+    let shown = await page.locator('[data-e2e="set-username-popup"]').first().isVisible().catch(() => false);
+    if (!shown) {
+      shown = await page.locator('[data-e2e="set-username-popup-title"]').first().isVisible().catch(() => false);
+    }
+    if (!shown) {
+      const byText = page.locator('[role="dialog"]').filter({ hasText: /Set nickname\?/i }).first();
+      shown = await byText.isVisible().catch(() => false);
+    }
+    if (shown) {
+      for (const sel of CONFIRM_SELECTORS) {
+        const btn = page.locator(sel).first();
+        if (!(await btn.count().catch(() => 0))) continue;
+        if (!(await btn.isVisible().catch(() => false))) continue;
+        if (await btn.isEnabled().catch(() => true)) {
+          await btn.click({ timeout: 5000 }).catch(() => {});
+          await page.waitForTimeout(700);
+          // 可能第一次点击没生效（动画中），再补一次
+          if (await page.locator('[data-e2e="set-username-popup"]').first().isVisible().catch(() => false)) {
+            await btn.click({ timeout: 5000, force: true }).catch(() => {});
+            await page.waitForTimeout(600);
+          }
+          const still = await page.locator('[data-e2e="set-username-popup"]').first().isVisible().catch(() => false);
+          log(`name: 已点击「Set nickname?」确认按钮 (${sel})，弹框${still ? '仍在' : '已关闭'}`);
+          return !still;
+        }
+      }
+      log('name: 「Set nickname?」弹框已出现但找不到可点的 Confirm');
+      return false;
+    }
+    await page.waitForTimeout(300);
+  }
+  return false;
+}
+
+/**
+ * 填写 Name。只有「输入框存在但被禁用/只读」才跳过（官方限制）；
+ * 认不出输入框时继续用各种选择器尝试，绝不因为提示文案而跳过。
  */
 async function fillNameInEditModal(page, value, log = () => {}) {
   if (!value) return false;
 
+  // 只有「输入框存在但被禁用/只读」才算被官方限制；找不到输入框要继续尝试各种定位方式
   const state = await isNameFieldEditable(page);
-  if (!state.editable) {
-    log(`name: skip (not an editable input${state.reason ? `, ${state.reason}` : ''})`);
+  if (!state.editable && state.reason === 'name-input-locked') {
+    log('name: skip (input disabled/readonly — locked by TikTok)');
     return false;
   }
 
-  const byE2e = page.locator('input[data-e2e="edit-profile-name-input"]').first();
-  if (await byE2e.count().catch(() => 0) && await byE2e.isVisible().catch(() => false)) {
-    if (await byE2e.isDisabled().catch(() => true)) {
-      log('name: skip (input disabled)');
+  for (const sel of NAME_INPUT_SELECTORS) {
+    const el = page.locator(sel).first();
+    if (!(await el.count().catch(() => 0))) continue;
+    if (!(await el.isVisible().catch(() => false))) continue;
+    if (await el.isDisabled().catch(() => true)) {
+      log(`name: skip (${sel} disabled)`);
       return false;
     }
-    if (await setReactInputValue(byE2e, value)) {
-      log('name: filled via data-e2e');
+    const readonly = await el.getAttribute('readonly').catch(() => null);
+    if (readonly != null) {
+      log(`name: skip (${sel} readonly)`);
+      return false;
+    }
+    if (await setReactInputValue(el, value)) {
+      log(`name: filled via ${sel} → ${String(await el.inputValue().catch(() => '')).trim()}`);
       return true;
     }
+    if (await typeIntoValue(page, el, value, log)) {
+      log(`name: filled via ${sel} (keyboard) → ${String(await el.inputValue().catch(() => '')).trim()}`);
+      return true;
+    }
+    log(`name: set value failed via ${sel}, try next`);
   }
 
   const byLabel = page.getByLabel(/^Name$/i).first();
@@ -344,15 +487,58 @@ async function fillNameInEditModal(page, value, log = () => {}) {
     }
   }
 
-  log('name: skip (no editable Name input found)');
+  // 兜底：编辑资料弹框内若只剩一个非 Username / 非 Bio 的文本框，基本就是 Name
+  const solo = await page.evaluate((next) => {
+    const dialog = document.querySelector('[role="dialog"]')
+      || document.querySelector('[class*="DivEditProfileContainer"]')
+      || document.querySelector('[class*="edit-profile"]');
+    if (!dialog) return null; // 认不出弹框就不猜，避免写进搜索框
+    const visible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+    };
+    const inputs = [...dialog.querySelectorAll('input:not([type="hidden"]):not([type="file"]), textarea')]
+      .filter((el) => visible(el) && !el.disabled && !el.readOnly);
+    const candidates = inputs.filter((el) => {
+      const meta = `${el.getAttribute('data-e2e') || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('placeholder') || ''}`.toLowerCase();
+      if (/username|unique.?id|handle|@|bio|简介|search|搜索/.test(meta)) return false;
+      if ((el.getAttribute('type') || '').toLowerCase() === 'search') return false;
+      return true;
+    });
+    if (candidates.length !== 1) return null;
+    const node = candidates[0];
+    const tag = (node.tagName || '').toLowerCase();
+    const proto = tag === 'textarea'
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    node.focus();
+    if (setter) setter.call(node, String(next ?? '')); else node.value = String(next ?? '');
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+    node.dispatchEvent(new Event('change', { bubbles: true }));
+    try { node.blur(); } catch (_) {}
+    return { tag, e2e: node.getAttribute('data-e2e') || '', value: node.value };
+  }, String(value)).catch(() => null);
+  if (solo && String(solo.value ?? '') === String(value)) {
+    log(`name: filled via solo-input (${solo.e2e || solo.tag})`);
+    return true;
+  }
+
+  const inputs = await listEditInputs(page).catch(() => []);
+  log(`name: skip (no editable Name input found); candidates=${JSON.stringify(inputs.map((x) => ({ e2e: x.e2e, name: x.name, ph: x.placeholder, type: x.type })))}`);
   return false;
 }
 
 async function fillBioInEditModal(page, value) {
   if (!value) return false;
-  const byE2e = page.locator('textarea[data-e2e="edit-profile-bio-input"]').first();
-  if (await byE2e.count().catch(() => 0) && await byE2e.isVisible().catch(() => false)) {
-    if (await setReactInputValue(byE2e, value)) return true;
+  for (const sel of BIO_INPUT_SELECTORS) {
+    const el = page.locator(sel).first();
+    if (!(await el.count().catch(() => 0))) continue;
+    if (!(await el.isVisible().catch(() => false))) continue;
+    if (await setReactInputValue(el, value)) return true;
+    break;
   }
   const byLabel = page.getByLabel(/^Bio$/i).first();
   if (await byLabel.count().catch(() => 0) && await byLabel.isVisible().catch(() => false)) {
@@ -365,27 +551,46 @@ async function fillBioInEditModal(page, value) {
   return false;
 }
 
+function isAvatarVideoFile(filePath) {
+  return /\.(mp4|webm|mov)$/i.test(String(filePath || ''));
+}
+
 /**
- * 在 Edit profile 弹层内找图片 file input（含隐藏 / accept 过滤）。
+ * 在 Edit profile 弹层内找头像 file input（图片 / 视频，含隐藏 / accept 过滤）。
+ * @param {'image'|'video'|'any'} preferKind
  */
-async function findAvatarFileInput(page, waitMs = 3000) {
+async function findAvatarFileInput(page, waitMs = 3000, preferKind = 'any') {
   const end = Date.now() + waitMs;
-  const selectors = [
+  const imageSels = [
     '[role="dialog"] input[type="file"][accept*="image"]',
     '[role="dialog"] input[type="file"][accept*="jpg"]',
     '[role="dialog"] input[type="file"][accept*="png"]',
-    '[role="dialog"] input[type="file"]',
     'input[type="file"][accept*="image"]',
     'input[type="file"][accept*="jpg"]',
+  ];
+  const videoSels = [
+    '[role="dialog"] input[type="file"][accept*="video"]',
+    '[role="dialog"] input[type="file"][accept*="mp4"]',
+    'input[type="file"][accept*="video"]',
+    'input[type="file"][accept*="mp4"]',
+  ];
+  const anySels = [
+    '[role="dialog"] input[type="file"]',
     'input[type="file"]',
   ];
+  const selectors = preferKind === 'video'
+    ? [...videoSels, ...anySels, ...imageSels]
+    : preferKind === 'image'
+      ? [...imageSels, ...anySels, ...videoSels]
+      : [...imageSels, ...videoSels, ...anySels];
+
   while (Date.now() < end) {
     for (const sel of selectors) {
       const loc = page.locator(sel).first();
       if (await loc.count().catch(() => 0)) return loc;
     }
     // Shadow / late mount
-    const handle = await page.evaluateHandle(() => {
+    const handle = await page.evaluateHandle((kind) => {
       const walk = (root, out = []) => {
         root.querySelectorAll?.('input[type="file"]')?.forEach((n) => out.push(n));
         root.querySelectorAll?.('*')?.forEach((el) => {
@@ -395,15 +600,63 @@ async function findAvatarFileInput(page, waitMs = 3000) {
       };
       const dialog = document.querySelector('[role="dialog"]') || document.body;
       const inputs = walk(dialog);
-      const prefer = inputs.find((i) => /image|jpg|jpeg|png|webp/i.test(i.getAttribute('accept') || ''))
-        || inputs[0];
+      const acceptOf = (i) => String(i.getAttribute('accept') || '');
+      const isVideo = (i) => /video|mp4|webm|mov/i.test(acceptOf(i));
+      const isImage = (i) => /image|jpg|jpeg|png|webp|gif/i.test(acceptOf(i));
+      let prefer = null;
+      if (kind === 'video') prefer = inputs.find(isVideo) || inputs.find((i) => !acceptOf(i) || isImage(i) || isVideo(i));
+      else if (kind === 'image') prefer = inputs.find(isImage) || inputs.find((i) => !acceptOf(i) || isImage(i) || isVideo(i));
+      else prefer = inputs.find((i) => isImage(i) || isVideo(i)) || inputs[0];
       return prefer || null;
-    }).catch(() => null);
+    }, preferKind).catch(() => null);
     const el = handle?.asElement?.() || null;
     if (el) return el;
     await waitBrief(page, 250);
   }
   return null;
+}
+
+/**
+ * 点铅笔后若出现「Upload photo / Upload video」菜单，按文件类型点对应项。
+ */
+async function pickAvatarSourceMenu(page, isVideo, log = () => {}) {
+  const videoRe = /upload\s*video|select\s*video|choose\s*video|上传视频|选择视频|视频头像/i;
+  const photoRe = /upload\s*photo|upload\s*image|select\s*photo|choose\s*photo|change\s*photo|上传照片|上传图片|选择照片|图片头像|更换照片/i;
+  const want = isVideo ? videoRe : photoRe;
+  const fallback = isVideo ? photoRe : videoRe;
+
+  for (let i = 0; i < 6; i += 1) {
+    const hit = await page.evaluate((patterns) => {
+      const visible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+      };
+      const nodes = [...document.querySelectorAll('button, [role="menuitem"], [role="option"], [role="button"], label, li, div, span, a')];
+      const match = (re) => nodes.find((el) => {
+        if (!visible(el)) return false;
+        const t = `${el.getAttribute('aria-label') || ''} ${el.textContent || ''}`.trim();
+        if (t.length > 80) return false;
+        return re.test(t);
+      });
+      const wantRe = new RegExp(patterns.want, 'i');
+      const fbRe = new RegExp(patterns.fallback, 'i');
+      const el = match(wantRe) || match(fbRe);
+      if (!el) return false;
+      const clickable = el.closest('button, [role="menuitem"], [role="option"], [role="button"], label, a') || el;
+      clickable.click();
+      return true;
+    }, { want: want.source, fallback: fallback.source }).catch(() => false);
+
+    if (hit) {
+      log(`avatar: clicked ${isVideo ? 'video' : 'photo'} source menu`);
+      await waitBrief(page, 400);
+      return true;
+    }
+    await waitBrief(page, 250);
+  }
+  return false;
 }
 
 /**
@@ -537,13 +790,25 @@ async function findAvatarPencil(page) {
 }
 
 /**
- * Logo：点头像右下角编辑图标 → 用 Playwright filechooser / setInputFiles（同视频上传）。
+ * Logo：点头像右下角编辑图标 → 用 Playwright filechooser / setInputFiles。
+ * 兼容图片头像（JPG/PNG/WebP）与视频头像（MP4 ≤6s）。
  * 禁止在没有 filechooser 监听时点击铅笔，否则会弹出系统「打开」对话框无法接管。
  */
 async function setAvatarInEditModal(page, filePath, log = () => {}) {
   if (!filePath) return false;
   const fs = require('node:fs');
-  if (!fs.existsSync(filePath)) throw new Error(`头像文件不存在：${filePath}`);
+  const path = require('node:path');
+  if (!fs.existsSync(filePath)) {
+    // 头像文件缺失：改用默认头像，不让整个任务失败
+    const missing = filePath;
+    filePath = require('./default-avatar').resolveAvatarOrDefault(missing, log);
+    if (!filePath) throw new Error(`头像文件不存在：${missing}`);
+  }
+
+  const isVideo = isAvatarVideoFile(filePath);
+  const preferKind = isVideo ? 'video' : 'image';
+  const settleMs = isVideo ? 2200 : 1200;
+  log(`avatar: file=${path.basename(filePath)} kind=${isVideo ? 'video' : 'image'}`);
 
   const setFiles = async (target) => {
     if (!target) return false;
@@ -564,33 +829,82 @@ async function setAvatarInEditModal(page, filePath, log = () => {}) {
     return false;
   };
 
+  const afterSet = async (via) => {
+    log(`avatar: set via ${via}`);
+    await waitBrief(page, settleMs);
+    await confirmAvatarCrop(page, { isVideo, log });
+    return true;
+  };
+
   // A) 已有 input：直接 setInputFiles，不点铅笔（避免系统对话框）
   log('avatar: try direct input[type=file]');
-  let input = await findAvatarFileInput(page, 2500);
+  let input = await findAvatarFileInput(page, 2500, preferKind);
   if (input && await setFiles(input)) {
-    log('avatar: set via existing input');
-    await waitBrief(page, 1200);
-    await confirmAvatarCrop(page);
-    return true;
+    return afterSet('existing input');
   }
 
-  // B) 先挂 filechooser，再点铅笔（与视频上传同一套）
+  // B) 先挂 filechooser，再点铅笔；若弹出 Upload photo/video 菜单则再选对应项
   log('avatar: locate pencil + filechooser');
   const pencilHandle = await findAvatarPencil(page);
   const pencilEl = pencilHandle?.asElement?.() || (pencilHandle?.click ? pencilHandle : null);
 
   if (pencilEl) {
     try {
-      const chooserPromise = page.waitForEvent('filechooser', { timeout: 15000 });
+      let chooserPromise = page.waitForEvent('filechooser', { timeout: 15000 });
       await pencilEl.click({ timeout: 8000, force: true }).catch(async () => {
         await page.evaluate((el) => el.click(), pencilEl).catch(() => {});
       });
-      const chooser = await chooserPromise;
-      await chooser.setFiles(filePath);
-      log('avatar: set via filechooser');
-      await waitBrief(page, 1200);
-      await confirmAvatarCrop(page);
-      return true;
+
+      // 并行：直接 filechooser，或先出 Upload photo / Upload video 菜单
+      const first = await Promise.race([
+        chooserPromise.then((c) => ({ type: 'chooser', c })).catch((e) => ({ type: 'err', e })),
+        (async () => {
+          await waitBrief(page, 700);
+          const menu = await pickAvatarSourceMenu(page, isVideo, log);
+          return menu ? { type: 'menu' } : { type: 'pending' };
+        })(),
+      ]);
+
+      if (first.type === 'chooser' && first.c) {
+        await first.c.setFiles(filePath);
+        return afterSet('filechooser');
+      }
+
+      if (first.type === 'menu') {
+        // 菜单项再触发 filechooser，或挂载 input；丢弃旧监听
+        chooserPromise.catch(() => null);
+        chooserPromise = page.waitForEvent('filechooser', { timeout: 12000 });
+        const afterMenu = await Promise.race([
+          chooserPromise.then((c) => ({ type: 'chooser', c })).catch((e) => ({ type: 'err', e })),
+          (async () => {
+            const late = await findAvatarFileInput(page, 5000, preferKind);
+            if (late && await setFiles(late)) return { type: 'input' };
+            return { type: 'pending' };
+          })(),
+        ]);
+        if (afterMenu.type === 'chooser' && afterMenu.c) {
+          await afterMenu.c.setFiles(filePath);
+          return afterSet('menu+filechooser');
+        }
+        if (afterMenu.type === 'input') {
+          return afterSet('menu+input');
+        }
+        // 仍在等 chooser
+        if (afterMenu.type === 'pending') {
+          const c = await chooserPromise;
+          await c.setFiles(filePath);
+          return afterSet('menu+filechooser');
+        }
+        throw afterMenu.e || new Error('menu clicked but no filechooser/input');
+      }
+
+      // pending：菜单未出现，继续等最初的 filechooser
+      if (first.type === 'pending') {
+        const chooser = await chooserPromise;
+        await chooser.setFiles(filePath);
+        return afterSet('filechooser');
+      }
+      throw first.e || new Error('filechooser timeout');
     } catch (e) {
       log(`avatar: filechooser failed: ${e.message || e}`);
       // 绝不在无监听时再点铅笔（会弹出系统「打开」框）
@@ -602,23 +916,25 @@ async function setAvatarInEditModal(page, filePath, log = () => {}) {
   // C) JS 点击 Profile photo 区小按钮 + filechooser（仍必须先监听）
   log('avatar: JS click pencil + filechooser');
   try {
-    const chooserPromise = page.waitForEvent('filechooser', { timeout: 12000 });
+    let chooserPromise = page.waitForEvent('filechooser', { timeout: 12000 });
     const clicked = await page.evaluate(() => {
       const root = document.querySelector('[role="dialog"]') || document.body;
       const visible = (el) => {
         const r = el.getBoundingClientRect();
         return r.width > 0 && r.height > 0;
       };
-      // 优先 aria / data-e2e
       let el = [...root.querySelectorAll('button, [role="button"], label')].find((n) => {
         if (!visible(n)) return false;
         const key = `${n.getAttribute('aria-label') || ''} ${n.getAttribute('data-e2e') || ''}`.toLowerCase();
-        return /photo|avatar|upload|edit|pencil|头像|上传/.test(key);
+        return /photo|avatar|upload|edit|pencil|头像|上传|video/.test(key);
       });
       if (!el) {
-        const title = [...root.querySelectorAll('*')].find((n) => /^Profile photo$/i.test((n.textContent || '').trim()));
+        const title = [...root.querySelectorAll('*')].find((n) => {
+          const t = (n.textContent || '').trim();
+          return /^Profile photo$/i.test(t) || /^头像$/i.test(t) || /^Profile picture$/i.test(t);
+        });
         const area = title?.closest('div') || root;
-        const av = [...area.querySelectorAll('img, div, span')].find((n) => {
+        const av = [...area.querySelectorAll('img, video, div, span')].find((n) => {
           const r = n.getBoundingClientRect();
           return r.width >= 64 && r.width <= 200 && Math.abs(r.width - r.height) < 20;
         });
@@ -638,52 +954,55 @@ async function setAvatarInEditModal(page, filePath, log = () => {}) {
       return true;
     });
     if (clicked) {
+      const menuClicked = await pickAvatarSourceMenu(page, isVideo, log).catch(() => false);
+      if (menuClicked) {
+        chooserPromise.catch(() => null);
+        chooserPromise = page.waitForEvent('filechooser', { timeout: 12000 });
+      }
       const chooser = await chooserPromise;
       await chooser.setFiles(filePath);
-      log('avatar: set via JS filechooser');
-      await waitBrief(page, 1200);
-      await confirmAvatarCrop(page);
-      return true;
+      return afterSet('JS filechooser');
     }
-    // 取消挂起的 wait，避免泄漏
     await chooserPromise.catch(() => null);
   } catch (e) {
     log(`avatar: JS filechooser failed: ${e.message || e}`);
   }
 
   // D) 点击后再找 input（部分 UI 点击后才挂载 input，且不走系统对话框）
-  input = await findAvatarFileInput(page, 6000);
+  input = await findAvatarFileInput(page, 6000, preferKind);
   if (input && await setFiles(input)) {
-    log('avatar: set via input after pencil attempt');
-    await waitBrief(page, 1200);
-    await confirmAvatarCrop(page);
-    return true;
+    return afterSet('input after pencil');
   }
 
   log('avatar: all strategies failed');
   return false;
 }
 
-async function confirmAvatarCrop(page) {
-  // 只点裁剪/预览确认，避开 Edit profile 底部 Save
-  for (let i = 0; i < 8; i += 1) {
-    const cropDialog = page.locator('[role="dialog"]').filter({
-      hasText: /crop|preview|调整|裁剪|预览|Drag to reposition|拖动/i,
-    }).first();
+async function confirmAvatarCrop(page, { isVideo = false, log = () => {} } = {}) {
+  // 图片裁剪 / 视频预览确认，避开 Edit profile 底部 Save
+  const dialogRe = isVideo
+    ? /crop|preview|trim|调整|裁剪|预览|剪辑|Drag to reposition|拖动|video|视频/i
+    : /crop|preview|调整|裁剪|预览|Drag to reposition|拖动/i;
+  const btnNames = isVideo
+    ? ['Apply', '应用', 'Done', '完成', 'Confirm', '确认', 'Use', '使用', 'Next', '下一步', 'OK', 'Select', '选择']
+    : ['Apply', '应用', 'Done', '完成', 'Confirm', '确认', 'OK'];
+
+  for (let i = 0; i < (isVideo ? 12 : 8); i += 1) {
+    const cropDialog = page.locator('[role="dialog"]').filter({ hasText: dialogRe }).first();
     const hasCrop = await cropDialog.count().catch(() => 0) && await cropDialog.isVisible().catch(() => false);
     const scope = hasCrop ? cropDialog : page;
 
-    for (const name of ['Apply', '应用', 'Done', '完成', 'Confirm', '确认', 'OK']) {
+    for (const name of btnNames) {
       const apply = scope.getByRole('button', { name: new RegExp(`^${name}$`, 'i') }).first();
       if (!(await apply.count().catch(() => 0))) continue;
       if (!(await apply.isVisible().catch(() => false))) continue;
-      // 无裁剪层时不要点到主弹框 Save
       if (!hasCrop && /^(Save|保存)$/i.test(name)) continue;
       await apply.click({ timeout: 5000, force: true }).catch(() => {});
-      await waitBrief(page, 800);
+      log(`avatar: confirmed ${isVideo ? 'video' : 'crop'} via ${name}`);
+      await waitBrief(page, isVideo ? 1200 : 800);
       return true;
     }
-    await waitBrief(page, 400);
+    await waitBrief(page, isVideo ? 500 : 400);
   }
   return false;
 }
@@ -696,16 +1015,23 @@ async function fillProfileField(page, labels, value) {
 
 
 async function clickProfileSave(page) {
-  const dialog = page.locator('[role="dialog"]').first();
+  // 「Set nickname?」确认框可能盖在编辑弹框上，先点掉再点保存
+  await confirmSetNicknamePopup(page, () => {}, 1200);
+
+  // 注意：确认框本身也是 role="dialog"，所以要按标题锁定「编辑资料」那个弹框，
+  // 否则可能把确认框里的 Confirm 当成保存按钮点了（假成功）。
+  const editDialog = page.locator('[role="dialog"]').filter({ hasText: /Edit profile|编辑资料/i }).first();
   const scopes = [];
-  if (await dialog.count().catch(() => 0)) scopes.push(dialog);
+  if (await editDialog.count().catch(() => 0) && await editDialog.isVisible().catch(() => false)) {
+    scopes.push(editDialog);
+  }
   scopes.push(page);
 
   for (const scope of scopes) {
     // 弹框底部 Save（可能需滚动）
     await scope.evaluate((el) => { el.scrollTop = el.scrollHeight; }).catch(() => {});
     await page.waitForTimeout(300);
-    for (const name of ['Save', '保存', 'Done', '完成', 'Confirm', '确认']) {
+    for (const name of ['Save', '保存', 'Done', '完成']) {
       const button = scope.getByRole('button', { name: new RegExp(`^${name}$`, 'i') }).first();
       if (await button.count().catch(() => 0) && await button.isVisible().catch(() => false)) {
         const disabled = await button.isDisabled().catch(() => false);
@@ -723,33 +1049,332 @@ async function clickProfileSave(page) {
   return false;
 }
 
-/** 在已打开的 Edit profile 弹框中写入 Name/Bio/头像（不改 Username） */
-async function applyEditProfileChanges(page, { nickname = '', bio = '', avatarPath = '' } = {}, log = () => {}) {
-  let changed = false;
-  let nameSkipped = false;
-  if (nickname) {
-    const nameOk = await fillNameInEditModal(page, nickname, log);
-    if (nameOk) changed = true;
-    else nameSkipped = true; // 7 天限制 / 非输入框 → 跳过，不视为整单失败
+/** 定位 Username / Unique ID 输入框 */
+async function findUsernameInput(page) {
+  const selectors = [
+    'input[data-e2e="edit-profile-username-input"]',
+    'input[data-e2e*="username"]',
+    'input[name*="username" i]',
+    'input[placeholder*="username" i]',
+    'input[aria-label*="username" i]',
+    'input[aria-label*="Unique ID" i]',
+  ];
+  for (const sel of selectors) {
+    const el = page.locator(sel).first();
+    if (await el.count().catch(() => 0) && await el.isVisible().catch(() => false)) {
+      return el;
+    }
   }
-  if (bio) changed = (await fillBioInEditModal(page, bio)) || changed;
+  const byLabel = page.getByLabel(/^(Username|Unique ID|用户名|账号名)$/i).first();
+  if (await byLabel.count().catch(() => 0) && await byLabel.isVisible().catch(() => false)) {
+    const tag = await byLabel.evaluate((n) => (n.tagName || '').toLowerCase()).catch(() => '');
+    if (tag === 'input') return byLabel;
+  }
+  const handle = await page.evaluateHandle(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+    };
+    const isUserLabel = (t) => {
+      const x = String(t || '').trim().toLowerCase();
+      return x === 'username' || x === 'unique id' || x === 'user name'
+        || x === '用户名' || x === '账号名' || x === '账号名称';
+    };
+    const root = document.querySelector('[role="dialog"]')
+      || document.querySelector('[class*="DivEditProfileContainer"]')
+      || document.querySelector('[class*="edit-profile"]')
+      || document.body;
+    const labels = Array.from(root.querySelectorAll('label, span, div, p, strong, b'));
+    for (const n of labels) {
+      if (!visible(n)) continue;
+      const t = (n.textContent || '').trim();
+      if (!isUserLabel(t) || t.length > 24) continue;
+      if (n.closest('button, a, [role="button"]')) continue;
+      if (n.tagName === 'LABEL' && n.htmlFor) {
+        const byFor = document.getElementById(n.htmlFor);
+        if (byFor && visible(byFor) && (byFor.tagName || '').toLowerCase() === 'input') return byFor;
+      }
+      let row = n.parentElement;
+      for (let i = 0; i < 6 && row; i++) {
+        const inputs = [...row.querySelectorAll('input:not([type="hidden"]):not([type="file"])')]
+          .filter((el) => visible(el) && !n.contains(el));
+        for (const el of inputs) {
+          const meta = `${el.getAttribute('data-e2e') || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('placeholder') || ''}`.toLowerCase();
+          if (/bio|简介|edit-profile-name|(^|\s)name(\s|$)/.test(meta) && !/username|unique|user.?name|用户名/.test(meta)) continue;
+          if (/username|unique|user.?name|用户名/.test(meta) || isUserLabel(t)) return el;
+        }
+        row = row.parentElement;
+      }
+    }
+    return null;
+  });
+  return handle.asElement?.() || null;
+}
+
+async function readUsernameFromEditModal(page) {
+  const el = await findUsernameInput(page);
+  if (!el) return '';
+  let val = '';
+  if (typeof el.inputValue === 'function') {
+    val = await el.inputValue().catch(() => '');
+  }
+  if (!val && typeof el.evaluate === 'function') {
+    val = await el.evaluate((n) => n.value || '').catch(() => '');
+  }
+  return normalizeHandle(val);
+}
+
+async function fillUsernameInEditModal(page, value, log = () => {}) {
+  const next = normalizeHandle(value);
+  if (!next) return false;
+  const el = await findUsernameInput(page);
+  if (!el) {
+    log('username: input not found');
+    return false;
+  }
+  // Locator：走 setReactInputValue；ElementHandle：直接 evaluate
+  if (typeof el.first === 'function') {
+    const disabled = await el.isDisabled().catch(() => true);
+    const readonly = await el.getAttribute('readonly').catch(() => null);
+    if (disabled || readonly != null) {
+      log('username: input locked');
+      return false;
+    }
+    const ok = await setReactInputValue(el, next);
+    log(ok ? `username: filled ${next}` : `username: fill failed ${next}`);
+    return ok;
+  }
+  const filled = await el.evaluate((node, nextVal) => {
+    if (node.disabled || node.readOnly) return false;
+    const proto = window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    const fire = (type) => {
+      node.dispatchEvent(new Event(type, { bubbles: true }));
+      try {
+        node.dispatchEvent(new InputEvent(type, { bubbles: true, data: String(nextVal ?? ''), inputType: 'insertText' }));
+      } catch (_) {}
+    };
+    node.focus();
+    if (setter) setter.call(node, '');
+    else node.value = '';
+    fire('input');
+    if (setter) setter.call(node, String(nextVal ?? ''));
+    else node.value = String(nextVal ?? '');
+    fire('input');
+    node.dispatchEvent(new Event('change', { bubbles: true }));
+    try { node.blur(); } catch (_) {}
+    return String(node.value ?? '').replace(/^@+/, '') === String(nextVal ?? '').replace(/^@+/, '');
+  }, next).catch(() => false);
+  log(filled ? `username: filled ${next}` : `username: fill failed ${next}`);
+  return !!filled;
+}
+
+/** 检测弹框内 Username 占用/不可用提示 */
+async function detectUsernameConflict(page) {
+  const text = await page.evaluate(() => {
+    const root = document.querySelector('[role="dialog"]')
+      || document.querySelector('[class*="DivEditProfileContainer"]')
+      || document.querySelector('[class*="edit-profile"]')
+      || document.body;
+    return String(root?.innerText || document.body?.innerText || '');
+  }).catch(() => '');
+  const compact = String(text || '').replace(/\s+/g, ' ');
+  if (!USERNAME_TAKEN_RE.test(compact)) return null;
+  const m = compact.match(USERNAME_TAKEN_RE);
+  const snippet = (m && m[0]) ? m[0] : 'Username is unavailable';
+  return snippet.slice(0, 180);
+}
+
+/**
+ * 只用于「展示/日志」的文案探测——**不要用它判定昵称是否被限制**。
+ * TikTok 编辑资料弹框里常驻 "Your nickname can only be changed once every 7 days."
+ * 这类提示语，输入框依然可以正常输入提交；判锁一律以 isNameFieldEditable 的输入框状态为准。
+ */
+async function detectNicknameLockMessage(page) {
+  const text = await page.evaluate(() => {
+    const root = document.querySelector('[role="dialog"]')
+      || document.querySelector('[class*="DivEditProfileContainer"]')
+      || document.querySelector('[class*="edit-profile"]')
+      || document.body;
+    return String(root?.innerText || '');
+  }).catch(() => '');
+  const compact = String(text || '').replace(/\s+/g, ' ');
+  if (!NICKNAME_LOCK_RE.test(compact)) return '';
+  const m = compact.match(NICKNAME_LOCK_RE);
+  return (m && m[0] ? m[0] : '昵称受 7 天修改限制').slice(0, 180);
+}
+
+/**
+ * 保存资料；若因 Username 冲突失败，恢复原 Username 再保存一次，保证昵称/头像可提交。
+ * @returns {{ saved: boolean, usernameConflict: boolean, usernameFailReason: string }}
+ */
+async function saveEditProfileWithUsernameRecovery(page, {
+  originalUsername = '',
+  attemptedUsername = '',
+} = {}, log = () => {}) {
+  const result = {
+    saved: false,
+    usernameConflict: false,
+    usernameFailReason: '',
+  };
+  const wantChange = normalizeHandle(attemptedUsername)
+    && normalizeHandle(attemptedUsername) !== normalizeHandle(originalUsername);
+  const saved = await clickProfileSave(page);
+  if (!saved) return result;
+  // 有些情况下「Set nickname?」确认框是在点保存之后才弹出来的
+  await confirmSetNicknamePopup(page, log, 2500);
+  await page.waitForTimeout(1600);
+
+  let reason = await detectUsernameConflict(page);
+  if (!reason && wantChange) {
+    // 弹框仍在且 Save 仍可点 → 可能校验失败未关闭
+    const dialog = page.locator('[role="dialog"]').filter({ hasText: /Edit profile|编辑资料/i }).first();
+    const stillOpen = await dialog.isVisible().catch(() => false);
+    if (stillOpen) {
+      const saveBtn = dialog.getByRole('button', { name: /^(Save|保存)$/i }).first();
+      const saveVisible = await saveBtn.isVisible().catch(() => false);
+      if (saveVisible) {
+        reason = await detectUsernameConflict(page) || 'Username 可能不可用（保存后弹框未关闭）';
+      }
+    }
+  }
+
+  if (reason && wantChange) {
+    result.usernameConflict = true;
+    result.usernameFailReason = reason;
+    log(`username: conflict — ${reason}; restoring ${originalUsername}`);
+    const restored = await fillUsernameInEditModal(page, originalUsername, log);
+    if (!restored) {
+      log('username: restore fill failed');
+    }
+    await page.waitForTimeout(500);
+    const saved2 = await clickProfileSave(page);
+    if (saved2) {
+      await page.waitForTimeout(1800);
+      result.saved = true;
+      log('username: restored and re-saved');
+    }
+    return result;
+  }
+
+  result.saved = true;
+  return result;
+}
+
+/**
+ * 在已打开的 Edit profile 弹框中写入 Username/Name/Bio/头像。
+ * @returns {object} 明细结果（兼容旧调用：changed === false | true，name_locked 用 nameLocked）
+ */
+async function applyEditProfileChanges(page, {
+  username = '',
+  originalUsername = '',
+  nickname = '',
+  bio = '',
+  avatarPath = '',
+} = {}, log = () => {}) {
+  const outcome = {
+    changed: false,
+    nameLocked: false,
+    nameLockReason: '',
+    nicknameFilled: false,
+    nicknameAttempted: false,
+    nicknameConfirmed: false,
+    nicknameValueChanged: false,
+    nicknameFailReason: '',
+    usernameFilled: false,
+    usernameAttempted: '',
+    usernameFailReason: '',
+    bioFilled: false,
+    bioFailReason: '',
+    avatarFilled: false,
+    originalUsername: normalizeHandle(originalUsername),
+  };
+
+  const wantUser = normalizeHandle(username);
+  const origUser = normalizeHandle(originalUsername) || (await readUsernameFromEditModal(page));
+  outcome.originalUsername = origUser;
+  // 一眼看出这次到底要改哪些字段（昵称显示 - 就说明上游没把昵称传下来）
+  log(`plan: username=${wantUser || '-'} nickname=${nickname || '-'} bio=${bio ? 'yes' : '-'} avatar=${avatarPath ? 'yes' : '-'}`);
+  const formInputs = await listEditInputs(page).catch(() => []);
+  log(`form inputs: ${formInputs.filter((i) => i.visible).map((i) => `${i.tag}${i.e2e ? `[e2e=${i.e2e}]` : ''}${i.placeholder ? `[ph=${i.placeholder}]` : ''}="${String(i.value || '').slice(0, 14)}"`).join(' | ') || '(none)'}`);
+  if (wantUser && wantUser !== origUser) {
+    outcome.usernameAttempted = wantUser;
+    outcome.usernameFilled = await fillUsernameInEditModal(page, wantUser, log);
+    if (outcome.usernameFilled) outcome.changed = true;
+    else outcome.usernameFailReason = '未找到可编辑的 Username 输入框';
+  }
+
+  if (nickname) {
+    outcome.nicknameAttempted = true;
+    // 记录填写前的昵称，用于判断「真的改了」还是「填了一样的值」
+    const before = await readProfileFormValues(page).catch(() => ({ nickname: '', bio: '' }));
+    const prevNick = String(before?.nickname || '').trim();
+    // 是否被官方限制「只按输入框是否可输入」判断：
+    // 弹框里常驻的 "Your nickname can only be changed once every 7 days." 只是提示文案，
+    // 输入框仍可正常填写并提交，不能据此判锁。
+    const nameState = await isNameFieldEditable(page);
+    const lockedByInput = !nameState.editable && nameState.reason === 'name-input-locked';
+    if (lockedByInput) {
+      outcome.nameLocked = true;
+      outcome.nameLockReason = '距离上次修改未超过7天暂时无法修改';
+      outcome.nicknameFailReason = outcome.nameLockReason;
+      log('name: locked (input disabled/readonly)');
+    } else {
+      if (!nameState.editable) {
+        log(`name: input not identified (${nameState.reason || 'unknown'}) — 继续尝试填写`);
+      }
+      const nameOk = await fillNameInEditModal(page, nickname, log);
+      if (nameOk) {
+        outcome.nicknameFilled = true;
+        outcome.changed = true;
+        outcome.nicknameValueChanged = prevNick ? prevNick !== String(nickname).trim() : true;
+        log(`name: value "${prevNick || '(空)'}" → "${String(nickname).trim()}" (valueChanged=${outcome.nicknameValueChanged})`);
+        // 填完立刻处理「Set nickname?」二次确认框，否则会挡住后续保存
+        outcome.nicknameConfirmed = await confirmSetNicknamePopup(page, log, 4000);
+      } else {
+        outcome.nicknameFailReason = '未找到可填写的昵称输入框（弹框结构未识别）';
+        // 填完再探一次：只有输入框变成禁用/只读才判锁
+        const again = await isNameFieldEditable(page);
+        if (!again.editable && again.reason === 'name-input-locked') {
+          outcome.nameLocked = true;
+          outcome.nameLockReason = '距离上次修改未超过7天暂时无法修改';
+          outcome.nicknameFailReason = outcome.nameLockReason;
+          log('name: locked after fill attempt (input disabled/readonly)');
+        }
+      }
+    }
+  }
+
+  if (bio) {
+    outcome.bioFilled = await fillBioInEditModal(page, bio);
+    if (outcome.bioFilled) outcome.changed = true;
+    else outcome.bioFailReason = '未找到可填写的 Bio 输入框';
+  }
   if (avatarPath) {
     const ok = await setAvatarInEditModal(page, avatarPath, log);
     if (!ok) {
-      throw new Error('头像/Logo 上传失败：未能通过自动化选择图片。若桌面弹出了系统「打开」对话框请先点取消，然后重试同步资料');
+      throw new Error('头像/Logo 上传失败：未能通过自动化选择图片或视频。若桌面弹出了系统「打开」对话框请先点取消，然后重试同步资料');
     }
-    changed = true;
+    outcome.avatarFilled = true;
+    outcome.changed = true;
   }
-  // 仅想改 Name 且当前不可改：不算失败，让调用方知道跳过
-  if (!changed && nameSkipped && !bio && !avatarPath) {
+
+  // 仅想改 Name 且当前不可改：不算失败
+  if (!outcome.changed && outcome.nameLocked && !bio && !avatarPath && !outcome.usernameFilled) {
     log('name: locked — nothing else to sync');
-    return 'name_locked';
+    outcome.nameLockedOnly = true;
   }
-  return changed;
+  return outcome;
 }
 
 /** 关闭 Cookie / 提示遮罩，避免挡住编辑按钮 */
 async function dismissOverlays(page) {
+  try {
+    const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+    await solveRotateCaptchaIfPresent(page);
+  } catch { /* ignore */ }
   const labels = [
     /^(Accept all|Accept|Allow all|I agree|Got it|OK|Agree|允许全部|同意|接受|知道了)$/i,
     /Accept cookies|接受 Cookie/i,
@@ -801,8 +1426,8 @@ async function waitForEditForm(page, timeoutMs = 12000) {
     }
     const vals = await readProfileFormValues(page);
     const hasInput = await page.locator([
-      'input[data-e2e="edit-profile-name-input"]',
-      'textarea[data-e2e="edit-profile-bio-input"]',
+      ...NAME_INPUT_SELECTORS,
+      ...BIO_INPUT_SELECTORS,
       '[role="dialog"] input',
       '[role="dialog"] textarea',
     ].join(', ')).count().catch(() => 0);
@@ -872,13 +1497,22 @@ async function goToPersonalCenter(page, handle) {
 
 /** 尝试点击个人主页上的 Edit profile 按钮，打开编辑弹框 */
 async function tryClickEditEntry(page) {
+  // SPA 渲染有延迟：先等按钮/文案出现，避免 2 秒前就判死
+  await page.waitForSelector(
+    '[data-e2e="edit-profile-enter"], [data-e2e="edit-profile-button"], button[data-e2e*="edit-profile"]',
+    { timeout: 6000 }
+  ).catch(() => {});
+
   // 截图中的主按钮：个人主页统计下方的 “Edit profile”
   const exact = [
     page.locator('[data-e2e="edit-profile-enter"]').first(),
+    page.locator('[data-e2e="edit-profile-button"]').first(),
+    page.locator('a[data-e2e="edit-profile-enter"]').first(),
     page.getByRole('button', { name: /^Edit profile$/i }).first(),
     page.getByRole('button', { name: /^编辑资料$/i }).first(),
     page.locator('button').filter({ hasText: /^Edit profile$/i }).first(),
     page.locator('button').filter({ hasText: /^编辑资料$/i }).first(),
+    page.getByRole('link', { name: /^Edit profile$/i }).first(),
   ];
   for (const el of exact) {
     if (await el.count().catch(() => 0) && await el.isVisible().catch(() => false)) {
@@ -894,8 +1528,58 @@ async function tryClickEditEntry(page) {
   return false;
 }
 
+/** 读取个人主页当前状态，用于判断「为什么没有 Edit profile 按钮」 */
+async function describeProfilePageState(page) {
+  return page.evaluate(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+    };
+    const anyVisible = (sel) => Array.from(document.querySelectorAll(sel)).some(visible);
+    const txt = String((document.body && document.body.innerText) || '').slice(0, 6000);
+    return {
+      editBtn: anyVisible('[data-e2e="edit-profile-enter"], [data-e2e="edit-profile-button"], button[data-e2e*="edit-profile"]'),
+      followBtn: anyVisible('[data-e2e="follow-button"], button[data-e2e*="follow"]'),
+      loginWall: anyVisible('[data-e2e*="login"], a[href*="/login"], button[data-e2e*="login"]'),
+      notFound: /couldn'?t find this account|无法找到该账号|找不到此账号|该账号不存在/i.test(txt),
+      captcha: /captcha|verify|verification|安全验证|人机验证|滑块|unusual activity|too many attempts/i.test(txt),
+      title: (document.querySelector('[data-e2e="user-title"], [data-e2e="user-subtitle"], h1')?.textContent || '').trim().slice(0, 60),
+      url: location.href,
+    };
+  }).catch(() => null);
+}
+
+/** 等主页渲染到可判断状态（出现按钮 / 不存在 / 登录墙），返回最后一次探测结果 */
+async function waitForProfileActionable(page, timeoutMs = 15000) {
+  const end = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < end) {
+    last = await describeProfilePageState(page);
+    if (last && (last.editBtn || last.notFound || last.captcha || last.followBtn)) return last;
+    await page.waitForTimeout(400);
+  }
+  return last;
+}
+
+/** 从页面导航栏解析「当前真正登录的」TikTok handle */
+async function resolveLoggedInHandle(page) {
+  return page.evaluate(() => {
+    const probes = ['[data-e2e="nav-profile"]', 'header a[href^="/@"]', 'a[href^="/@"][data-e2e*="profile" i]'];
+    for (const sel of probes) {
+      for (const el of document.querySelectorAll(sel)) {
+        const href = el.getAttribute('href') || el.closest('a')?.getAttribute('href') || '';
+        const m = String(href).match(/^\/@([A-Za-z0-9._]+)/);
+        if (m) return m[1];
+      }
+    }
+    return '';
+  }).catch(() => '');
+}
+
 /** 在个人中心打开「编辑资料」弹框 */
-async function openEditProfile(page, handle) {
+async function openEditProfile(page, handle, log = () => {}) {
   await dismissOverlays(page);
 
   // 直接打开本人主页（与用户截图一致）
@@ -903,10 +1587,60 @@ async function openEditProfile(page, handle) {
     waitUntil: 'domcontentloaded',
     timeout: 60000,
   }).catch(() => {});
-  await page.waitForTimeout(2800);
+  await page.waitForTimeout(1500);
   await dismissOverlays(page);
 
+  let state = await waitForProfileActionable(page, 15000);
+  if (state) {
+    log(`profile page: edit=${state.editBtn} follow=${state.followBtn} login=${state.loginWall} notFound=${state.notFound} captcha=${state.captcha} title=${state.title || '-'}`);
+  }
+  if (state?.captcha) {
+    try {
+      const { solveRotateCaptchaIfPresent } = require('./nocaptchaai');
+      const rot = await solveRotateCaptchaIfPresent(page);
+      if (rot?.detected && rot?.solved) {
+        log('profile page: NoCaptchaAI 已自动通过旋转图片验证，重新检测主页状态');
+        await page.waitForTimeout(1500);
+        await dismissOverlays(page);
+        state = await waitForProfileActionable(page, 12000);
+      }
+    } catch { /* ignore */ }
+  }
+  if (state?.captcha) {
+    throw new Error(`TikTok 出现人机/安全验证，无法进入编辑资料（${state.url}），请先在浏览器里人工处理验证`);
+  }
+
+  // 不是本人主页（不存在 / 只有 Follow）→ 走导航栏个人中心，落到真正登录的账号
+  if (!state?.editBtn && (state?.notFound || state?.followBtn || state?.loginWall || !state)) {
+    log(`profile page: 未出现 Edit profile（notFound=${!!state?.notFound} follow=${!!state?.followBtn}），改用导航栏个人中心`);
+    await goToPersonalCenter(page, handle).catch(() => {});
+    const after = await waitForProfileActionable(page, 12000);
+    if (after) {
+      log(`profile page(after nav): edit=${after.editBtn} follow=${after.followBtn} login=${after.loginWall} title=${after.title || '-'} url=${after.url}`);
+      state = after;
+    }
+  }
+
+  if (state && !state.editBtn && state.loginWall) {
+    throw new Error('TikTok 登录状态疑似已失效：个人主页没有「Edit profile」按钮，请到账号页重新登录该浏览器环境后再试');
+  }
+
   if (await tryClickEditEntry(page)) return true;
+
+  // 系统里的 username 可能已被改过（TikTok 上是另一个名字）→ 用页面导航栏解析出的真实 handle 再试
+  const realHandle = await resolveLoggedInHandle(page);
+  if (realHandle && realHandle.toLowerCase() !== String(handle || '').toLowerCase()) {
+    log(`profile page: 系统 @${handle} 与登录账号 @${realHandle} 不一致，改用 @${realHandle}`);
+    await page.goto(`https://www.tiktok.com/@${encodeURIComponent(realHandle)}?lang=en`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    }).catch(() => {});
+    await page.waitForTimeout(1800);
+    await dismissOverlays(page);
+    const s2 = await waitForProfileActionable(page, 12000);
+    if (s2) log(`profile page(real handle): edit=${s2.editBtn} follow=${s2.followBtn} login=${s2.loginWall} title=${s2.title || '-'}`);
+    if (await tryClickEditEntry(page)) return true;
+  }
 
   await page.mouse.wheel(0, 300).catch(() => {});
   await page.waitForTimeout(800);
@@ -921,10 +1655,14 @@ async function openEditProfile(page, handle) {
 /** 读取编辑资料弹框中的 Name / Bio（忽略 Username） */
 async function readProfileFormValues(page) {
   const result = { nickname: '', bio: '' };
-  const nameEl = page.locator('input[data-e2e="edit-profile-name-input"]').first();
-  if (await nameEl.count().catch(() => 0) && await nameEl.isVisible().catch(() => false)) {
-    result.nickname = String(await nameEl.inputValue().catch(() => '') || '').trim();
-  } else {
+  for (const sel of NAME_INPUT_SELECTORS) {
+    const el = page.locator(sel).first();
+    if (!(await el.count().catch(() => 0))) continue;
+    if (!(await el.isVisible().catch(() => false))) continue;
+    result.nickname = String(await el.inputValue().catch(() => '') || '').trim();
+    break;
+  }
+  if (!result.nickname) {
     const byLabel = page.getByLabel(/^Name$/i).first();
     if (await byLabel.count().catch(() => 0) && await byLabel.isVisible().catch(() => false)) {
       const meta = fieldMeta({
@@ -936,9 +1674,12 @@ async function readProfileFormValues(page) {
       }
     }
   }
-  const bioEl = page.locator('textarea[data-e2e="edit-profile-bio-input"], [role="dialog"] textarea').first();
-  if (await bioEl.count().catch(() => 0) && await bioEl.isVisible().catch(() => false)) {
-    result.bio = String(await bioEl.inputValue().catch(() => '') || '').trim();
+  for (const sel of BIO_INPUT_SELECTORS) {
+    const el = page.locator(sel).first();
+    if (!(await el.count().catch(() => 0))) continue;
+    if (!(await el.isVisible().catch(() => false))) continue;
+    result.bio = String(await el.inputValue().catch(() => '') || '').trim();
+    break;
   }
   return result;
 }
@@ -1085,21 +1826,26 @@ async function loadStoredProfile(accountId) {
 
 /**
  * 同步资料 = 把「系统里设置的资料」推送到 TikTok（不是从 TikTok 拉回系统）
- * 流程：读系统 nickname / profile_bio / profile_avatar
- *      → 个人主页 → Edit profile 弹框 → 填 Name/Bio/头像（不改 Username）→ Save
+ * 流程：读系统 username / nickname / profile_bio / profile_avatar
+ *      → 个人主页 → Edit profile → 填 Username/Name/Bio/头像 → Save（Username 冲突则恢复）
  */
 async function syncProfile(accountId, options = {}) {
   const account = await loadAccount(accountId);
   let session;
   let keepOpenOnFail = false;
   try {
-    // 仅使用系统侧设置（可被本次 options 覆盖）
+    const originalUsername = normalizeHandle(
+      options.originalUsername || options.original_username || account.username,
+    );
+    const wantUsername = normalizeHandle(options.username || options.handle || '');
     const wantNickname = String(options.nickname || options.displayName || account.nickname || '').trim();
     const wantBio = String(options.signature || options.bio || account.profileBio || '').trim();
     let avatarPath = String(options.avatarPath || options.avatarUrl || account.profileAvatar || '').trim();
+    const hasOriginalNickname = options.originalNickname != null || options.original_nickname != null;
+    const originalNickname = String(options.originalNickname ?? options.original_nickname ?? '').trim();
 
-    if (!wantNickname && !wantBio && !avatarPath) {
-      throw new Error('系统资料为空：请先在「修改资料」里设置昵称/签名/头像，再点同步资料推送到 TikTok');
+    if (!wantUsername && !wantNickname && !wantBio && !avatarPath) {
+      throw new Error('系统资料为空：请先在「修改资料」里设置账号名/昵称/签名/头像，再点同步资料推送到 TikTok');
     }
 
     let avatarFile = '';
@@ -1112,13 +1858,23 @@ async function syncProfile(accountId, options = {}) {
         || avatarPath.match(/\/uploads\/([^/\\]+)(?:\?|$)/i);
       if (m) avatarFile = path.join(uploadDir, m[1]);
       if (!path.isAbsolute(avatarFile)) avatarFile = path.resolve(process.cwd(), avatarFile);
-      if (!fs.existsSync(avatarFile)) throw new Error(`头像文件不存在：${avatarFile}`);
+      if (!fs.existsSync(avatarFile)) {
+        // 头像文件缺失：改用默认头像，不让同步资料失败
+        const missing = avatarFile;
+        avatarFile = require('./default-avatar').resolveAvatarOrDefault(missing, (m) => {
+          try { require('../live-log').publish(`同步资料#${accountId}：${m}`, 'warn', { accountId }); } catch { /* ignore */ }
+        });
+        if (!avatarFile) throw new Error(`头像文件不存在：${missing}`);
+      }
+      if (!/\.(jpe?g|png|webp|gif|mp4|webm|mov)$/i.test(avatarFile)) {
+        throw new Error('头像仅支持图片（JPG/PNG/WebP/GIF）或视频（MP4，建议 ≤6 秒）');
+      }
     }
 
     session = await openBitPage(account, 'profile');
     const { page, ws } = session;
     const { publish: liveLog } = require('../live-log');
-    const log = (msg) => liveLog(`SyncProfile#${accountId}: ${msg}`, 'info', { accountId });
+    const log = (msg) => liveLog(`同步资料#${accountId}：${msg}`, 'info', { accountId });
 
     await page.goto('https://www.tiktok.com/foryou?lang=en', {
       waitUntil: 'domcontentloaded',
@@ -1137,8 +1893,9 @@ async function syncProfile(accountId, options = {}) {
       throw new Error('当前浏览器没有有效 TikTok 登录状态，请先登录');
     }
 
-    // 个人主页 → Edit profile
-    const opened = await openEditProfile(page, account.username);
+    // 个人主页必须用「原 Username」（TikTok 侧尚未改名）
+    const navHandle = originalUsername || normalizeHandle(account.username);
+    const opened = await openEditProfile(page, navHandle);
     if (!opened) {
       keepOpenOnFail = true;
       const shot = await capture(page, account.id, 'profile', 'edit-miss').catch(() => '');
@@ -1146,39 +1903,73 @@ async function syncProfile(accountId, options = {}) {
     }
 
     if (avatarFile) log(`avatar file: ${avatarFile}`);
-    const changed = await applyEditProfileChanges(page, {
+    const applied = await applyEditProfileChanges(page, {
+      username: wantUsername,
+      originalUsername: navHandle,
       nickname: wantNickname,
       bio: wantBio,
       avatarPath: avatarFile,
     }, log);
-    if (changed === 'name_locked') {
+
+    if (applied.nameLocked && wantNickname && hasOriginalNickname) {
+      await phpApi.patch(`/accounts/${accountId}/profile-outcome`, {
+        restoreNickname: originalNickname,
+        nicknameLocked: true,
+        markNicknameChanged: true,
+      }).catch(() => {});
+    }
+
+    if (applied.nameLockedOnly) {
       return {
         accountId: account.id,
-        handle: account.username,
+        handle: navHandle,
         pushed: false,
         nameLocked: true,
-        message: 'Name 当前受 7 天修改限制（非输入框），已跳过；无其它可同步项',
+        nicknameFilled: false,
+        nicknameError: applied.nameLockReason,
+        nicknameLockedAt: nowChinaSql(),
+        message: 'Name 当前受 7 天修改限制，已跳过；无其它可同步项',
       };
     }
-    if (!changed) {
+    if (!applied.changed) {
       keepOpenOnFail = true;
       const shot = await capture(page, account.id, 'profile', 'fields-miss').catch(() => '');
-      throw new Error(`未能写入 Bio/头像（Name 若不可改已自动跳过）${shot ? `（截图：${shot}）` : ''}`);
+      throw new Error(`未能写入 Username/Bio/头像（Name 若不可改已自动跳过）${shot ? `（截图：${shot}）` : ''}`);
     }
 
-    const saved = await clickProfileSave(page);
-    if (!saved) {
+    const saveResult = await saveEditProfileWithUsernameRecovery(page, {
+      originalUsername: navHandle,
+      attemptedUsername: applied.usernameAttempted || wantUsername,
+    }, log);
+    if (saveResult.usernameConflict) {
+      await phpApi.patch(`/accounts/${accountId}/profile-outcome`, {
+        restoreUsername: navHandle,
+      }).catch(() => {});
+    }
+    if (!saveResult.saved) {
       keepOpenOnFail = true;
-      throw new Error('资料已填入但未找到 Save，请在比特窗口手动保存');
+      throw new Error(saveResult.usernameConflict
+        ? `账号名称不可用，已恢复原账号名：${saveResult.usernameFailReason || 'Username unavailable'}`
+        : '资料已填入但未找到 Save，请在浏览器窗口手动保存');
     }
-    await page.waitForTimeout(2500);
 
-    // 回写本地缓存（展示用），系统设置本身已在 accounts 中
-    await goToPersonalCenter(page, account.username).catch(() => {});
-    const profile = await scrapePublicProfile(page, account).catch(() => ({
+    if (applied.nicknameFilled) {
+      await phpApi.patch(`/accounts/${accountId}/profile-outcome`, {
+        nicknameSuccess: true,
+        markNicknameChanged: true,
+      }).catch(() => {});
+    }
+
+    await page.waitForTimeout(800);
+    const finalHandle = saveResult.usernameConflict
+      ? navHandle
+      : (wantUsername || navHandle);
+
+    await goToPersonalCenter(page, finalHandle).catch(() => {});
+    const profile = await scrapePublicProfile(page, { ...account, username: finalHandle }).catch(() => ({
       accountId: account.id,
-      handle: account.username,
-      displayName: wantNickname,
+      handle: finalHandle,
+      displayName: applied.nicknameFilled ? wantNickname : account.nickname,
       bio: wantBio,
       avatarUrl: account.profileAvatar || '',
       followersCount: 0,
@@ -1188,9 +1979,13 @@ async function syncProfile(accountId, options = {}) {
       verified: 0,
       sourceUrl: page.url(),
     }));
-    if (wantNickname) profile.displayName = wantNickname;
+    if (applied.nicknameFilled && wantNickname) profile.displayName = wantNickname;
     if (wantBio) profile.bio = wantBio;
     await persistProfile(account.id, profile).catch(() => {});
+
+    const lockedAt = applied.nameLocked
+      ? nowChinaSql()
+      : undefined;
 
     return {
       ...profile,
@@ -1199,7 +1994,18 @@ async function syncProfile(accountId, options = {}) {
       editSaved: true,
       formNickname: wantNickname,
       formBio: wantBio,
-      message: '系统资料已同步到 TikTok',
+      nameLocked: applied.nameLocked,
+      nicknameFilled: !!applied.nicknameFilled,
+      nicknameError: applied.nameLockReason || undefined,
+      nicknameLockedAt: lockedAt,
+      originalUsername: navHandle,
+      usernameFailReason: saveResult.usernameFailReason || undefined,
+      usernameConflict: saveResult.usernameConflict,
+      message: saveResult.usernameConflict
+        ? `Username 不可用已恢复原账号名；其余资料已同步${applied.nameLocked ? '（昵称受 7 天限制已跳过）' : ''}`
+        : (applied.nameLocked
+          ? '系统资料已同步到 TikTok（昵称受 7 天限制已跳过）'
+          : '系统资料已同步到 TikTok'),
     };
   } catch (error) {
     await dataStore.tiktokSync(account.id, { error: error.message }).catch(() => {});
@@ -1209,14 +2015,48 @@ async function syncProfile(accountId, options = {}) {
   }
 }
 
+/**
+ * 只从 TikTok 拉取公开资料入库（不向 TikTok 推送任何内容）。
+ * 账号监控定时任务使用它，避免用系统库里的旧资料把 TikTok 上刚改好的资料覆盖回去。
+ */
+async function pullProfile(accountId) {
+  const account = await loadAccount(accountId);
+  let session;
+  try {
+    session = await openBitPage(account, 'profile');
+    const { page } = session;
+    await page.goto(`https://www.tiktok.com/@${encodeURIComponent(account.username || '')}?lang=en`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    }).catch(() => {});
+    await page.waitForTimeout(2500);
+    await dismissOverlays(page);
+    const profile = await scrapePublicProfile(page, account);
+    await persistProfile(account.id, profile);
+    return profile;
+  } catch (error) {
+    await dataStore.tiktokSync(account.id, { error: error.message }).catch(() => {});
+    throw error;
+  } finally {
+    await closeBitPage(session, account);
+  }
+}
+
 module.exports = {
   syncProfile,
+  pullProfile,
   fillProfileField,
   fillNameInEditModal,
   fillBioInEditModal,
   setAvatarInEditModal,
   applyEditProfileChanges,
   clickProfileSave,
+  saveEditProfileWithUsernameRecovery,
+  fillUsernameInEditModal,
+  readUsernameFromEditModal,
+  detectUsernameConflict,
+  detectNicknameLockMessage,
+  isNameFieldEditable,
   openEditProfile,
   goToPersonalCenter,
   dismissOverlays,

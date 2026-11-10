@@ -16,9 +16,10 @@ function parseMetricCount(raw) {
   let s = String(raw).trim();
   if (!s) return 0;
 
-  // 全角数字 / 标点
+  // 全角数字 / 标点 / 不间断空格
   s = s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
   s = s.replace(/，/g, ',').replace(/．/g, '.');
+  s = s.replace(/[\u00a0\u202f\u2007\u2009\u200a]/g, ' ');
 
   // 从整段文案中提取第一个「数字 + 可选单位」（如 "16.2K Followers" → 16.2K）
   const m = s.match(
@@ -52,6 +53,7 @@ function parseMetricCountInBrowser(raw) {
   if (!s) return 0;
   s = s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
   s = s.replace(/，/g, ',').replace(/．/g, '.');
+  s = s.replace(/[\u00a0\u202f\u2007\u2009\u200a]/g, ' ');
   const m = s.match(
     /([\d]{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([kKmMbB万亿wW])?/i
   );
@@ -72,9 +74,30 @@ function parseMetricCountInBrowser(raw) {
   return Math.max(0, Math.round(n));
 }
 
+/**
+ * 从文案中按标签提取计数原文（粉丝/获赞/播放）。
+ * 注意：labelBody 不要带 ^$，否则合写 "243.1K Likes" 会匹配失败。
+ */
+function pickLabeledMetricText(text, labelBody) {
+  const s = String(text || '').replace(/[\u00a0\u202f\u2007\u2009\u200a]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s || !labelBody) return '';
+  const body = String(labelBody).replace(/^\^/, '').replace(/\$$/, '');
+  const combined = new RegExp(
+    `([\\d]{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s*([kKmMbB万亿wW])?\\s*[·•.\\-–—]?\\s*(?:${body})`,
+    'i'
+  );
+  const combinedRev = new RegExp(
+    `(?:${body})\\s*[·•.\\-–—]?\\s*([\\d]{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s*([kKmMbB万亿wW])?`,
+    'i'
+  );
+  const m = s.match(combined) || s.match(combinedRev);
+  return m ? m[0] : '';
+}
+
 module.exports = {
   parseMetricCount,
   parseMetricCountInBrowser,
+  pickLabeledMetricText,
   /** @deprecated 使用 parseMetricCount */
   parseCount: parseMetricCount,
 };

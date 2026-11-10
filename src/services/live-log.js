@@ -1,3 +1,5 @@
+const { nowChinaIso } = require('../utils/china-time');
+
 const clients = new Set();
 
 function attach(socket) {
@@ -5,12 +7,19 @@ function attach(socket) {
   socket.on('close', () => clients.delete(socket));
 }
 
+function publishEvent(type, data = {}) {
+  const raw = JSON.stringify({ type, data });
+  for (const socket of clients) {
+    if (socket.readyState === 1) socket.send(raw);
+  }
+}
+
 function publish(message, level = 'info', data = {}) {
   const event = {
     type: 'operation-log',
     data: {
       id: Date.now() + Math.random(),
-      time: new Date().toISOString(),
+      time: nowChinaIso(),
       level,
       message,
       ...data,
@@ -44,4 +53,4 @@ function publish(message, level = 'info', data = {}) {
   }
 }
 
-module.exports = { attach, publish };
+module.exports = { attach, publish, publishEvent };

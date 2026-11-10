@@ -34,7 +34,10 @@ async function assertPublishGate(accountId, channel = 'bit') {
 async function assertChatGate(accountId) {
   const gate = await loadGate(accountId);
   if (!gate.ok) throw new Error(gate.reason);
-  if (!gate.account.browser_profile_id) throw new Error('账号尚未绑定浏览器环境');
+  const { resolveProfileIdForAccount } = require('./browser/providers');
+  const profileId = resolveProfileIdForAccount(gate.account);
+  if (!profileId) throw new Error('账号尚未绑定浏览器环境');
+  gate.account.browser_profile_id = profileId;
   if (gate.account.login_status !== 'online' && !gate.hasSession) {
     throw new Error('请先完成 TikTok 登录或导入有效 CK');
   }
