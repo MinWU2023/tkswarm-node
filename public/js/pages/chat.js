@@ -209,10 +209,10 @@
             <button type="button" class="${friendTab==='following'?'active':''}" onclick="app.setChatFriendTab('following')">关注</button>
             <button type="button" class="${friendTab==='search'?'active':''}" onclick="app.setChatFriendTab('search')">搜索</button>
           </div>
-          ${friendTab==='search'?`<div class="chat-search-inline"><div class="filters"><input id="chat-search-keyword-inline" class="input" style="flex:1" placeholder="搜索词（至少 6 个字符）" value="${this.esc(this.chatSearchKeyword||'')}" oninput="app.chatSearchKeyword=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();app.runChatUserSearch(this.value)}"><button class="primary" type="button" onclick="app.runChatUserSearch(document.querySelector('#chat-search-keyword-inline')?.value)">搜索</button></div><div class="muted" style="margin-top:8px;font-size:12px">通过服务器浏览器在 TikTok 搜索用户。点击搜索到的用户即可直接发私信，下次搜索会覆盖结果列表。</div></div><div id="chat-search-results-inline" class="chat-search-results">${this.chatSearchPanelHtml()}</div>`:`${friendTab==='dm'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatDm()">刷新私信</button>`:''}<span class="muted">从 TikTok 收件箱拉取私信用户列表</span></div>`:''}${friendTab==='follower'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFans()">刷新粉丝</button>`:''}<span class="muted">从 TikTok 拉取最新粉丝列表</span></div>`:''}${friendTab==='following'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFollowing()">刷新关注</button>`:''}<span class="muted">从 TikTok 拉取最新关注列表</span></div>`:''}<div class="filters" style="padding:8px 12px;border-bottom:1px solid var(--line)"><input id="chat-friend-search" class="input" style="flex:1" placeholder="搜索${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}" value="${this.esc(this.chatKeyword||'')}" oninput="app.chatKeyword=this.value" onkeydown="if(event.key==='Enter')app.searchChatFriends()"><button class="ghost" onclick="app.searchChatFriends()">查询</button></div><div class="chat-list">${!account?'<div class="shell-note">请先选择账号并登录客服</div>':(friendsPack.items.length?friendsPack.items.map(f=>`<div class="chat-friend ${Number(f.id)===Number(this.chatFriendId)?'active':''}" onclick="app.selectChatFriend(${f.id},${f.account_id})"><div class="chat-avatar">${this.esc(((f.nickname||f.username||'?')[0]||'?').toUpperCase())}</div><div class="chat-meta"><b class="chat-name">${f.is_pinned?'📌 ':''}${this.esc(f.nickname||f.username||f.friend_uid)}</b>${this.chatLangTag(f.lang)}${(f.tags||[]).length?` <span class="muted">${(f.tags||[]).map(t=>this.esc(t)).join(' ')}</span>`:''}${f.unread_count?` <span class="badge failed">${f.unread_count}</span>`:''}</b><small>${this.esc(f.last_message||'暂无消息')}</small></div></div>`).join(''):`<div class="shell-note">暂无${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}</div>`)}</div>`}
+          ${friendTab==='search'?`<div class="chat-search-inline"><div class="filters"><input id="chat-search-keyword-inline" class="input" style="flex:1" placeholder="搜索词（至少 6 个字符）" value="${this.esc(this.chatSearchKeyword||'')}" oninput="app.chatSearchKeyword=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();app.runChatUserSearch(this.value)}"><button class="primary" type="button" onclick="app.runChatUserSearch(document.querySelector('#chat-search-keyword-inline')?.value)">搜索</button></div><div class="muted" style="margin-top:8px;font-size:12px">通过服务器浏览器在 TikTok 搜索用户。点击搜索到的用户即可直接发私信，下次搜索会覆盖结果列表。</div></div><div id="chat-search-results-inline" class="chat-search-results">${this.chatSearchPanelHtml()}</div>`:`${friendTab==='dm'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatDm()" ${this.isChatFriendListRefreshing('dm')?'disabled':''}>刷新私信</button>`:''}<span class="muted">从 TikTok 收件箱拉取私信用户列表</span></div>`:''}${friendTab==='follower'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFans()" ${this.isChatFriendListRefreshing('follower')?'disabled':''}>刷新粉丝</button>`:''}<span class="muted">从 TikTok 拉取最新粉丝列表</span></div>`:''}${friendTab==='following'?`<div class="chat-tab-toolbar">${canManage?`<button class="tiny primary" type="button" onclick="app.refreshChatFollowing()" ${this.isChatFriendListRefreshing('following')?'disabled':''}>刷新关注</button>`:''}<span class="muted">从 TikTok 拉取最新关注列表</span></div>`:''}<div class="filters" style="padding:8px 12px;border-bottom:1px solid var(--line)"><input id="chat-friend-search" class="input" style="flex:1" placeholder="搜索${friendTab==='follower'?'粉丝':friendTab==='following'?'关注':'好友'}" value="${this.esc(this.chatKeyword||'')}" oninput="app.chatKeyword=this.value" onkeydown="if(event.key==='Enter')app.searchChatFriends()"><button class="ghost" onclick="app.searchChatFriends()">查询</button></div><div class="chat-list" id="chat-friend-list">${this.chatFriendListBodyHtml(account, friendsPack, friendTab)}</div>`}
         </aside>
         <section class="chat-col">
-          <div class="chat-col-head"><div><h3>${messagesPack.friend?this.esc(messagesPack.friend.nickname||messagesPack.friend.username||messagesPack.friend.friend_uid):'会话'}</h3><div class="muted">${messagesPack.friend?`关系：${this.esc(messagesPack.friend.relation)} · UID ${this.esc(messagesPack.friend.friend_uid)}`:''}</div></div><div>${messagesPack.friend&&canOps?`<button class="tiny" onclick="app.togglePinFriend()">${messagesPack.friend.is_pinned?'取消置顶':'置顶'}</button><button class="tiny" onclick="app.blockFriend()">${messagesPack.friend.relation==='blocked'?'取消拉黑':'拉黑'}</button>${canManage?`<button class="tiny danger" onclick="app.deleteChatFriend()">删除</button>`:''}`:''}</div></div>
+          <div class="chat-col-head"><div><h3>${messagesPack.friend?this.esc(messagesPack.friend.nickname||messagesPack.friend.username||messagesPack.friend.friend_uid):'会话'}</h3><div class="muted">${messagesPack.friend?`关系：${this.esc(messagesPack.friend.relation)} · UID ${this.esc(messagesPack.friend.friend_uid)}`:''}</div></div><div>${messagesPack.friend&&canOps?`<button class="tiny" ${this.chatOpBusy('pull')?'disabled':''} onclick="app.pullChatHistory()">${this.chatOpBusy('pull')?'操作中…':'拉取会话'}</button><button class="tiny" ${this.chatOpBusy('pin')?'disabled':''} onclick="app.togglePinFriend()">${this.chatOpBusy('pin')?'操作中…':(messagesPack.friend.is_pinned?'取消置顶':'置顶')}</button><button class="tiny" ${this.chatOpBusy('block')?'disabled':''} onclick="app.blockFriend()">${this.chatOpBusy('block')?'操作中…':(messagesPack.friend.relation==='blocked'?'取消拉黑':'拉黑')}</button>${canManage?`<button class="tiny danger" ${this.chatOpBusy('del')?'disabled':''} onclick="app.deleteChatFriend()">${this.chatOpBusy('del')?'操作中…':'删除'}</button>`:''}`:''}</div></div>
           ${account?`<div class="translate-bar"><span class="translate-bar-info">${translateInfo}</span><div class="translate-bar-actions">${translateActions}</div></div>`:''}
           <div class="thread" id="chat-thread">${messagesPack.items?.length?messagesPack.items.map(renderChatBubble).join(''):'<div class="shell-note">选择好友后开始会话。<br>这里是本地会话。没有官方私信接口时，不会写入假的 TikTok 消息。</div>'}</div>
           <div class="composer">
@@ -452,10 +452,47 @@
     },
     async chatConnect(id){try{let autoTranslate=false,syncMessages=true;try{const st=await this.api('/settings');autoTranslate=st.translationOnReceive===true||st.translationMode==='basic'||st.translationMode==='ai'||st.translationMode==='normal';syncMessages=st.privateMessageSync!==false;this.messageSyncInterval=Number(st.messageSyncInterval||10);this.notificationInterval=Number(st.notificationInterval||1);this.notificationSound=st.notificationSound||this.notificationSound;this.notificationSync=st.notificationSync!==false}catch{}await this.api(`/chat/accounts/${id}/connect`,{method:'POST',body:JSON.stringify({autoTranslate,syncMessages})});this.toast('已登录客服聊天');this.chatAccountId=id;this.startChatSyncTimer();this.refresh()}catch(e){this.toast(e.message,true)}},
     startChatSyncTimer(){if(this._chatSyncTimer)clearInterval(this._chatSyncTimer);const mins=Math.min(60,Math.max(1,Number(this.notificationInterval||this.messageSyncInterval||1)||1));const sec=Math.min(300,Math.max(15,mins*60));this._chatSyncTimer=setInterval(()=>{if(this.view==='chat')this.refresh()},sec*1000)},
+    /** 好友列表刷新中：与搜索同款骨架，避免空白等待 */
+    chatFriendListLabel(tab){
+      return tab==='follower'?'粉丝':(tab==='following'?'关注':'私信');
+    },
+    isChatFriendListRefreshing(tab){
+      const st=this._chatFriendRefresh;
+      if(!st||!st.loading)return false;
+      if(tab&&st.tab!==tab)return false;
+      return Number(st.accountId)===Number(this.chatAccountId);
+    },
+    chatFriendListSkeletonHtml(tab){
+      const label=this.chatFriendListLabel(tab||this.chatFriendTab||'dm');
+      const row='<div class="search-skeleton-row"><span class="sk-avatar"></span><span class="sk-lines"><i></i><i></i></span></div>';
+      return `<div class="search-skeleton"><div class="muted" style="padding:8px 12px;font-size:12px">正在刷新${this.esc(label)}列表，请稍候…</div>${row.repeat(6)}</div>`;
+    },
+    paintChatFriendListSkeleton(tab){
+      const box=document.querySelector('#chat-friend-list');
+      if(box)box.innerHTML=this.chatFriendListSkeletonHtml(tab);
+      document.querySelectorAll('.chat-tab-toolbar .tiny.primary').forEach((btn)=>{btn.disabled=true});
+    },
+    beginChatFriendListRefresh(tab){
+      this._chatFriendRefresh={loading:true,tab,accountId:Number(this.chatAccountId)||0};
+      this.paintChatFriendListSkeleton(tab);
+    },
+    endChatFriendListRefresh(){
+      this._chatFriendRefresh={loading:false,tab:'',accountId:0};
+    },
+    chatFriendListBodyHtml(account, friendsPack, friendTab){
+      if(this.isChatFriendListRefreshing(friendTab))return this.chatFriendListSkeletonHtml(friendTab);
+      if(!account)return '<div class="shell-note">请先选择账号并登录客服</div>';
+      const items=friendsPack?.items||[];
+      if(!items.length)return `<div class="shell-note">暂无${this.chatFriendListLabel(friendTab)}</div>`;
+      return items.map((f)=>`<div class="chat-friend ${Number(f.id)===Number(this.chatFriendId)?'active':''}" onclick="app.selectChatFriend(${f.id},${f.account_id})"><div class="chat-avatar">${this.esc(((f.nickname||f.username||'?')[0]||'?').toUpperCase())}</div><div class="chat-meta"><b class="chat-name">${f.is_pinned?'📌 ':''}${this.esc(f.nickname||f.username||f.friend_uid)}</b>${this.chatLangTag(f.lang)}${(f.tags||[]).length?` <span class="muted">${(f.tags||[]).map((t)=>this.esc(t)).join(' ')}</span>`:''}${f.unread_count?` <span class="badge failed">${f.unread_count}</span>`:''}</b><small>${this.esc(f.last_message||'暂无消息')}</small></div></div>`).join('');
+    },
     async refreshChatDm(){
       if(!this.canChatManage()){this.toast('当前角色无权刷新私信',true);return}
       if(!this.chatAccountId){this.toast('请先选择账号',true);return}
+      if(this.isChatFriendListRefreshing()){this.toast('列表刷新中，请稍候',true);return}
       if(!(await this.ensureNodeOnline('私信同步')))return;
+      this.chatFriendTab='dm';
+      this.beginChatFriendListRefresh('dm');
       this.toast('已推送私信列表同步到服务器浏览器…');
       try{
         const r=await this.runSeatTaskAndWait('dm_sync',{
@@ -463,47 +500,53 @@
           maxConversations:30,
           maxMessagesPerChat:10,
         });
-        if(!r)return;
+        if(!r){this.endChatFriendListRefresh();this.refresh();return}
         const res=r.result||{};
         if(r.status==='completed'){
           this.toast(`私信列表同步完成：会话用户 ${res.friendsUpserted??res.conversations??'-'} · 消息 ${res.messagesUpserted??'-'}`);
         }else{
           this.toast(r.errorMessage||`私信同步结束：${r.status}`,true);
         }
-        this.refresh();
       }catch(e){this.toast(e.message,true)}
+      finally{this.endChatFriendListRefresh();this.refresh()}
     },
     async refreshChatFans(){
       if(!this.canChatManage()){this.toast('当前角色无权刷新粉丝',true);return}
       if(!this.chatAccountId){this.toast('请先选择账号',true);return}
+      if(this.isChatFriendListRefreshing()){this.toast('列表刷新中，请稍候',true);return}
+      this.chatFriendTab='follower';
+      this.beginChatFriendListRefresh('follower');
       this.toast('已推送粉丝同步到服务器浏览器…');
       try{
         const r=await this.runSeatTaskAndWait('sync_fans',{accountId:Number(this.chatAccountId)});
-        if(!r)return;
+        if(!r){this.endChatFriendListRefresh();this.refresh();return}
         const p=r.result?.progress||{};
         if(r.status==='completed'){
           this.toast(`粉丝同步完成：抓取 ${p.scraped??'-'} · 新增 ${p.added??'-'} / 更新 ${p.updated??'-'}`);
         }else{
           this.toast(r.errorMessage||`粉丝同步结束：${r.status}`,true);
         }
-        this.refresh();
       }catch(e){this.toast(e.message,true)}
+      finally{this.endChatFriendListRefresh();this.refresh()}
     },
     async refreshChatFollowing(){
       if(!this.canChatManage()){this.toast('当前角色无权刷新关注',true);return}
       if(!this.chatAccountId){this.toast('请先选择账号',true);return}
+      if(this.isChatFriendListRefreshing()){this.toast('列表刷新中，请稍候',true);return}
+      this.chatFriendTab='following';
+      this.beginChatFriendListRefresh('following');
       this.toast('已推送关注同步到服务器浏览器…');
       try{
         const r=await this.runSeatTaskAndWait('sync_following',{accountId:Number(this.chatAccountId)});
-        if(!r)return;
+        if(!r){this.endChatFriendListRefresh();this.refresh();return}
         const p=r.result?.progress||{};
         if(r.status==='completed'){
           this.toast(`关注同步完成：抓取 ${p.scraped??'-'} · 新增 ${p.added??'-'} / 更新 ${p.updated??'-'}`);
         }else{
           this.toast(r.errorMessage||`关注同步结束：${r.status}`,true);
         }
-        this.refresh();
       }catch(e){this.toast(e.message,true)}
+      finally{this.endChatFriendListRefresh();this.refresh()}
     },
     stopChatSyncTimer(){if(this._chatSyncTimer){clearInterval(this._chatSyncTimer);this._chatSyncTimer=null}},
     async chatDisconnect(id){try{await this.api(`/chat/accounts/${id}/disconnect`,{method:'POST'});this.toast('已退出客服聊天');this.refresh()}catch(e){this.toast(e.message,true)}},
@@ -856,20 +899,65 @@
     },
     setChatScriptGroup(id){this.scriptGroupId=id||'';this.refresh()},
     useTemplate(content){if(this.dmTemplateEnabled===false){this.toast('设置中「启用私信话术」已关闭',true);return}const el=document.querySelector('#chat-input');if(!el||el.disabled){this.toast('请先登录客服并选择好友',true);return}el.value=content;el.focus()},
-    async togglePinFriend(){if(!this.canChatOps()){this.toast('当前角色无权置顶会话',true);return}if(!this.chatFriendId)return;try{const pack=await this.api(`/chat/messages?friendId=${this.chatFriendId}&pageSize=1`);const pinned=!pack.friend?.is_pinned;if(!(await this.ask(pinned?'置顶仅作用于本系统会话列表，不会同步到 TikTok 收件箱。继续？':'取消本系统置顶？')))return;await this.api(`/chat/friends/${this.chatFriendId}`,{method:'PATCH',body:JSON.stringify({isPinned:pinned})});this.toast(pinned?'已置顶（仅本地）':'已取消置顶');this.refresh()}catch(e){this.toast(e.message,true)}},
-    async blockFriend(){if(!this.canChatOps()){this.toast('当前角色无权拉黑会话',true);return}if(!this.chatFriendId)return;const pack=await this.api(`/chat/messages?friendId=${this.chatFriendId}&pageSize=1`);const blocked=pack.friend?.relation==='blocked';if(blocked){if(!(await this.ask('取消本系统拉黑标记？（不会操作 TikTok 拉黑状态）')))return;try{await this.api(`/chat/friends/${this.chatFriendId}`,{method:'PATCH',body:JSON.stringify({relation:'stranger'})});this.toast('已取消拉黑（仅本地）');this.refresh()}catch(e){this.toast(e.message,true)}return}if(!(await this.ask('拉黑仅更新本系统会话：之后不能再发本地消息，也不会调用 TikTok 拉黑接口。继续？')))return;try{await this.api(`/chat/friends/${this.chatFriendId}`,{method:'PATCH',body:JSON.stringify({relation:'blocked'})});this.toast('已拉黑（仅本地）');this.refresh()}catch(e){this.toast(e.message,true)}},
+    /** 会话操作是否进行中：按钮文案显示「操作中…」并禁用，完成后复原 */
+    chatOpBusy(key){return Boolean(this._chatOpBusy&&this._chatOpBusy[key])},
+    setChatOpBusy(key,on){this._chatOpBusy=this._chatOpBusy||{};this._chatOpBusy[key]=Boolean(on);this.refresh()},
+    /** 把会话操作推给服务器浏览器任务，等在结果回来后再回写本地状态 */
+    async runChatConversationTask(key,action,extra){
+      if(!this.chatFriendId){this.toast('请先选择好友',true);return null}
+      const accountId=Number(this.chatAccountId);
+      if(!accountId){this.toast('请先选择账号',true);return null}
+      this.setChatOpBusy(key,true);
+      try{
+        const r=await this.runSeatTaskAndWait(action,{accountId,friendId:Number(this.chatFriendId),...(extra||{})});
+        if(!r)return null;
+        if(r.status!=='completed'){this.toast(r.errorMessage||'操作失败',true);return null}
+        return r;
+      }catch(e){this.toast(e.message,true);return null}
+      finally{this.setChatOpBusy(key,false)}
+    },
+    /**
+     * 拉取会话：服务器浏览器把该会话在 TikTok 上的私信整段拉回来，
+     * PHP 收到结果后先删本地旧记录，再把拉到的内容入到「对方语种译文字段」。
+     */
+    async pullChatHistory(){
+      if(!this.canChatOps()){this.toast('当前角色无权拉取会话',true);return}
+      if(!this.chatFriendId){this.toast('请先选择好友',true);return}
+      if(!(await this.ask('将通过服务器浏览器拉取该会话在 TikTok 上的私信记录，并覆盖本地现有记录。继续？')))return;
+      const r=await this.runChatConversationTask('pull','pull_chat',{});
+      if(r){
+        this.toast(`已拉取 ${Number(r.result?.total||0)} 条记录并入库`);
+      }
+    },
+    async togglePinFriend(){
+      if(!this.canChatOps()){this.toast('当前角色无权置顶会话',true);return}
+      if(!this.chatFriendId)return;
+      const pack=await this.api(`/chat/messages?friendId=${this.chatFriendId}&pageSize=1`);
+      const pinned=!pack.friend?.is_pinned;
+      if(!(await this.ask(pinned?'置顶会交给服务器浏览器确认该会话存在，再在本地置顶。继续？':'取消本地置顶？')))return;
+      const r=await this.runChatConversationTask('pin','pin_friend',{pinned});
+      if(r)this.toast(pinned?'已置顶':'已取消置顶');
+    },
+    async blockFriend(){
+      if(!this.canChatOps()){this.toast('当前角色无权拉黑会话',true);return}
+      if(!this.chatFriendId)return;
+      const pack=await this.api(`/chat/messages?friendId=${this.chatFriendId}&pageSize=1`);
+      const next=pack.friend?.relation!=='blocked';
+      if(!(await this.ask(next?'将通过服务器浏览器在 TikTok 拉黑该用户，并同步本地状态。继续？':'将通过服务器浏览器在 TikTok 取消拉黑该用户，并同步本地状态。继续？')))return;
+      const r=await this.runChatConversationTask('block','block_user',{blocked:next});
+      if(r)this.toast(next?'已拉黑':'已取消拉黑');
+    },
     async deleteChatFriend(){
       if(!this.canChatManage()){this.toast('当前角色无权删除会话',true);return}
       if(!this.chatFriendId){this.toast('请先选择好友',true);return}
-      if(!(await this.ask('删除该本地会话及全部聊天记录？此操作不可恢复，不会删除 TikTok 上的私信。','error')))return;
+      if(!(await this.ask('将通过服务器浏览器删除该 TikTok 会话，并清掉本地聊天记录？此操作不可恢复。','error')))return;
       const fid=Number(this.chatFriendId);
-      try{
-        await this.api(`/chat/friends/${fid}`,{method:'DELETE'});
+      const r=await this.runChatConversationTask('del','delete_chat',{});
+      if(r){
         if(this._chatTranslateCache) delete this._chatTranslateCache[fid];
         this.chatFriendId=null;
         this.toast('会话已删除');
-        this.refresh();
-      }catch(e){this.toast(e.message,true)}
+      }
     },
     async writeLocalTestInbound(){if(!this.chatFriendId)return;if(!(await this.ask('只会写入本系统本地入站消息，用于测试 AI 回复，不会从 TikTok 拉取。继续？')))return;const content=prompt('测试消息内容');if(!content)return;try{await this.api('/chat/messages/simulate-in',{method:'POST',body:JSON.stringify({friendId:Number(this.chatFriendId),content})});this.toast('已写入本地测试消息');this.refresh()}catch(e){this.toast(e.message,true)}},
     async simulateInbound(){return this.writeLocalTestInbound()},
