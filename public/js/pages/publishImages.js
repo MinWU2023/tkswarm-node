@@ -153,8 +153,12 @@
           <div class="field full"><label>任务名称（可选，留空自动生成）</label>
             <input class="input" type="text" value="${this.esc(w.name || '')}" oninput="app.syncImageWizardField('name',this.value)"></div>
           <div class="field full"><label>发布账号（单选）</label>
-            <div id="iw-accounts" class="account-pick-grid" style="max-height:300px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px"></div>
-            <div class="muted" id="iw-account-hint" style="margin-top:6px">尚未选择账号（只能选 1 个）</div></div>
+            <div class="muted" id="iw-account-hint" style="margin:0 0 8px">尚未选择账号（只能选 1 个）</div>
+            ${this.accountPickToolbarHtml('iw-accounts', {
+              batchHtml: `<button type="button" class="tiny" onclick="app.setAccountPickAll('iw-accounts',false);app.syncImageWizardAccount()">清空</button>`,
+            }).replace(`onclick="app.searchAccountPick('iw-accounts')"`, `onclick="app.fillImageWizardAccounts({preserveSelection:true})"`)}
+            <div id="iw-accounts" class="account-pick-grid" style="max-height:360px;overflow:auto"></div>
+          </div>
           <div class="field full"><label>本地图片（已选 <b id="iw-image-count">${(this._imageWizardFiles || []).length}</b> / ${MAX_IMAGES}，单张 ≤20MB，支持 JPG/PNG/WEBP）</label>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
               <input type="file" id="iw-file-input" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="app.onImageWizardFiles(this)">
@@ -178,27 +182,40 @@
       </div>`;
     },
 
-    async fillImageWizardAccounts() {
+    async fillImageWizardAccounts(opts = {}) {
       const box = document.querySelector('#iw-accounts');
       if (!box) return;
-      try {
-        const pack = await this.api('/accounts?pageSize=200');
-        const accounts = pack?.items || (Array.isArray(pack) ? pack : []);
-        const selected = new Set((this.imagePublishWizard?.accountIds || []).map(Number));
-        box.innerHTML = accounts.length
-          ? accounts.map((a) => this.accountPickTagHtml(a, selected, { onclick: 'app.pickImageWizardAccount(this)' })).join('')
-          : '<div class="muted">暂无账号</div>';
-        this.syncImageWizardAccount();
-      } catch (e) {
-        box.innerHTML = `<div class="muted">${this.esc(e.message || '加载账号失败')}</div>`;
+      const selectedIds = opts.selectedIds
+        || this.selectedAccountPickIds?.('iw-accounts')
+        || (this.imagePublishWizard?.accountIds || []);
+      await this.initAccountPickToolbar('iw-accounts');
+      const searchEl = document.querySelector('#iw-accounts-search');
+      if (searchEl) {
+        searchEl.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.fillImageWizardAccounts({ preserveSelection: true });
+          }
+        };
       }
+      await this.reloadAccountPick('iw-accounts', {
+        selectedIds,
+        preserveSelection: opts.preserveSelection !== false,
+        emptyText: '筛选条件下暂无账号',
+        tagOpts: { onclick: 'app.pickImageWizardAccount(this)' },
+        onLoaded: () => this.syncImageWizardAccount(),
+      });
+      this.syncImageWizardAccount();
     },
 
     async renderImagePublishWizard() {
       const content = document.querySelector('#content');
       if (!content) return;
       content.innerHTML = this.matrixTabs('tasks') + this.imagePublishWizardPanel();
-      await this.fillImageWizardAccounts();
+      await this.fillImageWizardAccounts({
+        selectedIds: this.imagePublishWizard?.accountIds || [],
+        preserveSelection: false,
+      });
     },
 
     async submitImagePublishWizard() {

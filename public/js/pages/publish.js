@@ -1186,7 +1186,19 @@
     async fillMassAccounts(){const box=document.querySelector('#mass-accounts');if(!box)return;const accounts=(await this.api('/accounts?pageSize=200')).items;const selected=new Set((this.mass.accountIds||[]).map(Number));box.innerHTML=accounts.length?accounts.map(a=>this.accountPickTagHtml(a,selected)).join(''):'<div class="muted account-pick-empty" style="padding:12px;grid-column:1/-1">暂无账号</div>';this.filterAccountPick('mass-accounts');},
     massSelectAccounts(all){if(all)this.setAccountPickAll('mass-accounts',true);else document.querySelectorAll('#mass-accounts .account-pick-tag').forEach(el=>el.classList.remove('is-on'));},
     massInvertAccounts(){this.invertAccountPick('mass-accounts');},
-    async fillWizardAccounts(){const box=document.querySelector('#wizard-accounts');if(!box)return;const accounts=(await this.api('/accounts?pageSize=200')).items;this._wizardAccountsCache=accounts||[];const selected=new Set((this.wizard.accountIds||[]).map(Number));box.innerHTML=accounts.length?accounts.map(a=>this.accountPickTagHtml(a,selected)).join(''):'<div class="muted account-pick-empty" style="padding:12px;grid-column:1/-1">暂无账号</div>';this.filterAccountPick('wizard-accounts');},
+    async fillWizardAccounts(){
+      const box=document.querySelector('#wizard-accounts');
+      if(!box)return;
+      await this.initAccountPickToolbar('wizard-accounts');
+      const accounts=await this.reloadAccountPick('wizard-accounts',{
+        selectedIds:this.wizard.accountIds||[],
+        preserveSelection:true,
+        emptyText:'暂无账号',
+        onLoaded:(list)=>{this._wizardAccountsCache=list||[];this.rememberWizardAccounts?.(list);this.updateWizardAccountPickHint();},
+      });
+      this._wizardAccountsCache=accounts||[];
+      this.updateWizardAccountPickHint();
+    },
     wizardSelectAccounts(all){
       if(this.wizardIsIndependent()){
         if(all){

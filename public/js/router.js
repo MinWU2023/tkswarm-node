@@ -2,7 +2,7 @@
  * Hash router + lazy page loader for tkswarm-node
  */
 (function () {
-  const CACHE_V = '12.26';
+  const CACHE_V = '12.41';
   const VIEW_TO_PAGE = {
     accounts: 'accounts',
     proxies: 'proxies',

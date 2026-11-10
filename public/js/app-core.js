@@ -15,35 +15,47 @@ const app = {
       || /^\/chat\/seat-(tasks|items)(\/|$)/.test(path)
       || /\/items\/\d+\/(resume-publish|confirm-published)$/.test(path);
     if (useLocalNode) apiBase = '';
-    const isForm=options.body instanceof FormData;
-    let body=options.body;
-    // 纯对象自动 JSON 序列化，避免 fetch 把 body 变成 "[object Object]"
-    if(body!=null&&!isForm&&typeof body==='object'&&!(typeof Blob!=='undefined'&&body instanceof Blob)
-      &&!(typeof ArrayBuffer!=='undefined'&&body instanceof ArrayBuffer)
-      &&!(typeof URLSearchParams!=='undefined'&&body instanceof URLSearchParams)
-      &&!ArrayBuffer.isView?.(body)){
-      body=JSON.stringify(body);
+    const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const isBlob = typeof Blob !== 'undefined' && options.body instanceof Blob;
+    const isBuf = typeof ArrayBuffer !== 'undefined' && options.body instanceof ArrayBuffer;
+    const isParams = typeof URLSearchParams !== 'undefined' && options.body instanceof URLSearchParams;
+    const isView = typeof ArrayBuffer !== 'undefined' && typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(options.body);
+    let body = options.body;
+    // 纯对象必须 JSON.stringify；禁止把对象交给 fetch（会变成 "[object Object]"）
+    if (body != null && !isForm && !isBlob && !isBuf && !isParams && !isView && typeof body === 'object') {
+      try { body = JSON.stringify(body); }
+      catch (serErr) { throw new Error('请求体无法序列化为 JSON：' + (serErr.message || '')); }
     }
-    const headers=isForm?{...(options.headers||{})}:{'Content-Type':'application/json',...(options.headers||{})};
-    if(this.authToken) headers.Authorization='Bearer '+this.authToken;
-    const authPublic=/^\/auth\/(login|setup|captcha)$/.test(path);
-    const actingAs=this.getActingAsId();
+    if (typeof body === 'string' && body === '[object Object]') {
+      throw new Error('请求体序列化失败，请按 Ctrl+F5 强制刷新后重试');
+    }
+    const headers = isForm ? { ...(options.headers || {}) } : { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    if (this.authToken) headers.Authorization = 'Bearer ' + this.authToken;
+    const authPublic = /^\/auth\/(login|setup|captcha)$/.test(path);
+    const actingAs = this.getActingAsId();
     // 本机 Node 路由也会转发 PHP（如 /executor/offer-batch → claim-one），必须带上切换身份
-    if(actingAs&&!authPublic) headers['X-Acting-As']=String(actingAs);
-    const timeoutMs=Number(options.timeoutMs);
-    const waitMs=Number.isFinite(timeoutMs)&&timeoutMs>0?timeoutMs:25000;
+    if (actingAs && !authPublic) headers['X-Acting-As'] = String(actingAs);
+    const timeoutMs = Number(options.timeoutMs);
+    const waitMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 25000;
     let r;
     try {
-      const ctrl=typeof AbortController!=='undefined'?new AbortController():null;
-      const timer=ctrl?setTimeout(()=>{try{ctrl.abort()}catch{}}, waitMs):null;
-      try{
-        r = await fetch(apiBase+'/api'+path, {...options, body, headers, signal:options.signal||(ctrl&&ctrl.signal)});
-      }finally{
-        if(timer)clearTimeout(timer);
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch {} }, waitMs) : null;
+      try {
+        // 不要 {...options} 展开，避免 options.body 对象再次覆盖已序列化的 body
+        const init = {
+          method: options.method || (body != null ? 'POST' : 'GET'),
+          headers,
+          signal: options.signal || (ctrl && ctrl.signal),
+        };
+        if (body !== undefined) init.body = body;
+        r = await fetch(apiBase + '/api' + path, init);
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     } catch (netErr) {
-      if(netErr && (netErr.name==='AbortError' || /aborted/i.test(String(netErr.message||'')))){
-        throw new Error('接口超时 ('+Math.round(waitMs/1000)+'s)：'+path);
+      if (netErr && (netErr.name === 'AbortError' || /aborted/i.test(String(netErr.message || '')))) {
+        throw new Error('接口超时 (' + Math.round(waitMs / 1000) + 's)：' + path);
       }
       // 业务接口不再静默降级到本机 Node，避免误打 127.0.0.1
       if (useLocalNode) {
@@ -53,23 +65,29 @@ const app = {
       throw new Error(`连接接口 (${apiLabel}) 失败: ${netErr.message || 'Failed to fetch'}。请确认 Node 已启动、PHP 站点可访问`);
     }
 
-    const raw=await r.text();
+    const raw = await r.text();
     let j;
-    try{j=JSON.parse(raw)}catch{
-      const hint=String(raw||'').replace(/\s+/g,' ').trim().slice(0,180);
-      throw new Error(hint?`接口返回非 JSON：${hint}`:'响应无效');
+    try { j = JSON.parse(raw); } catch {
+      const hint = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+      throw new Error(hint ? `接口返回非 JSON：${hint}` : '响应无效');
     }
-    if(r.status===401){
+    if (r.status === 401) {
       // 如果已经在登录界面，直接抛出业务错误，不要隐藏/重建登录窗口导致消息一闪而过
-      if(document.body.classList.contains('in-auth-mode') || document.querySelector('#auth-gate')){
+      if (document.body.classList.contains('in-auth-mode') || document.querySelector('#auth-gate')) {
         throw new Error(j.message || '用户名或密码错误');
       }
-      this.authToken='';
+      this.authToken = '';
       localStorage.removeItem('tkswarm_token');
-      this.showLoginGate(j.message||'请先登录');
-      throw new Error(j.message||'未登录');
+      this.showLoginGate(j.message || '请先登录');
+      throw new Error(j.message || '未登录');
     }
-    if(!r.ok||!j.success) throw new Error(j.message||'请求失败');
+    if (!r.ok || !j.success) {
+      const msg = j.message || '请求失败';
+      if (/not valid JSON|\[object Object\]/i.test(String(msg))) {
+        throw new Error('请求格式异常，请按 Ctrl+F5 强制刷新页面后重试');
+      }
+      throw new Error(msg);
+    }
     return j.data;
   },
   esc(v=''){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))},

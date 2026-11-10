@@ -182,7 +182,14 @@ app.post('/api/tasks/:id/download-video', async (req, res) => {
 app.use(phpApiProxy);
 
 const publicDir = path.resolve(__dirname, '../public');
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, {
+  setHeaders(res, filePath) {
+    // 开发期避免 JS/CSS/HTML 被强缓存导致旧脚本继续提交错误 body
+    if (/\.(js|css|html)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  },
+}));
 app.get('*path', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   return res.sendFile(path.join(publicDir, 'index.html'));

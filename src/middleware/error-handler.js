@@ -11,6 +11,10 @@ function errorHandler(error, req, res, next) { // eslint-disable-line no-unused-
   if (error instanceof ZodError) {
     return fail(res, '请求参数不正确', 422, error.issues);
   }
+  // express.json 解析失败（常见于 body 被传成 "[object Object]"）
+  if (error.type === 'entity.parse.failed' || (error instanceof SyntaxError && /JSON/i.test(String(error.message || '')))) {
+    return fail(res, '请求体不是合法 JSON，请强制刷新页面后重试', 400);
+  }
   if (error.code === 'ER_DUP_ENTRY' || error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
     return fail(res, '记录已存在，请检查唯一字段', 409);
   }
