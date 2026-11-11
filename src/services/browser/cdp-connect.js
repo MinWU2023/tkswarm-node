@@ -179,6 +179,11 @@ async function ensureConsistentUaAndClientHints(page, openedMeta = null) {
 
 function installPageCaptchaHooks(page) {
   if (!page || page.isClosed?.()) return page;
+  // 原生对话框兜底必须最早装：Playwright 内部处理 dialog 的 Promise 无人 catch 时会直接打死进程
+  try {
+    const { attachDialogGuard } = require('./dialog-guard');
+    attachDialogGuard(page);
+  } catch { /* ignore */ }
   try {
     const { attachAutoRotateCaptchaWatcher } = require('./nocaptchaai');
     attachAutoRotateCaptchaWatcher(page);

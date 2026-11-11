@@ -17,6 +17,29 @@ const { phpApiProxy } = require('./middleware/php-api-proxy');
 const phpApi = require('./services/php-api');
 const { nowChinaIso } = require('./utils/china-time');
 
+/**
+ * 进程级兜底：浏览器 CDP / Playwright 的偶发协议错误（例如
+ * Page.handleJavaScriptDialog: No dialog is showing）会以未处理 Promise 拒绝的形式冒出来，
+ * Node 默认直接终止进程 → 表现就是「Server failed to start」。
+ * 这里统一记录并忽略，保证服务不被单次浏览器竞态打死。
+ */
+process.on('unhandledRejection', (reason) => {
+  const msg = String((reason && (reason.stack || reason.message)) || reason || '').slice(0, 800);
+  console.error('[WARN] 未处理的 Promise 异常（已忽略，服务继续运行）:', msg);
+  try { require('./services/live-log').publish(`未处理异常（已忽略）：${msg.slice(0, 300)}`, 'warn'); } catch { /* ignore */ }
+});
+
+process.on('uncaughtException', (err) => {
+  // 端口占用 / 权限类启动错误仍然要退出，否则会静默半死
+  if (err && (err.code === 'EADDRINUSE' || err.code === 'EACCES')) {
+    console.error('[ERROR] 服务启动失败:', err);
+    process.exit(1);
+  }
+  const msg = String((err && (err.stack || err.message)) || err || '').slice(0, 800);
+  console.error('[WARN] 未捕获异常（已忽略，服务继续运行）:', msg);
+  try { require('./services/live-log').publish(`未捕获异常（已忽略）：${msg.slice(0, 300)}`, 'warn'); } catch { /* ignore */ }
+});
+
 const app = express();
 const server = http.createServer(app);
 const port = Number(process.env.TKSWARM_PORT || 8999);

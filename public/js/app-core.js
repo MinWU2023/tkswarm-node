@@ -360,12 +360,13 @@ const app = {
       if(!this.authEnabled)return true;
       return this.canLoginPermission('system.video_delivery_types');
     }
-    // YouTube：超管 / 运营管理 / system.youtube（不受身份切换影响）
-    if(['youtubeConfig','youtubeAccounts','youtubeSync'].includes(String(item.view||''))){
-      if(!this.authEnabled)return true;
-      if(this.authIsSuper||Number(this.authLoginUser?.roleId||this.authLoginUser?.role_id||0)===1)return true;
-      if(typeof this.isLoginOpsAdminRole==='function'&&this.isLoginOpsAdminRole())return true;
-      return this.canLoginPermission('system.youtube');
+    // YouTube 开发配置：仅超管 / 运营管理 / system.youtube
+    if(String(item.view||'')==='youtubeConfig'){
+      return typeof this.canConfigYouTube==='function'?this.canConfigYouTube():false;
+    }
+    // YouTube 账号 / 发布：超管 / 运营管理 / 运营专员 / 企业客户
+    if(['youtubeAccounts','youtubeSync'].includes(String(item.view||''))){
+      return typeof this.canUseYouTube==='function'?this.canUseYouTube():false;
     }
     if(!this.authEnabled)return true;
     const list=this.authPermissions||[];
@@ -1105,6 +1106,27 @@ const app = {
   },
   isLoginOpsAdminRole(){
     return this.loginRoleName().includes('运营管理');
+  },
+  /** YouTube 开发配置：超管 / 运营管理 / system.youtube */
+  canConfigYouTube(){
+    if(!this.authEnabled)return true;
+    if(this.authIsSuper||Number(this.authLoginUser?.roleId||this.authLoginUser?.role_id||0)===1)return true;
+    if(typeof this.isLoginOpsAdminRole==='function'&&this.isLoginOpsAdminRole())return true;
+    return typeof this.canLoginPermission==='function'&&this.canLoginPermission('system.youtube');
+  },
+  /** YouTube 账号与发布：超管 / 运营管理 / 运营专员 / 企业客户 */
+  canUseYouTube(){
+    if(!this.authEnabled)return true;
+    if(this.authIsSuper||Number(this.authLoginUser?.roleId||this.authLoginUser?.role_id||0)===1)return true;
+    if(typeof this.isLoginOpsAdminRole==='function'&&this.isLoginOpsAdminRole())return true;
+    if(typeof this.isLoginOperatorRole==='function'&&this.isLoginOperatorRole())return true;
+    const rn=this.loginRoleName();
+    if(rn.includes('企业客户'))return true;
+    if(typeof this.canLoginPermission==='function'){
+      if(this.canLoginPermission('system.youtube.use')||this.canLoginPermission('system.youtube')||this.canLoginPermission('youtube.manage'))return true;
+      if(this.canLoginPermission('menu.781')||this.canLoginPermission('menu.782')||this.canLoginPermission('menu.783'))return true;
+    }
+    return false;
   },
   isEnterpriseCustomerRole(){
     return String(this.authUser?.role||'').trim()==='企业客户';
@@ -3290,6 +3312,9 @@ const app = {
         const id=Number(String(subview).replace(/^edit\/?/,'')||0)||0;
         this.videoBoostPane='edit';this.videoBoostEditId=id||null;
       } else {this.videoBoostPane='list';this.videoBoostEditId=null}
+    } else if(view==='youtubeSync'){
+      if(subview==='create'){this.youtubeSyncPane='create'}
+      else {this.youtubeSyncPane='list'}
     } else if(view==='autoFollow'){
       if(subview==='create'){this.autoFollowPane='create';this.autoFollowEditId=null;this._autoFollowDraft=null}
       else if(subview==='edit'||subview.startsWith('edit/')){

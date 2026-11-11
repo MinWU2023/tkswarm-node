@@ -1,19 +1,11 @@
 (function () {
   if (!window.app) throw new Error('app-core must load before pages/youtubeConfig.js');
   const __methods = {
-    canManageYouTube() {
-      if (!this.authEnabled) return true;
-      if (this.authIsSuper || Number(this.authLoginUser?.roleId || this.authLoginUser?.role_id || 0) === 1) return true;
-      if (typeof this.isLoginOpsAdminRole === 'function' && this.isLoginOpsAdminRole()) return true;
-      return typeof this.canLoginPermission === 'function'
-        ? this.canLoginPermission('system.youtube')
-        : false;
-    },
     async renderYoutubeConfig() {
       const host = document.querySelector('#content');
       if (!host) return;
       document.querySelector('#content')?.classList.remove('chat-mode');
-      if (!this.canManageYouTube()) {
+      if (!(typeof this.canConfigYouTube === 'function' && this.canConfigYouTube())) {
         host.innerHTML = `<div class="panel"><div class="empty">当前账号无权访问 YouTube 开发配置（需要权限节点：system.youtube）</div></div>`;
         return;
       }
@@ -53,7 +45,7 @@
           </div>`;
         document.querySelector('#youtube-oauth-form').onsubmit = async (e) => {
           e.preventDefault();
-          if (!this.canManageYouTube()) { this.toast('无权保存', true); return; }
+          if (!(typeof this.canConfigYouTube === 'function' && this.canConfigYouTube())) { this.toast('无权保存', true); return; }
           const d = Object.fromEntries(new FormData(e.target));
           if (!d['youtube.oauth.clientSecret'] || d['youtube.oauth.clientSecret'] === '******') {
             delete d['youtube.oauth.clientSecret'];

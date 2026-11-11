@@ -1,14 +1,6 @@
 (function () {
   if (!window.app) throw new Error('app-core must load before pages/youtubeAccounts.js');
   const __methods = {
-    canManageYouTube() {
-      if (!this.authEnabled) return true;
-      if (this.authIsSuper || Number(this.authLoginUser?.roleId || this.authLoginUser?.role_id || 0) === 1) return true;
-      if (typeof this.isLoginOpsAdminRole === 'function' && this.isLoginOpsAdminRole()) return true;
-      return typeof this.canLoginPermission === 'function'
-        ? this.canLoginPermission('system.youtube')
-        : false;
-    },
     youtubeAuthBadge(r) {
       if (r.authorized && r.tokenValid) return '<span class="badge online">已授权</span>';
       if (r.authorized) return '<span class="badge paused">需刷新</span>';
@@ -35,8 +27,8 @@
       const host = document.querySelector('#content');
       if (!host) return;
       document.querySelector('#content')?.classList.remove('chat-mode');
-      if (!this.canManageYouTube()) {
-        host.innerHTML = `<div class="panel"><div class="empty">当前账号无权访问 YouTube 账号（需要权限节点：system.youtube）</div></div>`;
+      if (!(typeof this.canUseYouTube === 'function' && this.canUseYouTube())) {
+        host.innerHTML = `<div class="panel"><div class="empty">当前账号无权访问 YouTube 账号</div></div>`;
         return;
       }
       try {
@@ -88,7 +80,7 @@
       }
     },
     addYoutubeAccount() {
-      if (!this.canManageYouTube()) { this.toast('无权操作', true); return; }
+      if (!(typeof this.canUseYouTube === 'function' && this.canUseYouTube())) { this.toast('无权操作', true); return; }
       this.modal('添加 YouTube 账号', this.youtubeAccountFormHtml(), async (data) => {
         await this.api('/youtube/accounts', { method: 'POST', body: JSON.stringify(data) });
         this.closeModal();
@@ -97,7 +89,7 @@
       });
     },
     async startYoutubeAuth(id) {
-      if (!this.canManageYouTube()) { this.toast('无权操作', true); return; }
+      if (!(typeof this.canUseYouTube === 'function' && this.canUseYouTube())) { this.toast('无权操作', true); return; }
       try {
         const pack = await this.api('/youtube/accounts/' + id + '/auth', { method: 'POST', body: '{}' });
         const url = pack?.authUrl || '';

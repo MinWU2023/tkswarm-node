@@ -1303,3 +1303,17 @@ button:active{transform:translateY(0) scale(.98)}
   .yt-acc-list{max-height:220px}
   .yt-search{width:160px}
 }
+
+/* Youtube发布 · 创建步骤 */
+.yt-create-steps{display:flex;gap:10px;flex-wrap:wrap;padding:0 2px}
+.yt-step{
+  display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;
+  font-size:12px;font-weight:700;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;
+}
+.yt-step.is-done{color:#0f766e;background:#ecfdf5;border-color:#a7f3d0}
+.yt-step__n{
+  width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;background:#e2e8f0;color:#475569;
+}
+.yt-step.is-done .yt-step__n{background:#10b981;color:#fff}
+.yt-create-hint{font-size:12px;line-height:1.5}
