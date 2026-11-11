@@ -601,24 +601,156 @@
         this.toast(e.message, true);
       }
     },
+    ytFindCommentById(commentId) {
+      const id = Number(commentId) || 0;
+      const list = Array.isArray(this._ytVideoComments) ? this._ytVideoComments : [];
+      for (const c of list) {
+        if (Number(c.id) === id) return c;
+        const replies = Array.isArray(c.replies) ? c.replies : [];
+        for (const r of replies) {
+          if (Number(r.id) === id) return { ...r, _parent: c };
+        }
+      }
+      return null;
+    },
+    youtubeReplyModalHtml(comment, opts = {}) {
+      const c = comment || {};
+      const author = c.authorDisplayName || '用户';
+      const text = c.textDisplay || c.textOriginal || '';
+      const templates = Array.isArray(opts.templates) ? opts.templates : [];
+      const selectedId = Number(opts.templateId || 0);
+      const tplOpts = [
+        `<option value="0">默认：YouTube 评论回复</option>`,
+        ...templates.map((t) => {
+          const id = Number(t.id);
+          const label = `${t.name || t.code || ('#' + id)}${t.isBuiltin ? '（内置）' : ''}`;
+          return `<option value="${id}" ${selectedId === id ? 'selected' : ''}>${this.esc(label)}</option>`;
+        }),
+      ].join('');
+      return `
+        <div class="yt-reply-modal">
+          <div class="yt-reply-modal__origin">
+            <div class="yt-reply-modal__origin-head">
+              ${this.ytCmtAvatar(author, c.authorProfileImageUrl)}
+              <div>
+                <div class="yt-reply-modal__author">${this.esc(author)}</div>
+                <div class="muted" style="font-size:12px">${this.esc(String(c.publishedAt || '').slice(0, 16) || '')}</div>
+              </div>
+            </div>
+            <div class="yt-reply-modal__origin-body">${this.esc(text)}</div>
+          </div>
+          <div class="form-grid yt-reply-modal__form">
+            <div class="field full">
+              <label>AI 提示词模板</label>
+              <div class="yt-reply-modal__tpl-row">
+                <select class="input" name="templateId" id="yt-reply-tpl">${tplOpts}</select>
+                <button class="primary tiny" type="button" id="yt-reply-ai-btn">AI 生成</button>
+              </div>
+              <div class="muted" style="margin-top:6px;font-size:12px">使用设置中的「YouTube 评论回复」提示词；也可自行改下方内容后发送</div>
+            </div>
+            <div class="field full">
+              <label>回复内容 <span class="req">*</span></label>
+              <textarea class="input" name="text" id="yt-reply-text" rows="6" placeholder="可手动输入，或点击「AI 生成」后编辑" data-rule="required|min:1">${this.esc(opts.draft || '')}</textarea>
+              <div class="yt-reply-modal__meta">
+                <span class="muted" id="yt-reply-ai-status"></span>
+                <span class="muted" id="yt-reply-count">0 字</span>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    },
+    bindYoutubeReplyModal(accountId, commentId) {
+      const ta = document.querySelector('#yt-reply-text');
+      const count = document.querySelector('#yt-reply-count');
+      const syncCount = () => {
+        if (count && ta) count.textContent = `${String(ta.value || '').trim().length} 字`;
+      };
+      ta?.addEventListener('input', syncCount);
+      syncCount();
+      const btn = document.querySelector('#yt-reply-ai-btn');
+      if (!btn || btn._bound) return;
+      btn._bound = true;
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await this.generateYoutubeCommentReplyDraft(accountId, commentId);
+      });
+    },
+    async generateYoutubeCommentReplyDraft(accountId, commentId) {
+      const btn = document.querySelector('#yt-reply-ai-btn');
+      const status = document.querySelector('#yt-reply-ai-status');
+      const ta = document.querySelector('#yt-reply-text');
+      const tpl = document.querySelector('#yt-reply-tpl');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '生成中…';
+      }
+      if (status) status.textContent = 'AI 正在生成…';
+      try {
+        const templateId = Number(tpl?.value || 0);
+        const pack = await this.api(`/youtube/accounts/${accountId}/comments/${commentId}/ai-reply`, {
+          method: 'POST',
+          body: JSON.stringify({
+            templateId: templateId > 0 ? templateId : undefined,
+            templateCode: 'youtube_comment_reply',
+          }),
+        });
+        const reply = String(pack?.reply || '').trim();
+        if (!reply) throw new Error('AI 未返回内容');
+        if (ta) {
+          ta.value = reply;
+          ta.dispatchEvent(new Event('input'));
+          ta.focus();
+        }
+        const model = pack?.model ? ` · ${pack.model}` : '';
+        if (status) status.textContent = `已生成${model}，可继续编辑`;
+        this.toast('已生成回复草稿');
+      } catch (e) {
+        if (status) status.textContent = '';
+        this.toast(e.message || 'AI 生成失败', true);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'AI 生成';
+        }
+      }
+    },
+    async loadYoutubeReplyPromptTemplates() {
+      try {
+        const pack = await this.api('/ai-prompt-templates?category=youtube');
+        const items = Array.isArray(pack?.items) ? pack.items : [];
+        return items.filter((t) => t.enabled !== false);
+      } catch (_) {
+        return [];
+      }
+    },
     async replyYoutubeComment(accountId, commentId) {
-      const text = prompt('输入回复内容：');
-      if (text == null) return;
-      const body = String(text).trim();
-      if (!body) {
-        this.toast('回复不能为空', true);
+      const comment = this.ytFindCommentById(commentId);
+      if (!comment) {
+        this.toast('评论不存在或已刷新，请重新打开详情', true);
         return;
       }
-      try {
-        await this.api(`/youtube/accounts/${accountId}/comments/${commentId}/reply`, {
-          method: 'POST',
-          body: JSON.stringify({ text: body }),
-        });
-        this.toast('已回复');
-        this.refresh();
-      } catch (e) {
-        this.toast(e.message, true);
-      }
+      const templates = await this.loadYoutubeReplyPromptTemplates();
+      const defaultTpl = templates.find((t) => t.code === 'youtube_comment_reply') || templates[0];
+      this.modal(
+        '回复 YouTube 评论',
+        this.youtubeReplyModalHtml(comment, {
+          templates,
+          templateId: defaultTpl?.id || 0,
+        }),
+        async (data) => {
+          const body = String(data.text || document.querySelector('#yt-reply-text')?.value || '').trim();
+          if (!body) throw new Error('回复不能为空');
+          await this.api(`/youtube/accounts/${accountId}/comments/${commentId}/reply`, {
+            method: 'POST',
+            body: JSON.stringify({ text: body }),
+          });
+          this.toast('已回复');
+        },
+        false,
+        { wide: true, submitText: '发送回复' }
+      );
+      setTimeout(() => this.bindYoutubeReplyModal(accountId, commentId), 0);
     },
     async deleteYoutubeComment(accountId, commentId) {
       if (!confirm('确认删除该评论？')) return;
