@@ -1634,18 +1634,53 @@ button:active{transform:translateY(0) scale(.98)}
 
 .yt-vd-card--comments{display:flex;flex-direction:column;max-height:none}
 .yt-cmt-list{
-  display:flex;flex-direction:column;gap:10px;
+  display:flex;flex-direction:column;gap:16px;
   padding:12px;overflow:auto;min-height:240px;
 }
+.yt-cmt-section{display:flex;flex-direction:column;gap:10px}
+.yt-cmt-section__head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:0 2px;
+}
+.yt-cmt-section__head h4{margin:0;font-size:13px;font-weight:750;color:#0f172a}
+.yt-cmt-section__list{display:flex;flex-direction:column;gap:10px}
 .yt-cmt-card,.yt-cmt-reply{
   display:flex;gap:10px;align-items:flex-start;
 }
 .yt-cmt-card{
   padding:12px;border-radius:14px;background:#f8fafc;border:1px solid #eef2f7;
 }
+.yt-cmt-card--audience{
+  background:#fff;border-color:#e2e8f0;
+  box-shadow:0 1px 2px rgba(15,23,42,.03);
+}
+.yt-cmt-card--audience.is-pending{
+  border-color:#fdba74;
+  background:linear-gradient(180deg,#fffaf5 0%,#ffffff 100%);
+}
+.yt-cmt-card--audience.is-replied{
+  border-color:#bbf7d0;
+  background:linear-gradient(180deg,#f0fdf4 0%,#ffffff 100%);
+}
+.yt-cmt-card--creator{
+  border-color:#bfdbfe;
+  background:
+    radial-gradient(420px 120px at 0% 0%, rgba(37,99,235,.08), transparent 60%),
+    linear-gradient(180deg,#eff6ff 0%,#ffffff 100%);
+}
 .yt-cmt-reply{
   padding:10px;border-radius:12px;background:#fff;border:1px solid #eef2f7;
 }
+.yt-cmt-reply--creator{
+  border-color:#bfdbfe;background:#f8fbff;
+}
+.yt-cmt-tag{
+  display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;
+  font-size:11px;font-weight:700;letter-spacing:.01em;border:1px solid transparent;
+}
+.yt-cmt-tag--creator{background:#dbeafe;color:#1d4ed8;border-color:#bfdbfe}
+.yt-cmt-tag--replied{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
+.yt-cmt-tag--pending{background:#ffedd5;color:#c2410c;border-color:#fdba74}
 .yt-cmt-avatar{
   width:34px;height:34px;border-radius:999px;object-fit:cover;flex:0 0 auto;
   background:#e2e8f0;
@@ -1674,6 +1709,7 @@ button:active{transform:translateY(0) scale(.98)}
 .yt-cmt-empty{
   padding:36px 16px;text-align:center;border:1px dashed #e2e8f0;border-radius:14px;background:#fff;
 }
+.yt-cmt-empty--sm{padding:18px 12px}
 .yt-cmt-empty__title{font-weight:700;color:#0f172a;margin-bottom:4px}
 
 @media (max-width:1100px){

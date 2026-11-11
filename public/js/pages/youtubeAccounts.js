@@ -422,13 +422,15 @@
           ? tags.slice(0, 12).map((t) => `<span class="yt-tag">${this.esc(t)}</span>`).join('')
           : '<span class="muted">无标签</span>';
 
-        const commentHtml = comments.map((c) => {
-          const replies = (c.replies || []).map((r) => `
-            <div class="yt-cmt-reply">
+        const creatorTops = comments.filter((c) => !!c.isCreatorComment);
+        const audienceTops = comments.filter((c) => !c.isCreatorComment);
+        const renderReply = (r) => `
+            <div class="yt-cmt-reply ${r.isCreatorComment ? 'yt-cmt-reply--creator' : ''}">
               ${this.ytCmtAvatar(r.authorDisplayName, r.authorProfileImageUrl)}
               <div class="yt-cmt-main">
                 <div class="yt-cmt-head">
                   <b>${this.esc(r.authorDisplayName || '用户')}</b>
+                  ${r.isCreatorComment ? '<span class="yt-cmt-tag yt-cmt-tag--creator">创作者</span>' : ''}
                   <span class="muted">${this.esc(String(r.publishedAt || '').slice(0, 16))}</span>
                   <span class="yt-cmt-like">👍 ${this.ytFmtNum(r.likeCount)}</span>
                 </div>
@@ -437,29 +439,60 @@
                   <button class="tiny ghost is-danger" type="button" onclick="app.deleteYoutubeComment(${accountId},${r.id})">删除</button>
                 </div>
               </div>
-            </div>`).join('');
+            </div>`;
+        const renderTop = (c) => {
+          const isCreator = !!c.isCreatorComment;
+          const replied = !!c.creatorReplied;
+          const statusTag = isCreator
+            ? '<span class="yt-cmt-tag yt-cmt-tag--creator">创作者评论</span>'
+            : (replied
+              ? '<span class="yt-cmt-tag yt-cmt-tag--replied">已回复</span>'
+              : '<span class="yt-cmt-tag yt-cmt-tag--pending">未回复</span>');
+          const replies = (c.replies || []).map(renderReply).join('');
           return `
-            <article class="yt-cmt-card">
+            <article class="yt-cmt-card ${isCreator ? 'yt-cmt-card--creator' : 'yt-cmt-card--audience'} ${!isCreator && !replied ? 'is-pending' : ''} ${!isCreator && replied ? 'is-replied' : ''}">
               ${this.ytCmtAvatar(c.authorDisplayName, c.authorProfileImageUrl)}
               <div class="yt-cmt-main">
                 <div class="yt-cmt-head">
                   <b>${this.esc(c.authorDisplayName || '用户')}</b>
+                  ${statusTag}
                   <span class="muted">${this.esc(String(c.publishedAt || '').slice(0, 16))}</span>
                   <span class="yt-cmt-like">👍 ${this.ytFmtNum(c.likeCount)}</span>
                   ${c.moderationStatus ? `<span class="yt-chip">${this.esc(c.moderationStatus)}</span>` : ''}
                 </div>
                 <div class="yt-cmt-body">${this.esc(c.textDisplay || c.textOriginal || '')}</div>
                 <div class="yt-cmt-ops">
-                  <button class="tiny ghost" type="button" onclick="app.replyYoutubeComment(${accountId},${c.id})">回复</button>
+                  ${!isCreator ? `<button class="tiny ghost" type="button" onclick="app.replyYoutubeComment(${accountId},${c.id})">回复</button>` : ''}
                   <button class="tiny ghost is-danger" type="button" onclick="app.deleteYoutubeComment(${accountId},${c.id})">删除</button>
                 </div>
                 ${replies ? `<div class="yt-cmt-replies">${replies}</div>` : ''}
               </div>
             </article>`;
-        }).join('') || `<div class="yt-cmt-empty">
+        };
+        const commentHtml = (comments.length
+          ? `
+            <div class="yt-cmt-section">
+              <div class="yt-cmt-section__head">
+                <h4>观众评论</h4>
+                <span class="muted">${audienceTops.length} 条 · 未回复 ${audienceTops.filter((c) => !c.creatorReplied).length}</span>
+              </div>
+              <div class="yt-cmt-section__list">
+                ${audienceTops.map(renderTop).join('') || '<div class="yt-cmt-empty yt-cmt-empty--sm"><div class="muted">暂无观众顶层评论</div></div>'}
+              </div>
+            </div>
+            <div class="yt-cmt-section">
+              <div class="yt-cmt-section__head">
+                <h4>创作者评论</h4>
+                <span class="muted">${creatorTops.length} 条</span>
+              </div>
+              <div class="yt-cmt-section__list">
+                ${creatorTops.map(renderTop).join('') || '<div class="yt-cmt-empty yt-cmt-empty--sm"><div class="muted">暂无创作者顶层评论</div></div>'}
+              </div>
+            </div>`
+          : `<div class="yt-cmt-empty">
           <div class="yt-cmt-empty__title">暂无评论</div>
           <div class="muted">点击右上角「拉取评论」从 YouTube 同步</div>
-        </div>`;
+        </div>`);
 
         host.innerHTML = `
           <div class="yt-vd-page">
