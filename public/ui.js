@@ -46,12 +46,17 @@ const UI = {
     qr: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2M18 14h2v2M14 18h2v2M18 18h2v2"/>',
     lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     'plus-square': '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 8v8M8 12h8"/>',
+    // YouTube：圆角屏 + 播放三角
+    youtube: '<rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9.5v5l5-2.5-5-2.5z"/>',
   },
   iconAliases: {
     'message-circle': 'message',
     'file-text': 'file-text',
     'plus-square': 'plus-square',
     'user-check': 'user-check',
+    yt: 'youtube',
+    'youtube-accounts': 'youtube',
+    'youtube-sync': 'youtube',
   },
   icon(name) {
     const key = String(name || '').trim();
@@ -131,6 +136,8 @@ const UI = {
     if (/绑定账号/.test(t)) return 'link';
     if (/本地标记/.test(t)) return 'check';
     if (/查看数据|查看详情|明细|详情/.test(t)) return 'list';
+    if (/数据面板/.test(t)) return 'bar-chart';
+    if (/YouTube|Youtube|youtube|授权登录|刷新 Token/.test(t)) return 'youtube';
     if (/返回/.test(t)) return 'arrowLeft';
     if (/导出数据|下载.*模板|CSV 模板/.test(t)) return 'download';
     if (/导入数据|开始导入|逐行文本/.test(t)) return 'upload';

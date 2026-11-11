@@ -472,6 +472,37 @@ async function findAttemptLimitMessage(page) {
   return '';
 }
 
+/**
+ * 登录提交后 TikTok 的兜底报错：「Internal server error. Please try again later.」
+ * 触发原因基本不是账号密码错误，而是：
+ *   1) 出口 IP 已被风控（机房 IP / 多人共用 IP / IP 国家与账号归属地不一致）；
+ *   2) 代理链路异常——例如 SOCKS5 还要再经本机 VPN 二次跳转，握手能过但 passport 请求会失败；
+ *   3) 环境指纹（webid / msToken / 设备标识）被标记。
+ * 继续反复提交只会加重风控，所以这里识别到就立刻停下，给出可执行提示。
+ */
+async function findLoginServerErrorMessage(page) {
+  const pick = async (loc, fallback) => {
+    try {
+      if (await loc.count() && await loc.isVisible().catch(() => false)) {
+        const text = String(await loc.innerText().catch(() => '') || '').trim();
+        return text || fallback;
+      }
+    } catch { /* ignore */ }
+    return '';
+  };
+  try {
+    const en = await pick(page.getByText(/internal server error/i).first(), 'Internal server error');
+    if (en) return en;
+    const zh = await pick(page.getByText(/服务器内部错误|服务内部错误|系统繁忙，请稍后重试/i).first(), '服务器内部错误');
+    if (zh) return zh;
+    const body = await pageBodyText(page);
+    const hit = body.match(/internal server error[^\n]{0,60}/i)
+      || body.match(/(?:服务器内部错误|服务内部错误)[^\n]{0,40}/);
+    if (hit) return String(hit[0]).trim();
+  } catch { /* ignore */ }
+  return '';
+}
+
 function attemptLimitedResult(account, page, screenshot = '') {
   return {
     accountId: account.id,
@@ -1855,6 +1886,7 @@ async function runLoginAssist(accountId, {
   let totpFilled = false;
   let submitted = false;
   let twoFactorRequired = false;
+  let serverErrorMessage = '';
   // 一键登录：等 Log in 启用后再点，进入 2FA 后自动填码并确认
   let submitBlockReason = '';
   if (autoSubmit && !captcha && !(await findAttemptLimitMessage(page))) {
@@ -1882,6 +1914,18 @@ async function runLoginAssist(accountId, {
         assertNotCancelled(run);
         await page.waitForTimeout(500);
         if (await findAttemptLimitMessage(page)) break;
+        // 风控兜底报错：立刻停，不再等 40s 空转，也不重复提交
+        const srvErr = await findLoginServerErrorMessage(page);
+        if (srvErr) {
+          serverErrorMessage = srvErr;
+          liveLog(
+            `账号 #${accountId}：登录提交被 TikTok 拒绝（${srvErr}）。`
+            + '这不是密码错误，通常是出口 IP 被风控或代理链路异常，已停止本次登录，请先换代理或换环境',
+            'warn',
+            { accountId }
+          );
+          break;
+        }
         if (await hasCaptcha()) { captcha = true; break; }
         if (await isTwoStepVerificationPage(page)) {
           twoFactorRequired = true;
@@ -1906,22 +1950,25 @@ async function runLoginAssist(accountId, {
       submitBlockReason = clickRes.reason || '未能自动点击登录按钮';
     }
   }
-  if (captcha && !screenshot) {
+  if ((captcha || serverErrorMessage) && !screenshot) {
     screenshot = path.join(screenshotDir, `login-${accountId}-${Date.now()}.png`);
     await page.screenshot({ path: screenshot, fullPage: false }).catch(() => {});
   }
   const limitedNow = Boolean(await findAttemptLimitMessage(page));
   const result = {
     accountId, username: account.username, filled: true, usernameFilled, passwordFilled, submitted, twoFactorRequired, totpFilled, captcha,
-    attemptLimited: limitedNow, screenshot, currentUrl: page.url(), pageTitle: await page.title(),
+    attemptLimited: limitedNow, serverError: serverErrorMessage || '', screenshot, currentUrl: page.url(), pageTitle: await page.title(),
     message: limitedNow
       ? 'TikTok 页面显示登录次数已达上限。请关闭该自研浏览器环境后换新代理，或新建浏览器环境再试'
-      : (captcha ? '检测到安全验证（滑块/人机），已暂停自动提交，请在自研浏览器窗口人工完成后再点「检测登录」'
-        : (submitted
-          ? (twoFactorRequired && !totpSecret
-            ? '已提交登录，但缺少 2FA 密钥，请在「密码/2FA」补填后重试'
-            : '已自动提交登录，正在确认会话')
-          : (submitBlockReason || '账号和密码已填充，但未能自动点击登录按钮，请检查页面后重试'))),
+      : (serverErrorMessage
+        ? `TikTok 拒绝登录（${serverErrorMessage}）。这不是密码错误，通常是出口 IP 被风控或代理链路异常：`
+          + '请先关闭该环境换一个新代理（优先独享静态住宅 IP，避免 SOCKS5 再经本机 VPN 二次跳转），再新建环境重试'
+        : (captcha ? '检测到安全验证（滑块/人机），已暂停自动提交，请在自研浏览器窗口人工完成后再点「检测登录」'
+          : (submitted
+            ? (twoFactorRequired && !totpSecret
+              ? '已提交登录，但缺少 2FA 密钥，请在「密码/2FA」补填后重试'
+              : '已自动提交登录，正在确认会话')
+            : (submitBlockReason || '账号和密码已填充，但未能自动点击登录按钮，请检查页面后重试')))),
   };
   return finalize(result);
 }

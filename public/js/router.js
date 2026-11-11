@@ -3,7 +3,7 @@
  */
 (function () {
   // 改 pages/*.js 后必须同步 +1：子页面按 ?v=CACHE_V 加载，版本不变浏览器会一直用缓存的旧文件
-  const CACHE_V = '12.53';
+  const CACHE_V = '12.69';
   const VIEW_TO_PAGE = {
     accounts: 'accounts',
     proxies: 'proxies',

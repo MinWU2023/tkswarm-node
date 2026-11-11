@@ -1245,6 +1245,7 @@
       this._mpUpload.cover = this._mpUpload.frames[i]?.dataUrl || '';
       this._mpUpload.coverSource = 'frame';
       this._mpUpload.coverFileName = '';
+      this._mpUpload.coverFile = null;
       document.querySelectorAll('#mp-up-frames .mp-frame').forEach((el, idx) => {
         el.classList.toggle('is-on', idx === i);
       });
@@ -1333,6 +1334,8 @@
       this._mpUpload.cover = cover;
       this._mpUpload.coverSource = 'upload';
       this._mpUpload.coverFileName = file.name || 'cover.jpg';
+      // 保存原始 File：提交时随表单一起发给 node，由 node 落盘并记录本机封面路径
+      this._mpUpload.coverFile = file;
       document.querySelectorAll('#mp-up-frames .mp-frame').forEach((el) => el.classList.remove('is-on'));
       this.applyMaterialUploadCoverPreview(cover, `已用手动封面 · ${file.name || '图片'}`);
       document.querySelector('#mp-up-preview')?.classList.add('is-on');
@@ -1700,10 +1703,27 @@
           const mat = await this.api(`/materials/${editId}`, { method: 'PUT', body: JSON.stringify(payload) });
           const coverChanged = cover && cover !== (this._mpUpload?.initialCover || '');
           if (coverChanged) {
-            try {
-              await this.api(`/materials/${editId}/cover`, { method: 'PUT', body: JSON.stringify({ coverBase64: cover }) });
-            } catch (e) {
-              this.toast(e.message || '封面更新失败', true);
+            const coverFile = this._mpUpload?.coverFile;
+            if (coverFile) {
+              // 换的是手动上传的封面图：交给 node 落盘，记下本机路径供发布时使用
+              try {
+                const fdCover = new FormData();
+                fdCover.append('cover', coverFile);
+                fdCover.append('coverBase64', cover);
+                await fetch(`/api/local-materials/${editId}/cover`, {
+                  method: 'POST',
+                  headers: this.authToken ? { Authorization: 'Bearer ' + this.authToken } : {},
+                  body: fdCover,
+                });
+              } catch (e) {
+                this.toast(e?.message || '封面落盘失败', true);
+              }
+            } else {
+              try {
+                await this.api(`/materials/${editId}/cover`, { method: 'PUT', body: JSON.stringify({ coverBase64: cover }) });
+              } catch (e) {
+                this.toast(e.message || '封面更新失败', true);
+              }
             }
           }
           if (bar) bar.style.width = '100%';
@@ -1751,6 +1771,8 @@
           fd.append('reuseExisting', '0');
           if (forceUpload) fd.append('forceUpload', '1');
           if (cover) fd.append('coverBase64', cover);
+          // 手动上传的封面图：交给 node 落盘，路径记进素材，发布时直接喂给 Studio
+          if (this._mpUpload?.coverFile) fd.append('cover', this._mpUpload.coverFile);
           mat = await this.uploadVideoWithProgress(fd, (pct) => {
             if (bar) bar.style.width = pct + '%';
           });

@@ -487,6 +487,15 @@ const app = {
       if(v==='videoBoost'&&(sv===''||sv==='list'||sv==='create'||sv==='edit'||/^edit\/\d+$/.test(sv))){
         return this.hasAccessibleMenuForView('videoBoost');
       }
+      // YouTube 账号数据面板 / 内容详情：菜单只登记空 subview，子路径放行
+      if(v==='youtubeAccounts'&&(sv===''||sv==='list'||sv==='videos'||sv.startsWith('videos/')||sv.startsWith('video/'))){
+        if(this.hasAccessibleMenuForView('youtubeAccounts'))return true;
+        return typeof this.canUseYouTube==='function'?this.canUseYouTube():false;
+      }
+      if(v==='youtubeSync'&&(sv===''||sv==='list'||sv==='create')){
+        if(this.hasAccessibleMenuForView('youtubeSync'))return true;
+        return typeof this.canUseYouTube==='function'?this.canUseYouTube():false;
+      }
       return false;
     }
     if(!this.canView(view))return false;
@@ -1114,7 +1123,7 @@ const app = {
     if(typeof this.isLoginOpsAdminRole==='function'&&this.isLoginOpsAdminRole())return true;
     return typeof this.canLoginPermission==='function'&&this.canLoginPermission('system.youtube');
   },
-  /** YouTube 账号与发布：超管 / 运营管理 / 运营专员 / 企业客户 */
+  /** YouTube 账号与发布：超管 / 运营管理 / 运营专员 / 企业客户 / 权限节点 */
   canUseYouTube(){
     if(!this.authEnabled)return true;
     if(this.authIsSuper||Number(this.authLoginUser?.roleId||this.authLoginUser?.role_id||0)===1)return true;
@@ -1123,8 +1132,19 @@ const app = {
     const rn=this.loginRoleName();
     if(rn.includes('企业客户'))return true;
     if(typeof this.canLoginPermission==='function'){
-      if(this.canLoginPermission('system.youtube.use')||this.canLoginPermission('system.youtube')||this.canLoginPermission('youtube.manage'))return true;
+      if(this.canLoginPermission('system.youtube.use')||this.canLoginPermission('system.youtube.panel')||this.canLoginPermission('system.youtube')||this.canLoginPermission('youtube.manage'))return true;
       if(this.canLoginPermission('menu.781')||this.canLoginPermission('menu.782')||this.canLoginPermission('menu.783'))return true;
+    }
+    return false;
+  },
+  /** YouTube 数据面板：超管 / 运营管理 / 运营专员 / system.youtube.panel */
+  canUseYouTubePanel(){
+    if(!this.authEnabled)return true;
+    if(this.authIsSuper||Number(this.authLoginUser?.roleId||this.authLoginUser?.role_id||0)===1)return true;
+    if(typeof this.isLoginOpsAdminRole==='function'&&this.isLoginOpsAdminRole())return true;
+    if(typeof this.isLoginOperatorRole==='function'&&this.isLoginOperatorRole())return true;
+    if(typeof this.canLoginPermission==='function'){
+      if(this.canLoginPermission('system.youtube.panel')||this.canLoginPermission('system.youtube.use')||this.canLoginPermission('youtube.manage')||this.canLoginPermission('menu.781'))return true;
     }
     return false;
   },
@@ -1561,6 +1581,10 @@ const app = {
       'rbac.company_data.create':['rbac.company_data','rbac.manage'],
       'rbac.company_data.update':['rbac.company_data','rbac.manage'],
       'rbac.company_data.delete':['rbac.company_data','rbac.manage'],
+      'system.youtube':[],
+      'system.youtube.use':['system.youtube','youtube.manage','system.youtube.panel','menu.781','menu.782','menu.783'],
+      'system.youtube.panel':['system.youtube.use','youtube.manage','menu.781'],
+      'youtube.manage':['system.youtube.use','system.youtube.panel'],
     };
     return map[c]||[];
   },
@@ -3315,6 +3339,23 @@ const app = {
     } else if(view==='youtubeSync'){
       if(subview==='create'){this.youtubeSyncPane='create'}
       else {this.youtubeSyncPane='list'}
+    } else if(view==='youtubeAccounts'){
+      // 必须先匹配 videos/，否则 videos/1 会被 video/ 前缀误伤
+      if(subview.startsWith('videos/')||subview==='videos'){
+        const aid=Number(String(subview).replace(/^videos\/?/,'')||0)||0;
+        this.youtubeAccountsPane='videos';
+        this._ytPanelAccountId=aid;
+        this._ytPanelVideoId=0;
+      } else if(subview.startsWith('video/')){
+        const parts=String(subview).replace(/^video\/?/,'').split('/').filter(Boolean);
+        this.youtubeAccountsPane='video';
+        this._ytPanelAccountId=Number(parts[0]||0)||0;
+        this._ytPanelVideoId=Number(parts[1]||0)||0;
+      } else {
+        this.youtubeAccountsPane='list';
+        this._ytPanelAccountId=0;
+        this._ytPanelVideoId=0;
+      }
     } else if(view==='autoFollow'){
       if(subview==='create'){this.autoFollowPane='create';this.autoFollowEditId=null;this._autoFollowDraft=null}
       else if(subview==='edit'||subview.startsWith('edit/')){
@@ -3457,6 +3498,12 @@ const app = {
       const t=String(this.videoDeliveryDetailHead.title||'客户定制视频');
       const d=String(this.videoDeliveryDetailHead.desc||'');
       return `<div class="page-head"><div><h1>${this.esc(t)}</h1><p>${this.esc(d)}</p></div></div>`;
+    }
+    if(view==='youtubeAccounts'&&this.youtubeAccountsPane==='videos'){
+      return `<div class="page-head"><div><h1>YouTube 数据面板</h1><p>频道内容列表：拉取、删除，查看浏览/点赞/评论</p></div></div>`;
+    }
+    if(view==='youtubeAccounts'&&this.youtubeAccountsPane==='video'){
+      return `<div class="page-head"><div><h1>YouTube 内容详情</h1><p>字段信息与评论：可拉取、删除、回复</p></div></div>`;
     }
     const metaKey=(view==='chat'&&this.chatPane==='uids')?'uids':(view==='aiLeads'&&this.aiLeadsPane==='clues')?'aiLeadClues':(view==='aiLeads'&&this.aiLeadsPane==='clue_data')?'aiLeadClueData':view;
     const [title,desc]=this.viewPageMeta(metaKey);

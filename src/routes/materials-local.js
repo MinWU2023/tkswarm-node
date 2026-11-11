@@ -16,6 +16,7 @@ const { ok, fail } = require('../http');
 const router = express.Router();
 
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.flv']);
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const localRoot = path.resolve(__dirname, '../../data/local-materials');
 fs.mkdirSync(localRoot, { recursive: true });
 
@@ -31,6 +32,56 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     const mime = String(file.mimetype || '').toLowerCase();
+    if (VIDEO_EXTS.has(ext) || mime.startsWith('video/')) return cb(null, true);
+    cb(new Error('仅支持视频文件'));
+  },
+});
+
+/**
+ * 封面单独一套 multer：图片体积小、后缀不同，且不能和视频共用同一个 fileFilter。
+ * 封面同样只落在本机磁盘，路径写进 materials.cover_file_path，发布时直接给 Studio。
+ */
+const coverUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, localRoot),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `cover-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (IMAGE_EXTS.has(ext) || mime.startsWith('image/')) return cb(null, true);
+    cb(new Error('封面仅支持 JPG / PNG / WebP'));
+  },
+});
+
+/**
+ * 视频 + 封面一起提交时用的 multer：一次解析 multipart，按字段名分流。
+ * （先 single('file') 再 single('cover') 不行，请求流只会被消费一次。）
+ */
+const ingestUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, localRoot),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase();
+      const isCover = String(file.fieldname || '').toLowerCase().includes('cover');
+      const fallback = isCover ? '.jpg' : '.mp4';
+      const prefix = isCover ? 'cover' : 'm';
+      cb(null, `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext || fallback}`);
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 2 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const mime = String(file.mimetype || '').toLowerCase();
+    const isCover = String(file.fieldname || '').toLowerCase().includes('cover');
+    if (isCover) {
+      if (IMAGE_EXTS.has(ext) || mime.startsWith('image/')) return cb(null, true);
+      return cb(new Error('封面仅支持 JPG / PNG / WebP'));
+    }
     if (VIDEO_EXTS.has(ext) || mime.startsWith('video/')) return cb(null, true);
     cb(new Error('仅支持视频文件'));
   },
@@ -106,6 +157,9 @@ async function createMaterialOnPhp(meta) {
     shareTitle: meta.shareTitle || '',
     shareCaption: meta.shareCaption || '',
     coverBase64: meta.coverBase64 || '',
+    // 封面只留本机路径：发布任务直接拿它 setInputFiles 到 Studio 封面框，不上传服务器
+    coverFilePath: meta.coverFilePath || '',
+    coverFileName: meta.coverFileName || '',
     status: 'ready',
   });
 }
@@ -194,6 +248,8 @@ router.post('/register', async (req, res) => {
       shareTitle: String(req.body?.shareTitle || req.body?.share_title || ''),
       shareCaption: String(req.body?.shareCaption || req.body?.share_caption || ''),
       coverBase64,
+      coverFilePath: String(req.body?.coverFilePath || req.body?.cover_file_path || '').trim(),
+      coverFileName: String(req.body?.coverFileName || req.body?.cover_file_name || '').trim(),
     });
     if (mat?.id) rememberPath(mat.id, filePath, mat);
     return ok(res, mat, '已登记本机素材');
@@ -267,14 +323,25 @@ router.post('/import-folder', async (req, res) => {
  * 然后把本机绝对路径写入 materials.file_path。
  */
 router.post('/ingest', (req, res) => {
-  upload.single('file')(req, res, async (err) => {
+  ingestUpload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'cover', maxCount: 1 },
+  ])(req, res, async (err) => {
     if (err) return fail(res, err.message || '接收文件失败', 422);
     try {
-      const file = req.file;
+      const fields = req.files || {};
+      const file = (Array.isArray(fields.file) && fields.file[0]) || req.file || null;
       if (!file?.path) return fail(res, '未检测到视频文件', 400);
       const filePath = absPath(file.path);
       const coverIn = String(req.body?.coverBase64 || req.body?.cover_base64 || '').trim();
       const coverBase64 = coverIn || (await extractCoverBase64(filePath));
+      // 单独上传的封面文件：浏览器拿不到原始本地路径（安全限制），
+      // 所以由 node 落盘到这里，再把这份本机路径写进素材，发布时直接 setInputFiles。
+      const coverUploaded = (Array.isArray(fields.cover) && fields.cover[0])
+        || (Array.isArray(fields.coverFile) && fields.coverFile[0])
+        || null;
+      const coverFilePath = coverUploaded?.path ? absPath(coverUploaded.path) : '';
+      const coverFileName = coverUploaded?.originalname || '';
       const mat = await createMaterialOnPhp({
         name: String(req.body?.name || path.basename(file.originalname || filePath, path.extname(filePath))),
         filePath,
@@ -286,6 +353,8 @@ router.post('/ingest', (req, res) => {
         shareTitle: String(req.body?.shareTitle || req.body?.share_title || ''),
         shareCaption: String(req.body?.shareCaption || req.body?.share_caption || ''),
         coverBase64,
+        coverFilePath,
+        coverFileName,
       });
       if (mat?.id) rememberPath(mat.id, filePath, mat);
       return ok(res, mat, '已添加本机素材');
@@ -295,9 +364,35 @@ router.post('/ingest', (req, res) => {
   });
 });
 
+/**
+ * 单独更新素材封面：图片落在本机，路径写回 materials.cover_file_path。
+ * 编辑已有素材时换封面走这里（视频不重新上传）。
+ */
+router.post('/:id/cover', (req, res) => {
+  coverUpload.single('cover')(req, res, async (err) => {
+    if (err) return fail(res, err.message || '接收封面失败', 422);
+    try {
+      const id = Number(req.params.id);
+      if (!id) return fail(res, '素材 ID 无效', 422);
+      const f = req.file;
+      if (!f?.path) return fail(res, '未检测到封面图片', 400);
+      const coverFilePath = absPath(f.path);
+      const coverFileName = f.originalname || path.basename(coverFilePath);
+      const coverBase64 = String(req.body?.coverBase64 || req.body?.cover_base64 || '').trim();
+      await phpApi.put(`/materials/${id}/cover-file`, {
+        coverFilePath,
+        coverFileName,
+        coverBase64,
+      });
+      return ok(res, { id, coverFilePath, coverFileName }, '封面已更新');
+    } catch (e) {
+      return fail(res, e.message || '封面更新失败', e.status || 500);
+    }
+  });
+});
+
 /** 本机存在性检查（发布/预览前）；预览勿 sync，避免等远程 PHP */
-router.post('/:id/check', async (req, res) => {
-  try {
+router.post('/:id/check', async (req, res) => {  try {
     const id = Number(req.params.id);
     const sync = String(req.body?.sync || req.query?.sync || '') === '1';
     const { mat, filePath } = await resolveLocalFilePath(id, { bypassCache: true });

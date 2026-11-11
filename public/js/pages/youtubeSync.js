@@ -51,6 +51,7 @@
         if (status) qs.set('status', status);
         const pack = await this.api('/youtube/publish-tasks?' + qs.toString());
         const tasks = Array.isArray(pack?.items) ? pack.items : [];
+        this._ytSyncTasks = tasks;
         const pages = Math.max(1, Number(pack?.pages || 1));
         const rows = tasks.map((t) => `
           <tr>
@@ -76,9 +77,13 @@
             <td class="yt-col-err" title="${this.esc(t.errorMessage || '')}">${this.esc(t.errorMessage || '-')}</td>
             <td class="yt-col-time">${this.esc(String(t.createdAt || '').slice(0, 16))}</td>
             <td class="yt-col-ops">
-              ${t.status === 'pending' || t.status === 'failed' || t.status === 'draft'
+              ${t.status === 'pending' || t.status === 'failed' || t.status === 'draft' || t.status === 'error'
                 ? `<button class="tiny ghost" type="button" onclick="app.runYoutubePublishTask(${t.id})">立即执行</button>`
                 : ''}
+              ${t.status !== 'running'
+                ? `<button class="tiny ghost" type="button" onclick="app.editYoutubePublishTask(${t.id})">编辑</button>
+                   <button class="tiny danger" type="button" onclick="app.deleteYoutubePublishTask(${t.id})">删除</button>`
+                : '<span class="muted">上传中</span>'}
             </td>
           </tr>`).join('');
 
@@ -128,7 +133,7 @@
                       <th>YouTube</th>
                       <th>错误</th>
                       <th class="yt-col-time">创建时间</th>
-                      <th class="yt-col-ops"></th>
+                      <th class="yt-col-ops">操作</th>
                     </tr>
                   </thead>
                   <tbody>${rows || '<tr><td colspan="9" class="yt-empty-row">暂无任务，点击右上角「创建任务」</td></tr>'}</tbody>
@@ -173,10 +178,12 @@
         this._ytCreateYtAccounts = ytAccounts;
 
         const ttOpts = [
-          `<option value="0">请选择 TikTok 账号</option>`,
-          ...tiktokAccounts.map((a) =>
-            `<option value="${a.id}" ${tiktokId === Number(a.id) ? 'selected' : ''}>${this.esc(a.label)} · ${a.videoCount} 个视频</option>`
-          ),
+          `<option value="0">请选择 TikTok 源账号</option>`,
+          ...tiktokAccounts.map((a) => {
+            const text = a.optionLabel
+              || (`[TikTok] ${a.label || ('#' + a.id)} · 可上传 ${a.uploadableCount ?? 0}/${a.videoCount ?? 0}`);
+            return `<option value="${a.id}" ${tiktokId === Number(a.id) ? 'selected' : ''}>${this.esc(text)}</option>`;
+          }),
         ].join('');
 
         const matRows = materials.map((m) => {
@@ -199,44 +206,54 @@
         const ytRows = ytAccounts.map((a) => {
           const ok = !!a.authorized;
           const checked = selectedYts.has(Number(a.id)) ? ' checked' : '';
-          const label = a.channelTitle || a.nickname || a.username || '未命名';
-          return `<label class="yt-acc-item ${ok ? '' : 'is-disabled'}">
+          const channelName = a.channelTitle || a.nickname || a.username || '未命名频道';
+          const handle = a.channelCustomUrl || '';
+          const companyLabel = String(a.companyName || a.company_name || '').trim();
+          const note = [a.username, a.nickname].filter((x, i, arr) => x && x !== channelName && arr.indexOf(x) === i).join(' · ');
+          return `<label class="yt-acc-item yt-acc-item--youtube ${ok ? '' : 'is-disabled'}">
             <input type="checkbox" data-yt-acc="${a.id}"${checked}${ok ? '' : ' disabled'} onchange="app.ytCreateRemember()">
             <span class="yt-acc-item__body">
-              <span class="yt-acc-item__name">${this.esc(label)}</span>
-              <span class="yt-acc-item__meta">#${a.id}${a.channelId ? ' · ' + this.esc(a.channelId) : ''}</span>
+              <span class="yt-acc-item__name">
+                <span class="yt-plat yt-plat--youtube">YT</span>
+                ${this.esc(channelName)}
+              </span>
+              <span class="yt-acc-item__meta">YouTube 频道 #${a.id}${companyLabel ? ' · 企业 ' + this.esc(companyLabel) : ''}${a.channelId ? ' · ' + this.esc(a.channelId) : ''}${handle ? ' · ' + this.esc(handle) : ''}${note ? ' · 备注 ' + this.esc(note) : ''}</span>
             </span>
-            ${ok ? '<span class="yt-chip yt-chip--cdn">已授权</span>' : '<span class="yt-chip yt-chip--miss">未授权</span>'}
+            ${ok ? '<span class="yt-chip yt-chip--yt">已授权</span>' : '<span class="yt-chip yt-chip--miss">未授权</span>'}
           </label>`;
-        }).join('') || '<div class="yt-empty">暂无已授权 YouTube 账号</div>';
+        }).join('') || `<div class="yt-empty">暂无 YouTube 频道<br><span class="muted">请先到「YouTube 账号」或企业门户添加并完成 Google 授权</span></div>`;
 
         host.innerHTML = `
           <div class="panel list-panel yt-sync-page">
             <div class="yt-sync-hero">
               <div class="yt-sync-hero__text">
                 <div class="yt-sync-hero__kicker">创建 Youtube 发布任务</div>
-                <div class="yt-sync-hero__desc">选 TikTok 账号 → 勾选已发布视频 → 选 YouTube 频道 → 入库待计划任务上传</div>
+                <div class="yt-sync-hero__desc"><b>左侧</b>选 TikTok 源账号与已发布视频 → <b>右侧</b>选目标 YouTube 频道 → 入库待计划任务上传</div>
               </div>
               <div class="yt-sync-hero__actions">
+                <button class="ghost tiny" type="button" onclick="app.navigate('youtubeAccounts')">YouTube 账号</button>
                 <button class="ghost tiny" type="button" onclick="app.closeYoutubeSyncCreate()">返回列表</button>
               </div>
             </div>
 
             <div class="yt-create-steps">
-              <div class="yt-step is-done"><span class="yt-step__n">1</span> TikTok 账号</div>
-              <div class="yt-step ${tiktokId ? 'is-done' : ''}"><span class="yt-step__n">2</span> 选择视频</div>
-              <div class="yt-step"><span class="yt-step__n">3</span> YouTube 频道</div>
+              <div class="yt-step ${tiktokId ? 'is-done' : 'is-active'}"><span class="yt-step__n">1</span> 源：TikTok 账号</div>
+              <div class="yt-step ${tiktokId ? (selectedMats.size ? 'is-done' : 'is-active') : ''}"><span class="yt-step__n">2</span> 选视频</div>
+              <div class="yt-step ${selectedYts.size ? 'is-done' : (tiktokId && selectedMats.size ? 'is-active' : '')}"><span class="yt-step__n">3</span> 目标：YouTube 频道</div>
             </div>
 
             <div class="yt-sync-layout">
               <section class="yt-card yt-card--materials">
                 <div class="yt-card__head">
-                  <div class="yt-card__title">TikTok 已发布视频
+                  <div class="yt-card__title">
+                    <span class="yt-plat yt-plat--tiktok">TT</span>
+                    源：TikTok 已发布视频
                     <span class="yt-card__count">已选 ${selectedMats.size}</span>
                   </div>
                   <div class="yt-card__tools">
-                    <select class="input yt-search" id="yt-create-tt" style="width:220px"
-                      onchange="app.ytCreateChangeTikTok(this.value)">
+                    <select class="input yt-search" id="yt-create-tt" style="width:280px"
+                      onchange="app.ytCreateChangeTikTok(this.value)"
+                      ${tiktokAccounts.length ? '' : 'disabled'}>
                       ${ttOpts}
                     </select>
                     ${tiktokId ? `
@@ -252,22 +269,26 @@
                   </div>
                 </div>
                 <div class="yt-table-wrap">
-                  ${!tiktokId
-                    ? '<div class="yt-empty">请先选择 TikTok 账号</div>'
-                    : `<table class="yt-table">
-                        <thead><tr>
-                          <th class="yt-col-check"></th><th class="yt-col-id">ID</th><th>标题 / 文案</th>
-                          <th class="yt-col-src">文件</th><th class="yt-col-num">大小</th><th class="yt-col-time">发布时间</th>
-                        </tr></thead>
-                        <tbody>${matRows || '<tr><td colspan="6" class="yt-empty-row">该账号暂无已发布且可上传的视频</td></tr>'}</tbody>
-                      </table>`}
+                  ${!tiktokAccounts.length
+                    ? `<div class="yt-empty">暂无可用 <b>TikTok</b> 源账号<br><span class="muted">需要：可见范围内 TikTok 账号下有「已发布」素材。可先矩阵发布或「拉取视频列表」入库。</span></div>`
+                    : (!tiktokId
+                      ? '<div class="yt-empty">请先在上方下拉框选择 <b>TikTok</b> 源账号</div>'
+                      : `<table class="yt-table">
+                          <thead><tr>
+                            <th class="yt-col-check"></th><th class="yt-col-id">ID</th><th>标题 / 文案</th>
+                            <th class="yt-col-src">文件</th><th class="yt-col-num">大小</th><th class="yt-col-time">发布时间</th>
+                          </tr></thead>
+                          <tbody>${matRows || '<tr><td colspan="6" class="yt-empty-row">该账号暂无已发布视频（无文件的不可勾选）</td></tr>'}</tbody>
+                        </table>`)}
                 </div>
-                <div class="yt-card__foot muted">仅列出已发布且具备本地文件或 CDN 的素材，供计划任务上传</div>
+                <div class="yt-card__foot muted">仅具备本地文件或 CDN 的素材可勾选上传；无文件行会禁用</div>
               </section>
 
-              <aside class="yt-card yt-card--side">
+              <aside class="yt-card yt-card--side yt-card--youtube">
                 <div class="yt-card__head">
-                  <div class="yt-card__title">发布到 YouTube
+                  <div class="yt-card__title">
+                    <span class="yt-plat yt-plat--youtube">YT</span>
+                    目标：YouTube 频道
                     <span class="yt-card__count">已选 ${selectedYts.size}</span>
                   </div>
                 </div>
@@ -287,7 +308,8 @@
                     </select>
                   </label>
                   <div class="yt-create-hint muted">创建后进入「待执行」，由计划任务自动上传；不会阻塞当前页面。</div>
-                  <button class="primary yt-sync-submit" type="button" onclick="app.submitYoutubeSyncCreate()">创建任务</button>
+                  <button class="primary yt-sync-submit" type="button" onclick="app.submitYoutubeSyncCreate()"
+                    ${(!tiktokId || !selectedMats.size || !selectedYts.size) ? 'disabled title="请先选齐 TikTok 源账号、视频与 YouTube 目标频道"' : ''}>创建任务</button>
                 </div>
               </aside>
             </div>
@@ -308,6 +330,17 @@
       if (kw) d.matKeyword = kw.value;
       const tt = document.querySelector('#yt-create-tt');
       if (tt) d.tiktokAccountId = Number(tt.value || 0);
+      // 勾选变化时同步按钮可用态（不整页重绘）
+      const btn = document.querySelector('.yt-sync-submit');
+      if (btn) {
+        const ok = Number(d.tiktokAccountId || 0) > 0 && (d.materialIds || []).length > 0 && (d.youtubeAccountIds || []).length > 0;
+        btn.disabled = !ok;
+        btn.title = ok ? '' : '请先选齐 TikTok 源账号、视频与 YouTube 目标频道';
+      }
+      const matCount = document.querySelector('.yt-card--materials .yt-card__count');
+      if (matCount) matCount.textContent = '已选 ' + (d.materialIds || []).length;
+      const ytCount = document.querySelector('.yt-card--youtube .yt-card__count, .yt-card--side .yt-card__count');
+      if (ytCount) ytCount.textContent = '已选 ' + (d.youtubeAccountIds || []).length;
     },
     ytCreateChangeTikTok(id) {
       this.ytCreateRemember();
@@ -349,6 +382,59 @@
       try {
         await this.api('/youtube/publish-tasks/' + id + '/run', { method: 'POST', body: '{}', timeoutMs: 600000 });
         this.toast('上传完成');
+        this.refresh();
+      } catch (e) { this.toast(e.message, true); }
+    },
+    youtubePublishTaskFormHtml(row = {}) {
+      const v = (k, d = '') => this.esc(String(row[k] ?? d));
+      const priv = String(row.privacyStatus || row.privacy_status || 'unlisted');
+      return `
+        <div class="form-grid">
+          <div class="field full"><label>任务名称</label>
+            <input class="input" name="name" value="${v('name')}" placeholder="列表展示用">
+          </div>
+          <div class="field full"><label>视频标题</label>
+            <input class="input" name="title" value="${v('title')}" placeholder="上传到 YouTube 的标题" required>
+          </div>
+          <div class="field full"><label>描述</label>
+            <textarea class="input" name="description" rows="4" placeholder="可选">${v('description')}</textarea>
+          </div>
+          <div class="field full"><label>可见性</label>
+            <select class="input" name="privacyStatus">
+              <option value="unlisted"${priv === 'unlisted' ? ' selected' : ''}>不公开列出</option>
+              <option value="private"${priv === 'private' ? ' selected' : ''}>私有</option>
+              <option value="public"${priv === 'public' ? ' selected' : ''}>公开</option>
+            </select>
+          </div>
+        </div>
+        <div class="muted" style="margin-top:8px;font-size:12px">失败/草稿保存后会回到「待执行」。已完成任务仅改本地记录，不会同步改 YouTube 上的视频。</div>`;
+    },
+    async editYoutubePublishTask(id) {
+      if (!(typeof this.canUseYouTube === 'function' && this.canUseYouTube())) { this.toast('无权操作', true); return; }
+      const row = (this._ytSyncTasks || []).find((t) => Number(t.id) === Number(id));
+      if (!row) { this.toast('未找到任务 #' + id + '，请刷新后重试', true); return; }
+      if (String(row.status) === 'running') { this.toast('上传中不可编辑', true); return; }
+      this.modal('编辑 Youtube 发布任务 #' + id, this.youtubePublishTaskFormHtml(row), async (data) => {
+        await this.api('/youtube/publish-tasks/' + id, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: data.name || '',
+            title: data.title || '',
+            description: data.description || '',
+            privacyStatus: data.privacyStatus || 'unlisted',
+          }),
+        });
+        this.closeModal();
+        this.toast('已保存');
+        this.refresh();
+      });
+    },
+    async deleteYoutubePublishTask(id) {
+      if (!(typeof this.canUseYouTube === 'function' && this.canUseYouTube())) { this.toast('无权操作', true); return; }
+      if (!confirm('确认删除 Youtube 发布任务 #' + id + '？此操作不可恢复。')) return;
+      try {
+        await this.api('/youtube/publish-tasks/' + id, { method: 'DELETE' });
+        this.toast('已删除');
         this.refresh();
       } catch (e) { this.toast(e.message, true); }
     },

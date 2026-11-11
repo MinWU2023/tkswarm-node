@@ -1574,7 +1574,23 @@
         const stats=Array.isArray(statsRaw)?{snapshots:statsRaw,daily28:[]}:(statsRaw||{});
         const snaps=stats.snapshots||[];
         const daily=stats.daily28||[];
-        const vids=Array.isArray(videos)?videos:[];
+        // 展示层兜底去重：后端历史脏数据里同一作品可能有两个 video_id，
+        // 这里按「数字视频 ID」或「封面+描述」再合一次，避免封面标题相同的两行同时出现。
+        const vids=(()=>{
+          const raw=Array.isArray(videos)?videos:[];
+          const seen=new Set();
+          const out=[];
+          for(const v of raw){
+            const vid=String(v?.video_id||'');
+            const url=String(v?.video_url||'');
+            const numId=(vid.match(/\d{8,}/)||[])[0]||(url.match(/\/(?:video|photo)\/(\d{8,})/)||[])[1]||'';
+            const key=numId?`id:${numId}`:`meta:${String(v?.description||'').trim().toLowerCase()}|${String(v?.thumbnail_url||'')}`;
+            if(seen.has(key))continue;
+            seen.add(key);
+            out.push(v);
+          }
+          return out;
+        })();
         const fmt=(v)=>v==null||v===''?'—':v;
         const chip=(label,value)=>`<div class="tk-data-chip"><small>${label}</small><b title="${this.esc(String(fmt(value)))}">${this.esc(String(fmt(value)))}</b></div>`;
         const viewSwitch=(panel)=>`<div class="tk-data-view-switch" role="tablist">

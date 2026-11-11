@@ -143,7 +143,25 @@ table td[colspan] > .empty{
   border:1px solid #e8edf5;border-radius:10px;background:linear-gradient(180deg,#fff,#fafbfd);
   box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
+.pair-row--with-yt{
+  grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr) 28px minmax(0,1.05fr) auto;
+}
 .pair-cell{min-width:0;display:flex;flex-direction:column;gap:2px}
+.pair-cell--yt .pair-yt-ops{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.pair-cell--empty{align-items:flex-start;gap:6px}
+.wizard-yt-sync{margin:0 0 8px}
+.wizard-yt-sync-box{
+  margin-top:8px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:12px;
+  background:linear-gradient(180deg,#fff,#f8fafc);
+}
+.wizard-yt-sync-box__head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;
+}
+.wizard-yt-sync-box__head b{font-size:13px;color:#0f172a}
+.wizard-yt-acc-list{
+  max-height:220px;border:1px solid #eef2f7;border-radius:10px;background:#fcfdff;
+  padding:8px;overflow:auto;
+}
 .pair-cell .lbl{font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:.02em}
 .pair-cell .val{font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pair-cell .sub{font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -179,7 +197,7 @@ table td[colspan] > .empty{
   border:1px dashed #e2e8f0;border-radius:10px;background:#fafbfc;
 }
 @media(max-width:720px){
-  .pair-row{grid-template-columns:1fr;gap:8px}
+  .pair-row,.pair-row--with-yt{grid-template-columns:1fr;gap:8px}
   .pair-arrow{display:none}
   .pair-add{flex-direction:column;align-items:stretch}
 }

@@ -787,6 +787,94 @@ async function selectVideoFile(page, filePath, log = () => {}) {
   );
 }
 
+/** 只挑图片类型的文件输入框，避免误把视频框当成封面框 */
+async function findImageFileInput(page, timeoutMs = 6000) {
+  const sel = 'input[type="file"]';
+  const isImageInput = async (el) => {
+    const accept = String(await el.getAttribute('accept').catch(() => '') || '').toLowerCase();
+    if (accept.includes('video')) return false;
+    return accept.includes('image') || accept === '' || accept.includes('.jpg')
+      || accept.includes('.png') || accept.includes('.jpeg') || accept.includes('.webp');
+  };
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const all = await page.locator(sel).all().catch(() => []);
+    for (const el of all) {
+      if (await isImageInput(el)) return el;
+    }
+    await page.waitForTimeout(400).catch(() => {});
+  }
+  return null;
+}
+
+/**
+ * 上传自定义封面（图片只在本机，直接交给浏览器的文件选择框，不走服务器）。
+ * 封面属于增强项：失败只记日志，不阻断发布。
+ *
+ * @returns {Promise<{ok:boolean, method?:string, reason?:string}>}
+ */
+async function uploadPublishCover(page, coverPath, log = () => {}) {
+  const fs = require('node:fs');
+  const filePath = String(coverPath || '').trim();
+  if (!filePath) return { ok: false, reason: '未配置封面' };
+  if (!fs.existsSync(filePath)) return { ok: false, reason: `封面文件不存在：${filePath}` };
+  try {
+    if (!fs.statSync(filePath).isFile()) return { ok: false, reason: '封面路径不是文件' };
+  } catch (e) {
+    return { ok: false, reason: `封面不可读：${e.message || e}` };
+  }
+
+  log(`封面：开始上传本机封面 ${filePath}`);
+
+  // A) 直接写入图片文件框（隐藏 input 也能写）
+  let input = await findImageFileInput(page, 5000);
+  if (input && await setInputFilesSafe(input, filePath)) {
+    log('封面：已通过文件输入框写入');
+    await page.waitForTimeout(1200).catch(() => {});
+    return { ok: true, method: 'input' };
+  }
+
+  // B) 点「编辑/更换封面」再等文件选择器
+  const triggerText = /^(Edit cover|Change cover|Upload cover|Select cover|上传封面|更换封面|编辑封面)$/i;
+  const trigger = page.getByRole('button', { name: triggerText }).or(page.getByText(triggerText)).first();
+  if (await trigger.count().catch(() => 0) && await trigger.isVisible().catch(() => false)) {
+    log('封面：点击切换/编辑封面按钮');
+    const chooserPromise = page.waitForEvent('filechooser', { timeout: 12000 }).catch(() => null);
+    await trigger.click({ timeout: 8000, force: true }).catch(() => {});
+    await page.waitForTimeout(800).catch(() => {});
+    const chooser = await chooserPromise;
+    if (chooser) {
+      await chooser.setFiles(filePath).catch(() => {});
+      log('封面：已通过文件选择器写入');
+      await page.waitForTimeout(1500).catch(() => {});
+      return { ok: true, method: 'chooser' };
+    }
+    // 弹窗里可能有 Upload 页签，点一下再找 input
+    const uploadTab = page.getByRole('tab', { name: /^(Upload|上传)$/i }).or(page.getByText(/^(Upload|上传)$/i)).first();
+    if (await uploadTab.count().catch(() => 0) && await uploadTab.isVisible().catch(() => false)) {
+      await uploadTab.click({ timeout: 6000, force: true }).catch(() => {});
+      await page.waitForTimeout(600).catch(() => {});
+    }
+    input = await findImageFileInput(page, 5000);
+    if (input && await setInputFilesSafe(input, filePath)) {
+      log('封面：弹窗内已通过输入框写入');
+      await page.waitForTimeout(1500).catch(() => {});
+      return { ok: true, method: 'input-in-dialog' };
+    }
+  }
+
+  const dump = await page.evaluate(() => ({
+    buttons: [...document.querySelectorAll('button,[role=button]')]
+      .map((x) => (x.innerText || x.getAttribute('aria-label') || '').trim())
+      .filter(Boolean).slice(0, 40),
+    inputs: [...document.querySelectorAll('input[type=file]')].map((x) => x.accept),
+  })).catch(() => ({}));
+  return {
+    ok: false,
+    reason: `未找到封面入口 buttons=${(dump.buttons || []).join('|').slice(0, 160)} inputs=${(dump.inputs || []).join(',')}`,
+  };
+}
+
 /** Wait until leave select-video splash and editor/post controls appear. */
 /** Studio 封面/上传是否仍在 Uploading（此时写描述会被文件名冲掉） */
 async function isStudioStillUploading(page) {
@@ -1888,6 +1976,28 @@ async function loadMaterial(materialId, log = () => {}) {
   log(`使用本机素材文件：${localPath}`);
   material.file_path = localPath;
   material.filePath = localPath;
+
+  // 封面：只认本机路径（cover_file_path），文件不在就当作没有封面，不阻断发布
+  const coverPathRaw = String(material.cover_file_path || material.coverFilePath || '').trim();
+  if (coverPathRaw) {
+    try {
+      if (fs.existsSync(coverPathRaw) && fs.statSync(coverPathRaw).isFile()) {
+        material.cover_file_path = coverPathRaw;
+        material.coverFilePath = coverPathRaw;
+        log(`使用本机封面：${coverPathRaw}`);
+      } else {
+        log(`素材 #${materialId} 记录的封面路径不存在，跳过封面：${coverPathRaw}`);
+        material.cover_file_path = '';
+        material.coverFilePath = '';
+      }
+    } catch {
+      material.cover_file_path = '';
+      material.coverFilePath = '';
+    }
+  } else {
+    material.cover_file_path = '';
+    material.coverFilePath = '';
+  }
   return material;
 }
 
@@ -3401,6 +3511,23 @@ async function preparePublish(accountId, materialId, title='', caption='', optio
       await pause(2000);
     }
     await pause(saveTraffic ? 800 : 1200);
+
+    // 自定义封面：素材里存了本机封面路径就用它覆盖 TikTok 默认封面
+    let coverResult = { ok: false, reason: '未配置封面' };
+    if (material.cover_file_path) {
+      try {
+        coverResult = await uploadPublishCover(connection.page, material.cover_file_path, log);
+        if (coverResult.ok) {
+          log(`封面：已设置自定义封面（方式 ${coverResult.method}）`);
+        } else {
+          log(`封面：设置失败，继续用 TikTok 默认封面（${coverResult.reason}）`);
+        }
+      } catch (e) {
+        coverResult = { ok: false, reason: e.message || String(e) };
+        log(`封面：上传异常，继续用默认封面（${coverResult.reason}）`);
+      }
+      await connection.page.waitForTimeout(1000).catch(() => {});
+    }
 
     const description = captionParts.description;
     const bodyText = captionParts.body;

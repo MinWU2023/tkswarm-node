@@ -1261,11 +1261,27 @@
       w.groupId='';
     },
     ensureWizardPairDraft(){
-      const w=this.wizard;if(!w)return {accountIds:[],materialIds:[]};
-      if(!w.pairDraft)w.pairDraft={accountIds:[],materialIds:[]};
+      const w=this.wizard;if(!w)return {accountIds:[],materialIds:[],youtubeAccountIds:[]};
+      if(!w.pairDraft)w.pairDraft={accountIds:[],materialIds:[],youtubeAccountIds:[]};
       w.pairDraft.accountIds=(w.pairDraft.accountIds||[]).map(Number).filter(Boolean);
       w.pairDraft.materialIds=(w.pairDraft.materialIds||[]).map(Number).filter(Boolean);
+      w.pairDraft.youtubeAccountIds=(w.pairDraft.youtubeAccountIds||[]).map(Number).filter(Boolean);
       return w.pairDraft;
+    },
+    wizardYoutubeLabel(id){
+      const a=(this._wizardYtAccountsCache||[]).find(x=>Number(x.id)===Number(id));
+      if(!a)return id?('#'+id):'';
+      return a.channelTitle||a.nickname||a.username||('#'+id);
+    },
+    wizardUsedYoutubeIds(w){return [...new Set((w?.pairs||[]).map(p=>Number(p.youtubeAccountId)).filter(Boolean))]},
+    assignWizardYoutubeToPairs(){
+      const w=this.wizard;if(!w||!w.syncYouTube)return;
+      const draft=this.ensureWizardPairDraft();
+      const need=(w.pairs||[]).filter(p=>Number(p.accountId)&&Number(p.materialId)&&!Number(p.youtubeAccountId));
+      const pool=(draft.youtubeAccountIds||[]).map(Number).filter(Boolean);
+      const n=Math.min(need.length,pool.length);
+      for(let i=0;i<n;i++)need[i].youtubeAccountId=pool[i];
+      draft.youtubeAccountIds=pool.slice(n);
     },
     tryCommitWizardPairDraft(){
       const w=this.wizard;if(!w)return;
@@ -1275,16 +1291,16 @@
       draft.accountIds=draft.accountIds.filter(id=>!usedAcc.has(id));
       draft.materialIds=draft.materialIds.filter(id=>!usedMat.has(id));
       const n=Math.min(draft.accountIds.length,draft.materialIds.length);
-      if(!n){this.refreshWizardPairsPanel();return}
       w.pairs=w.pairs||[];
       for(let i=0;i<n;i++){
         const accountId=draft.accountIds[i];
         const materialId=draft.materialIds[i];
         if(w.pairs.some(p=>Number(p.accountId)===accountId&&Number(p.materialId)===materialId))continue;
-        w.pairs.push({key:'p-'+Date.now()+'-'+i+'-'+Math.random().toString(36).slice(2,6),accountId,materialId});
+        w.pairs.push({key:'p-'+Date.now()+'-'+i+'-'+Math.random().toString(36).slice(2,6),accountId,materialId,youtubeAccountId:0});
       }
       draft.accountIds=draft.accountIds.slice(n);
       draft.materialIds=draft.materialIds.slice(n);
+      this.assignWizardYoutubeToPairs();
       this.syncWizardIdsFromPairs();
       this.refreshWizardPairsPanel();
     },
@@ -1292,6 +1308,178 @@
       const w=this.wizard;if(!w)return;
       w.pairs=(w.pairs||[]).filter(p=>p.key!==key);
       this.syncWizardIdsFromPairs();
+      this.refreshWizardPairsPanel();
+    },
+    async ensureWizardYtAccountsCache(){
+      if(Array.isArray(this._wizardYtAccountsCache)&&this._wizardYtAccountsCache.length)return this._wizardYtAccountsCache;
+      try{
+        const pack=await this.api('/youtube/accounts');
+        this._wizardYtAccountsCache=Array.isArray(pack?.items)?pack.items:[];
+      }catch(_){
+        this._wizardYtAccountsCache=[];
+      }
+      return this._wizardYtAccountsCache;
+    },
+    async toggleWizardSyncYouTube(on){
+      const w=this.wizard;if(!w)return;
+      w.syncYouTube=!!on;
+      if(!w.syncYouTube){
+        w.youtubeAccountIds=[];
+        (w.pairs||[]).forEach(p=>{p.youtubeAccountId=0});
+        if(w.pairDraft)w.pairDraft.youtubeAccountIds=[];
+      }else{
+        await this.ensureWizardYtAccountsCache();
+      }
+      const kind=this.wizardStepKind(this.wizardStep,w);
+      if(kind==='compose')this.refreshWizardPairsPanel();
+      else if(kind==='config'){
+        const box=document.querySelector('#wizard-yt-sync-panel');
+        if(box)box.innerHTML=this.wizardSyncYouTubePanelHtml(w);
+      }
+    },
+    wizardSyncYouTubeToggleHtml(w){
+      w=w||this.wizard||{};
+      const can=typeof this.canUseYouTube==='function'?this.canUseYouTube():false;
+      if(!can)return `<div class="field full wizard-yt-sync"><label class="yt-check" style="opacity:.55"><input type="checkbox" disabled> 同步到 YouTube</label><div class="muted" style="margin-top:4px;font-size:12px">当前账号无权使用 YouTube 同步</div></div>`;
+      return `<div class="field full wizard-yt-sync">
+        <label class="yt-check"><input type="checkbox" name="syncYouTube" ${w.syncYouTube?'checked':''} onchange="app.toggleWizardSyncYouTube(this.checked)"> 同步到 YouTube</label>
+        <div class="muted" style="margin-top:4px;font-size:12px">勾选后选择 YouTube 账号，提交时一并生成 Youtube 发布任务</div>
+      </div>`;
+    },
+    wizardSyncYouTubePanelHtml(w){
+      w=w||this.wizard||{};
+      if(!w.syncYouTube)return '';
+      const list=this._wizardYtAccountsCache||[];
+      const selected=new Set((w.youtubeAccountIds||[]).map(Number));
+      const videoCount=this.wizardIsIndependent(w)?1:Math.max(this.wizardMaterialCount(w),(w.pairs||[]).length);
+      const maxHint=this.wizardIsRandom(w)
+        ?`随机发布：YouTube 账号数不得大于视频数（最多 ${videoCount} 个），提交时随机匹配`
+        :(this.wizardIsIndependent(w)?'独立发布：最多选 1 个 YouTube 账号':'请勾选要同步的 YouTube 账号');
+      const rows=list.map(a=>{
+        const ok=!!a.authorized;
+        const id=Number(a.id);
+        const checked=selected.has(id)?' checked':'';
+        const channelName=a.channelTitle||a.nickname||a.username||('#'+id);
+        return `<label class="yt-acc-item yt-acc-item--youtube ${ok?'':'is-disabled'}">
+          <input type="checkbox" data-wizard-yt-acc="${id}"${checked}${ok?'':' disabled'} onchange="app.collectWizardYtAccounts()">
+          <span class="yt-acc-item__body">
+            <span class="yt-acc-item__name"><span class="yt-plat yt-plat--youtube">YT</span> ${this.esc(channelName)}</span>
+            <span class="yt-acc-item__meta">#${id}${a.channelCustomUrl?' · '+this.esc(a.channelCustomUrl):''}${a.authorized?'':' · 未授权'}</span>
+          </span>
+          ${ok?'<span class="yt-chip yt-chip--yt">已授权</span>':'<span class="yt-chip yt-chip--miss">未授权</span>'}
+        </label>`;
+      }).join('')||`<div class="yt-empty">暂无已授权 YouTube 账号<br><span class="muted">请先到「YouTube 账号」完成授权</span></div>`;
+      return `<div class="wizard-yt-sync-box">
+        <div class="wizard-yt-sync-box__head">
+          <b>YouTube 账号</b>
+          <span class="muted" id="wizard-yt-count-hint">已选 ${(w.youtubeAccountIds||[]).length}${this.wizardIsRandom(w)?` / 最多 ${videoCount}`:''}</span>
+        </div>
+        <div class="muted" style="margin-bottom:8px;font-size:12px">${maxHint}</div>
+        <div class="yt-acc-list wizard-yt-acc-list">${rows}</div>
+        <label class="yt-field" style="margin-top:10px">
+          <span class="yt-field__label">YouTube 可见性</span>
+          <select class="input" name="youtubePrivacy" onchange="app.wizard.youtubePrivacy=this.value">
+            <option value="unlisted"${(w.youtubePrivacy||'unlisted')==='unlisted'?' selected':''}>不公开列出</option>
+            <option value="private"${w.youtubePrivacy==='private'?' selected':''}>私有</option>
+            <option value="public"${w.youtubePrivacy==='public'?' selected':''}>公开</option>
+          </select>
+        </label>
+      </div>`;
+    },
+    collectWizardYtAccounts(){
+      const w=this.wizard;if(!w)return;
+      let ids=[...document.querySelectorAll('[data-wizard-yt-acc]:checked')].map(el=>Number(el.getAttribute('data-wizard-yt-acc'))).filter(Boolean);
+      if(this.wizardIsIndependent(w)&&ids.length>1){
+        ids=ids.slice(0,1);
+        this.toast('独立发布只能选择 1 个 YouTube 账号',true);
+        document.querySelectorAll('[data-wizard-yt-acc]').forEach(el=>{el.checked=ids.includes(Number(el.getAttribute('data-wizard-yt-acc')))});
+      }
+      if(this.wizardIsRandom(w)){
+        const max=Math.max(1,this.wizardMaterialCount(w));
+        if(ids.length>max){
+          ids=ids.slice(0,max);
+          this.toast(`随机发布 YouTube 账号数不得大于视频数（最多 ${max}）`,true);
+          document.querySelectorAll('[data-wizard-yt-acc]').forEach(el=>{el.checked=ids.includes(Number(el.getAttribute('data-wizard-yt-acc')))});
+        }
+      }
+      w.youtubeAccountIds=ids;
+      const hint=document.querySelector('#wizard-yt-count-hint');
+      if(hint){
+        const max=this.wizardMaterialCount(w);
+        hint.textContent=this.wizardIsRandom(w)?`已选 ${ids.length} / 最多 ${max}`:`已选 ${ids.length}`;
+      }
+    },
+    openComposeYoutubePicker(){
+      const w=this.wizard;if(!w)return;
+      if(!w.syncYouTube){this.toast('请先勾选「同步到 YouTube」',true);return}
+      const used=new Set(this.wizardUsedYoutubeIds(w));
+      this.modal('选择 YouTube 账号',`<div class="form-grid"><div class="field full"><div class="muted" style="margin-bottom:8px">已匹配组合的 YouTube 账号不会出现。可多选；确认后按顺序填到尚未匹配 YouTube 的组合。</div><div id="pair-pick-youtube" class="yt-acc-list wizard-yt-acc-list" style="max-height:360px"><div class="muted" style="padding:12px">加载中…</div></div></div></div>`,async()=>{
+        const ids=[...document.querySelectorAll('#pair-pick-youtube [data-pair-yt]:checked')].map(el=>Number(el.getAttribute('data-pair-yt'))).filter(Boolean);
+        if(!ids.length)throw new Error('请至少选择一个 YouTube 账号');
+        const draft=this.ensureWizardPairDraft();
+        draft.youtubeAccountIds=[...new Set([...(draft.youtubeAccountIds||[]),...ids])];
+        this.closeModal();
+        this.assignWizardYoutubeToPairs();
+        this.refreshWizardPairsPanel();
+      },false,{submitText:'确认选择',wide:true});
+      this.fillComposeYoutubePicker(used);
+    },
+    async fillComposeYoutubePicker(usedSet){
+      const box=document.querySelector('#pair-pick-youtube');
+      if(!box)return;
+      const list=await this.ensureWizardYtAccountsCache();
+      const used=usedSet||new Set();
+      const avail=list.filter(a=>a.authorized&&!used.has(Number(a.id)));
+      box.innerHTML=avail.length?avail.map(a=>{
+        const channelName=a.channelTitle||a.nickname||a.username||('#'+a.id);
+        return `<label class="yt-acc-item yt-acc-item--youtube">
+          <input type="checkbox" data-pair-yt="${a.id}">
+          <span class="yt-acc-item__body">
+            <span class="yt-acc-item__name"><span class="yt-plat yt-plat--youtube">YT</span> ${this.esc(channelName)}</span>
+            <span class="yt-acc-item__meta">#${a.id}${a.channelCustomUrl?' · '+this.esc(a.channelCustomUrl):''}</span>
+          </span>
+          <span class="yt-chip yt-chip--yt">已授权</span>
+        </label>`;
+      }).join():'<div class="muted" style="padding:12px">没有可选的已授权 YouTube 账号</div>';
+    },
+    pickWizardPairYoutube(key){
+      const w=this.wizard;if(!w)return;
+      if(!w.syncYouTube){this.toast('请先勾选「同步到 YouTube」',true);return}
+      const pair=(w.pairs||[]).find(p=>p.key===key);
+      if(!pair)return;
+      this.modal('为该组合选择 YouTube',`<div class="form-grid"><div class="field full"><div id="pair-one-youtube" class="yt-acc-list wizard-yt-acc-list" style="max-height:360px"><div class="muted" style="padding:12px">加载中…</div></div></div></div>`,async()=>{
+        const el=document.querySelector('#pair-one-youtube [data-pair-one-yt]:checked');
+        const id=el?Number(el.getAttribute('data-pair-one-yt')):0;
+        if(!id)throw new Error('请选择一个 YouTube 账号');
+        pair.youtubeAccountId=id;
+        this.closeModal();
+        this.refreshWizardPairsPanel();
+      },false,{submitText:'确认',wide:true});
+      this.fillPairOneYoutubePicker(Number(pair.youtubeAccountId||0));
+    },
+    async fillPairOneYoutubePicker(selectedId){
+      const box=document.querySelector('#pair-one-youtube');
+      if(!box)return;
+      const list=await this.ensureWizardYtAccountsCache();
+      const avail=list.filter(a=>a.authorized);
+      box.innerHTML=avail.length?avail.map(a=>{
+        const channelName=a.channelTitle||a.nickname||a.username||('#'+a.id);
+        const checked=Number(a.id)===Number(selectedId)?' checked':'';
+        return `<label class="yt-acc-item yt-acc-item--youtube">
+          <input type="radio" name="pair-one-yt" data-pair-one-yt="${a.id}"${checked}>
+          <span class="yt-acc-item__body">
+            <span class="yt-acc-item__name"><span class="yt-plat yt-plat--youtube">YT</span> ${this.esc(channelName)}</span>
+            <span class="yt-acc-item__meta">#${a.id}${a.channelCustomUrl?' · '+this.esc(a.channelCustomUrl):''}</span>
+          </span>
+          <span class="yt-chip yt-chip--yt">已授权</span>
+        </label>`;
+      }).join():'<div class="muted" style="padding:12px">没有可选的已授权 YouTube 账号</div>';
+    },
+    clearWizardPairYoutube(key){
+      const w=this.wizard;if(!w)return;
+      const pair=(w.pairs||[]).find(p=>p.key===key);
+      if(!pair)return;
+      pair.youtubeAccountId=0;
       this.refreshWizardPairsPanel();
     },
     openComposeAccountPicker(){
@@ -1352,30 +1540,56 @@
     },
     wizardPairsBody(w){
       const pairs=w.pairs||[];
-      const draft=w.pairDraft||{accountIds:[],materialIds:[]};
+      const draft=w.pairDraft||{accountIds:[],materialIds:[],youtubeAccountIds:[]};
       const pendingAcc=(draft.accountIds||[]).length;
       const pendingMat=(draft.materialIds||[]).length;
-      const rows=pairs.length?pairs.map((p)=>`<div class="pair-row">
+      const pendingYt=(draft.youtubeAccountIds||[]).length;
+      const syncOn=!!w.syncYouTube;
+      const rows=pairs.length?pairs.map((p)=>{
+        const ytId=Number(p.youtubeAccountId||0);
+        const ytCell=syncOn
+          ?(ytId
+            ?`<div class="pair-cell pair-cell--yt"><span class="lbl">YouTube</span><span class="val">${this.esc(this.wizardYoutubeLabel(ytId))}</span><span class="sub">#${ytId}</span>
+                <div class="pair-yt-ops"><button type="button" class="tiny ghost" onclick="app.pickWizardPairYoutube('${p.key}')">更换</button>
+                <button type="button" class="tiny ghost" onclick="app.clearWizardPairYoutube('${p.key}')">清除</button></div></div>`
+            :`<div class="pair-cell pair-cell--yt pair-cell--empty"><span class="lbl">YouTube</span><button type="button" class="tiny primary" onclick="app.pickWizardPairYoutube('${p.key}')">选择</button></div>`)
+          :'';
+        return `<div class="pair-row ${syncOn?'pair-row--with-yt':''}">
         <div class="pair-cell"><span class="lbl">账号</span><span class="val">${this.esc(this.wizardAccountLabel(p.accountId))}</span><span class="sub">#${p.accountId}</span></div>
         <div class="pair-arrow">→</div>
         <div class="pair-cell"><span class="lbl">视频</span><span class="val">${this.esc(this.wizardMaterialLabel(p.materialId))}</span><span class="sub">#${p.materialId}</span></div>
+        ${syncOn?`<div class="pair-arrow">→</div>${ytCell}`:''}
         <button type="button" class="tiny danger" onclick="app.removeWizardPair('${p.key}')" title="取消此组合">取消</button>
-      </div>`).join(''):`<div class="pair-empty">暂无组合。点击下方「选择账号」「选择视频」，两边都选好后会按顺序自动生成组合。</div>`;
-      const pending=pendingAcc||pendingMat
-        ?`<span class="pair-draft-chip">待配对 账号 ${pendingAcc} · 视频 ${pendingMat}</span>`
+      </div>`;
+      }).join(''):`<div class="pair-empty">暂无组合。点击下方「选择账号」「选择视频」，两边都选好后会按顺序自动生成组合。</div>`;
+      const pendingParts=[];
+      if(pendingAcc||pendingMat)pendingParts.push(`账号 ${pendingAcc} · 视频 ${pendingMat}`);
+      if(syncOn&&pendingYt)pendingParts.push(`YouTube ${pendingYt}`);
+      const pending=pendingParts.length
+        ?`<span class="pair-draft-chip">待配对 ${pendingParts.join(' · ')}</span>`
         :'<span class="muted" style="font-size:12px">已用过的账号/视频不会再出现在弹框中</span>';
       return `<div class="pair-board">
+        ${this.wizardSyncYouTubeToggleHtml(w)}
         <div class="pair-board-head">
-          <div><b>发布组合（${pairs.length}）</b><div class="muted">每个组合将创建 1 个独立任务（1 账号 + 1 视频）。取消后可重新选择。</div></div>
+          <div><b>发布组合（${pairs.length}）</b><div class="muted">每个组合将创建 1 个独立任务（1 账号 + 1 视频${syncOn?' + 可选 YouTube':''}）。取消后可重新选择。</div></div>
         </div>
         <div class="pair-list">${rows}</div>
         <div class="pair-add">
           <div class="pair-add-actions">
             <button type="button" class="primary" onclick="app.openComposeAccountPicker()">选择账号</button>
             <button type="button" class="primary" onclick="app.openComposeMaterialPicker()">选择视频</button>
+            ${syncOn?`<button type="button" class="primary" onclick="app.openComposeYoutubePicker()">选择 YouTube</button>`:''}
           </div>
           <div class="pair-add-hint">${pending}</div>
         </div>
+        ${syncOn?`<label class="yt-field" style="max-width:280px">
+          <span class="yt-field__label">YouTube 可见性</span>
+          <select class="input" name="youtubePrivacy" onchange="app.wizard.youtubePrivacy=this.value">
+            <option value="unlisted"${(w.youtubePrivacy||'unlisted')==='unlisted'?' selected':''}>不公开列出</option>
+            <option value="private"${w.youtubePrivacy==='private'?' selected':''}>私有</option>
+            <option value="public"${w.youtubePrivacy==='public'?' selected':''}>公开</option>
+          </select>
+        </label>`:''}
       </div>`;
     },
     wizardComposeBody(w){
@@ -1438,15 +1652,15 @@
       const publishMode=ordered?'ordered':(mode==='independent'?'independent':'random');
       const publishStrategy=publishMode==='independent'?'deduplicate':(publishMode==='ordered'?'pairs':'random');
       this.massWizardOpen=false;this.deleteWizardOpen=false;this.commentReplyWizardOpen=false;
-      this.wizard={pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),accountIds:[],groupId:'',materialIds:[],materialSource:'library',selectedVideos:[],folderPath:'',publishMode,publishStrategy,pairs:[],pairDraft:{accountIds:[],materialIds:[]},publishTitle:'',publishCaption:'',hashtags:'',name:'',scheduledAt:'',threadCount:1,saveTraffic:false,deleteAfterPublish:false};
+      this.wizard={pushChannel:(this.defaultTaskBrowserBackend?.()||'tkswarm'),accountIds:[],groupId:'',materialIds:[],materialSource:'library',selectedVideos:[],folderPath:'',publishMode,publishStrategy,pairs:[],pairDraft:{accountIds:[],materialIds:[],youtubeAccountIds:[]},syncYouTube:false,youtubeAccountIds:[],youtubePrivacy:'unlisted',publishTitle:'',publishCaption:'',hashtags:'',name:'',scheduledAt:'',threadCount:1,saveTraffic:false,deleteAfterPublish:false};
       this.wizardStep=1;this.wizardOpen=true;this.matrixTab='tasks';
       if(!opts.skipRefresh)this.refresh();
     },
     publishModeLabel(mode){return mode==='independent'?'独立发布':(mode==='ordered'?'群发任务':'随机发布')},
     closePublishWizard(){this.wizardOpen=false;this.massWizardOpen=false;this.refresh()},
     wizardPanel(){const step=this.wizardStep||1;setTimeout(()=>this.bindWizardMaterialSource(),0);const w=this.wizard||{};const labels=this.wizardStepLabels(w);const last=labels.length;const modeTitle=this.publishModeLabel(w.publishMode||'random');const modeHint=this.wizardIsOrdered(w)?'人为指定账号↔视频组合，每组创建 1 个任务':(this.wizardIsRandom(w)?'账号与视频等量选择后随机配对，每对创建 1 个任务':'每次选 1 个账号 + 1 个视频，创建 1 条独立发布任务');return `<div class="wizard"><div class="toolbar" style="margin:0 0 12px"><div><b>${this.esc(modeTitle)}</b><span class="muted" style="margin-left:8px">${modeHint}</span></div></div><div class="wizard-steps">${labels.map((n,i)=>`<span class="${i+1===step?'on':''}">${i+1} ${n}</span>`).join('')}</div><div id="wizard-body">${this.wizardBody(step,w)}</div><div class="toolbar" style="margin-top:16px"><button class="ghost" onclick="app.closePublishWizard()">取消</button><div>${step>1?`<button class="ghost" type="button" onclick="app.wizardPrev()">上一步</button> `:''}${step<last?`<button class="primary" type="button" onclick="app.wizardNext()">下一步</button>`:`<button class="primary" type="button" onclick="app.wizardSubmit()">创建任务</button>`}</div></div></div>`},
-    wizardBody(step,w){const kind=this.wizardStepKind(step,w);if(kind==='entry')return `<div class="channels"><button type="button" class="channel active"><b>${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}</b><span class="muted">打开环境并上传，按设置自动点击发布或停在待确认</span></button></div>`;if(kind==='compose')return this.wizardComposeBody(w);if(kind==='accounts')return this.wizardAccountsBody(w);if(kind==='materials')return this.wizardMaterialsBody(w);if(kind==='pairs')return `<div id="wizard-pairs-panel">${this.wizardPairsBody(w)}</div>`;if(kind==='config')return `<div class="form-grid">${this.field('name','任务名称前缀',w.name||'','text',true)}${this.scheduleAtFieldHtml('scheduledAt','定时发布（可空）',w.scheduledAt||'',{preview:'wizard'})}${this.field('threadCount','线程数（1-3）',w.threadCount??1,'number')}${this.saveTrafficField(w.saveTraffic,false)}${this.selectRaw('deleteAfterPublish','发后删除素材记录',[['false','关闭'],['true','开启']],String(w.deleteAfterPublish)==='true'?'true':'false')}${this.wizardIsOrdered(w)||this.wizardIsRandom(w)?`<div class="field full"><div class="muted">将按「1 账号 + 1 视频 = 1 任务」创建多条任务；名称会自动带上账号与视频。</div></div>`:''}</div>`;const names=(w.accountIds||[]).length?`${w.accountIds.length} 个指定账号`:(w.groupId?`分组 #${w.groupId}`:'全部启用账号');const matCount=(w.materialIds||[]).length;const matText=w.materialSource==='library'?`素材库 ${matCount} 个`:`已选 ${matCount} 个视频文件`;const pairCount=this.wizardIsOrdered(w)?(w.pairs||[]).filter(p=>p.accountId&&p.materialId).length:(this.wizardIsRandom(w)?Math.min((w.accountIds||[]).length,matCount):0);const taskCountLine=(this.wizardIsOrdered(w)||this.wizardIsRandom(w))?`<br><b>将创建 ${pairCount} 个独立任务</b>（每任务 = 1 账号 + 1 视频）`:'';const pairLine=this.wizardIsOrdered(w)?`<br>组合：${pairCount} 条（人为指定）`:(this.wizardIsRandom(w)?`<br>配对：${pairCount} 条（提交时随机匹配）`:'');const strategyLabel=this.wizardIsOrdered(w)?'人为组合':(this.wizardIsRandom(w)?'随机配对':((this.opt('publishStrategies',[['deduplicate','去重'],['random','随机']]).find(x=>x[0]===w.publishStrategy)||[])[1]||w.publishStrategy||'-'));return `<div class="data-meta">通道：${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}<br>账号：${this.esc(names)}<br>素材：${this.esc(matText)}，策略 ${this.esc(strategyLabel)}${pairLine}${taskCountLine}<br>标题/文案/封面：使用各素材自身的分享配置<br>计划：${this.esc(w.scheduledAt||'立即')}</div>`},
-    collectWizard(){const w=this.wizard;const read=name=>{const el=document.querySelector(`[name="${name}"]`);return el?el.value:undefined};const kind=this.wizardStepKind(this.wizardStep,w);if(kind==='accounts'){if(this.wizardIsRandom(w)||this.wizardIsIndependent(w))w.groupId='';else w.groupId=read('groupId')||'';w.accountIds=this.selectedAccountPickIds('wizard-accounts');if(this.wizardIsIndependent(w))w.accountIds=(w.accountIds||[]).slice(0,1)}if(kind==='materials'){w.materialSource='library';w.publishStrategy=w.publishMode==='independent'?'deduplicate':'random';w.materialIds=this.selectedMaterialPickerIds?this.selectedMaterialPickerIds('wizard-material-field'):(w.materialIds||[]);if(this.wizardIsIndependent(w))w.materialIds=(w.materialIds||[]).slice(0,1);w.selectedVideos=[]}if(kind==='compose'){this.syncWizardIdsFromPairs()}if(kind==='config'){w.name=read('name')||'';w.scheduledAt=read('scheduledAt')||'';w.threadCount=Number(read('threadCount')||1);w.saveTraffic=read('saveTraffic')==='true';w.deleteAfterPublish=read('deleteAfterPublish')==='true'}},
+    wizardBody(step,w){const kind=this.wizardStepKind(step,w);if(kind==='entry')return `<div class="channels"><button type="button" class="channel active"><b>${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}</b><span class="muted">打开环境并上传，按设置自动点击发布或停在待确认</span></button></div>`;if(kind==='compose')return this.wizardComposeBody(w);if(kind==='accounts')return this.wizardAccountsBody(w);if(kind==='materials')return this.wizardMaterialsBody(w);if(kind==='pairs')return `<div id="wizard-pairs-panel">${this.wizardPairsBody(w)}</div>`;if(kind==='config')return `<div class="form-grid">${this.field('name','任务名称前缀',w.name||'','text',true)}${this.scheduleAtFieldHtml('scheduledAt','定时发布（可空）',w.scheduledAt||'',{preview:'wizard'})}${this.field('threadCount','线程数（1-3）',w.threadCount??1,'number')}${this.saveTrafficField(w.saveTraffic,false)}${this.selectRaw('deleteAfterPublish','发后删除素材记录',[['false','关闭'],['true','开启']],String(w.deleteAfterPublish)==='true'?'true':'false')}${this.wizardIsOrdered(w)||this.wizardIsRandom(w)?`<div class="field full"><div class="muted">将按「1 账号 + 1 视频 = 1 任务」创建多条任务；名称会自动带上账号与视频。</div></div>`:''}${this.wizardIsOrdered(w)?'':this.wizardSyncYouTubeToggleHtml(w)}<div id="wizard-yt-sync-panel">${this.wizardIsOrdered(w)?'':this.wizardSyncYouTubePanelHtml(w)}</div></div>`;const names=(w.accountIds||[]).length?`${w.accountIds.length} 个指定账号`:(w.groupId?`分组 #${w.groupId}`:'全部启用账号');const matCount=(w.materialIds||[]).length;const matText=w.materialSource==='library'?`素材库 ${matCount} 个`:`已选 ${matCount} 个视频文件`;const pairCount=this.wizardIsOrdered(w)?(w.pairs||[]).filter(p=>p.accountId&&p.materialId).length:(this.wizardIsRandom(w)?Math.min((w.accountIds||[]).length,matCount):0);const taskCountLine=(this.wizardIsOrdered(w)||this.wizardIsRandom(w))?`<br><b>将创建 ${pairCount} 个独立任务</b>（每任务 = 1 账号 + 1 视频）`:'';const pairLine=this.wizardIsOrdered(w)?`<br>组合：${pairCount} 条（人为指定）`:(this.wizardIsRandom(w)?`<br>配对：${pairCount} 条（提交时随机匹配）`:'');const strategyLabel=this.wizardIsOrdered(w)?'人为组合':(this.wizardIsRandom(w)?'随机配对':((this.opt('publishStrategies',[['deduplicate','去重'],['random','随机']]).find(x=>x[0]===w.publishStrategy)||[])[1]||w.publishStrategy||'-'));const ytSyncLine=w.syncYouTube?(this.wizardIsOrdered(w)?`<br>YouTube 同步：开启 · 已匹配 ${(w.pairs||[]).filter(p=>p.youtubeAccountId).length}/${(w.pairs||[]).filter(p=>p.accountId&&p.materialId).length}`:`<br>YouTube 同步：开启 · 账号 ${(w.youtubeAccountIds||[]).length} 个`):'<br>YouTube 同步：关闭';return `<div class="data-meta">通道：${this.esc(this.tkswarmBrowserLabel?.()||'第一页自研浏览器')}<br>账号：${this.esc(names)}<br>素材：${this.esc(matText)}，策略 ${this.esc(strategyLabel)}${pairLine}${taskCountLine}${ytSyncLine}<br>标题/文案/封面：使用各素材自身的分享配置<br>计划：${this.esc(w.scheduledAt||'立即')}</div>`},
+    collectWizard(){const w=this.wizard;const read=name=>{const el=document.querySelector(`[name="${name}"]`);return el?el.value:undefined};const kind=this.wizardStepKind(this.wizardStep,w);if(kind==='accounts'){if(this.wizardIsRandom(w)||this.wizardIsIndependent(w))w.groupId='';else w.groupId=read('groupId')||'';w.accountIds=this.selectedAccountPickIds('wizard-accounts');if(this.wizardIsIndependent(w))w.accountIds=(w.accountIds||[]).slice(0,1)}if(kind==='materials'){w.materialSource='library';w.publishStrategy=w.publishMode==='independent'?'deduplicate':'random';w.materialIds=this.selectedMaterialPickerIds?this.selectedMaterialPickerIds('wizard-material-field'):(w.materialIds||[]);if(this.wizardIsIndependent(w))w.materialIds=(w.materialIds||[]).slice(0,1);w.selectedVideos=[]}if(kind==='compose'){this.syncWizardIdsFromPairs()}if(kind==='config'){w.name=read('name')||'';w.scheduledAt=read('scheduledAt')||'';w.threadCount=Number(read('threadCount')||1);w.saveTraffic=read('saveTraffic')==='true';w.deleteAfterPublish=read('deleteAfterPublish')==='true';const syncEl=document.querySelector('[name="syncYouTube"]');if(syncEl&&!this.wizardIsOrdered(w))w.syncYouTube=!!syncEl.checked;w.youtubePrivacy=read('youtubePrivacy')||w.youtubePrivacy||'unlisted';if(!this.wizardIsOrdered(w)&&w.syncYouTube)this.collectWizardYtAccounts()}},
     bindWizardMaterialSource(){const sel=document.querySelector('[name=materialSource]');if(!sel||sel._bound)return;sel._bound=true;const sync=()=>{const isFiles=(sel.value||'files')!=='library';const f=document.querySelector('#wizard-file-fields');const l=document.querySelector('#wizard-library-fields');if(f)f.style.display=isFiles?'':'none';if(l)l.style.display=isFiles?'none':''};sel.addEventListener('change',sync);sync()},
     renderWizardVideosListHtml(){const list=this.wizard?.selectedVideos||[];if(!list.length){return '<div class="muted" style="font-size:13px;padding:8px 0">暂未选择视频文件。点击上方区域即可选择本地视频。</div>'}const readyCount=list.filter(v=>v.status==='ready').length;const totalSize=list.reduce((acc,v)=>acc+(v.size||0),0);return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0"><span style="font-weight:600;font-size:13px">已选视频：${readyCount}/${list.length} 个就绪 (${this.formatFileSize(totalSize)})</span><div style="display:flex;gap:8px"><button type="button" class="tiny ghost" onclick="document.querySelector('#wizard-video-input')?.click()">+ 继续添加</button><button type="button" class="tiny danger" onclick="app.clearWizardVideos()">清空全部</button></div></div><div class="table-card" style="max-height:220px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="background:#f8fafc;text-align:left;border-bottom:1px solid #e2e8f0"><th style="padding:6px 10px">文件名</th><th style="padding:6px 10px;width:90px">大小</th><th style="padding:6px 10px;width:120px">状态</th><th style="padding:6px 10px;width:60px;text-align:center">操作</th></tr></thead><tbody>${list.map((v,i)=>{let statusBadge='<span class="badge queued">等待中</span>';if(v.status==='ready')statusBadge='<span class="badge success">已就绪</span>';else if(v.status==='uploading')statusBadge=`<span class="badge running">上传中 ${v.progress||0}%</span>`;else if(v.status==='error')statusBadge=`<span class="badge failed" title="${this.esc(v.error||'上传失败')}">失败</span>`;return `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:6px 10px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${this.esc(v.name)}">🎬 ${this.esc(v.name)}</td><td style="padding:6px 10px;color:#64748b">${this.formatFileSize(v.size||0)}</td><td style="padding:6px 10px">${statusBadge}</td><td style="padding:6px 10px;text-align:center"><button type="button" class="tiny danger" onclick="app.removeWizardVideo(${i})" style="padding:2px 6px">移除</button></td></tr>`}).join('')}</tbody></table></div>`},
     renderWizardVideosList(){const container=document.querySelector('#wizard-video-list-container');if(container)container.innerHTML=this.renderWizardVideosListHtml()},
@@ -1485,14 +1699,35 @@
       if(kind==='compose'){
         this.syncWizardIdsFromPairs();
         if(!(w.pairs||[]).filter(p=>p.accountId&&p.materialId).length){this.toast('请至少添加一条发布组合',true);return}
+        if(w.syncYouTube){
+          const missing=(w.pairs||[]).filter(p=>p.accountId&&p.materialId&&!Number(p.youtubeAccountId));
+          if(missing.length){this.toast(`已开启 YouTube 同步，还有 ${missing.length} 条组合未选择 YouTube 账号`,true);return}
+        }
       }
-      if(kind==='config'&&!w.name){this.toast(this.wizardIsOrdered(w)||this.wizardIsRandom(w)?'请填写任务名称前缀':'请填写任务名称',true);return}
+      if(kind==='config'){
+        if(!w.name){this.toast(this.wizardIsOrdered(w)||this.wizardIsRandom(w)?'请填写任务名称前缀':'请填写任务名称',true);return}
+        if(!this.wizardIsOrdered(w)&&w.syncYouTube){
+          this.collectWizardYtAccounts();
+          const ytIds=w.youtubeAccountIds||[];
+          if(!ytIds.length){this.toast('请选择 YouTube 账号，或取消勾选同步',true);return}
+          if(this.wizardIsRandom(w)&&ytIds.length>this.wizardMaterialCount(w)){
+            this.toast(`随机发布 YouTube 账号数不得大于视频数（最多 ${this.wizardMaterialCount(w)}）`,true);return;
+          }
+          if(this.wizardIsIndependent(w)&&ytIds.length>1){this.toast('独立发布只能选择 1 个 YouTube 账号',true);return}
+        }
+      }
       this.wizardStep+=1;
       if(this.wizardStepKind(this.wizardStep)==='config'&&!String(w.name||'').trim()){
         // 群发/随机：仅填前缀；完整名在提交时由 buildPairTaskName 拼接，避免重复
         w.name=(this.wizardIsOrdered(w)||this.wizardIsRandom(w))
           ? this.publishModeLabel(w.publishMode||'random')
           : this.buildWizardTaskName(w);
+      }
+      if(this.wizardStepKind(this.wizardStep)==='config'&&!this.wizardIsOrdered(w)){
+        await this.ensureWizardYtAccountsCache();
+      }
+      if(this.wizardStepKind(this.wizardStep)==='compose'&&w.syncYouTube){
+        await this.ensureWizardYtAccountsCache();
       }
       document.querySelector('#content').innerHTML=this.matrixTabs('tasks')+this.wizardPanel();
       await this.maybeFillWizardAccounts();
@@ -1566,6 +1801,18 @@
         ids=ids.slice(0,1);
         w.groupId='';
       }
+      if(w.syncYouTube){
+        if(this.wizardIsOrdered(w)){
+          const missing=(w.pairs||[]).filter(p=>Number(p.accountId)&&Number(p.materialId)&&!Number(p.youtubeAccountId));
+          if(missing.length){this.toast(`已开启 YouTube 同步，还有 ${missing.length} 条组合未选择 YouTube`,true);return}
+        }else{
+          const ytIds=(w.youtubeAccountIds||[]).map(Number).filter(Boolean);
+          if(!ytIds.length){this.toast('请选择 YouTube 账号，或取消勾选同步',true);return}
+          if(this.wizardIsRandom(w)&&ytIds.length>materialIds.length){
+            this.toast(`随机发布 YouTube 账号数不得大于视频数（最多 ${materialIds.length}）`,true);return;
+          }
+        }
+      }
       if(!(await this.ensureBitOnline('发布')))return;
       const scheduledLocal=w.scheduledAt||'';
       try{
@@ -1586,7 +1833,12 @@
             });
             ok+=1;
           }
-          this.toast(`${this.publishModeLabel(w.publishMode||'random')}：已创建 ${ok} 个任务并进入队列`);
+          let ytMsg='';
+          if(w.syncYouTube){
+            const ytPack=await this.enqueueWizardYouTubeSync(w,pairs);
+            ytMsg=`；YouTube 同步 ${ytPack?.createdCount||0}`;
+          }
+          this.toast(`${this.publishModeLabel(w.publishMode||'random')}：已创建 ${ok} 个任务并进入队列${ytMsg}`);
           this.wizardOpen=false;this.massWizardOpen=false;this.matrixTab='tasks';
           this.taskTypeFilter='publish';this.taskModeFilter=this.wizardIsOrdered(w)?'ordered':(this.wizardIsRandom(w)?'random':'');
           this.taskPage=1;this.refresh();
@@ -1608,10 +1860,67 @@
           payload,
         })});
         await this.api('/tasks/'+created.id+'/start',{method:'POST'});
-        this.toast((this.publishModeLabel(w.publishMode||'random'))+'已创建并进入队列');
+        let ytMsg='';
+        if(w.syncYouTube){
+          const indepPairs=[{accountId:ids[0],materialId:materialIds[0],youtubeAccountId:(w.youtubeAccountIds||[])[0]}];
+          const ytPack=await this.enqueueWizardYouTubeSync(w,indepPairs);
+          ytMsg=`；YouTube 同步 ${ytPack?.createdCount||0}`;
+        }
+        this.toast((this.publishModeLabel(w.publishMode||'random'))+'已创建并进入队列'+ytMsg);
         this.wizardOpen=false;this.massWizardOpen=false;this.matrixTab='tasks';
         this.taskTypeFilter='publish';this.taskModeFilter='independent';this.taskPage=1;this.refresh();
       }catch(e){this.toast(e.message,true)}
+    },
+    async enqueueWizardYouTubeSync(w,pairs){
+      w=w||this.wizard||{};
+      let ytPairs=[];
+      if(this.wizardIsOrdered(w)){
+        ytPairs=(w.pairs||[])
+          .filter(p=>Number(p.accountId)&&Number(p.materialId)&&Number(p.youtubeAccountId))
+          .map(p=>({
+            materialId:Number(p.materialId),
+            youtubeAccountId:Number(p.youtubeAccountId),
+            tiktokAccountId:Number(p.accountId),
+          }));
+      }else if(this.wizardIsRandom(w)){
+        const base=(pairs||[]).map(p=>({accountId:Number(p.accountId),materialId:Number(p.materialId)}));
+        const ytIds=this.shuffleIds([...(w.youtubeAccountIds||[]).map(Number).filter(Boolean)]);
+        if(ytIds.length>base.length){
+          throw new Error(`随机发布 YouTube 账号数不得大于视频数（最多 ${base.length}）`);
+        }
+        const shuffledPairs=base.slice();
+        for(let i=shuffledPairs.length-1;i>0;i--){
+          const j=Math.floor(Math.random()*(i+1));
+          const t=shuffledPairs[i];shuffledPairs[i]=shuffledPairs[j];shuffledPairs[j]=t;
+        }
+        ytPairs=ytIds.map((youtubeAccountId,i)=>({
+          materialId:shuffledPairs[i].materialId,
+          youtubeAccountId,
+          tiktokAccountId:shuffledPairs[i].accountId,
+        }));
+      }else{
+        const p=(pairs||[])[0]||{};
+        const ytId=Number(p.youtubeAccountId||(w.youtubeAccountIds||[])[0]||0);
+        if(ytId){
+          ytPairs=[{
+            materialId:Number(p.materialId||(w.materialIds||[])[0]||0),
+            youtubeAccountId:ytId,
+            tiktokAccountId:Number(p.accountId||(w.accountIds||[])[0]||0),
+          }];
+        }
+      }
+      if(!ytPairs.length)return {createdCount:0};
+      return this.api('/youtube/sync',{
+        method:'POST',
+        body:JSON.stringify({
+          pairs:ytPairs,
+          privacyStatus:w.youtubePrivacy||'unlisted',
+          name:w.name||'',
+          source:'tiktok_publish_wizard',
+          runNow:false,
+          force:false,
+        }),
+      });
     },
 
     /* ========== 视频删除向导 ========== */
