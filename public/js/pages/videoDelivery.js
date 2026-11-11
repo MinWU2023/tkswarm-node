@@ -411,6 +411,96 @@
       this.videoDeliveryOrderPage = 1;
       this.refresh();
     },
+    videoDeliveryShouhuzhePanelHtml(client = {}) {
+      const exists = !!client.shouhuzheExists;
+      const ops = String(client.shouhuzheOperatorName || '').trim();
+      const matchName = String(client.shouhuzheCompanyName || '').trim();
+      const matchId = String(client.shouhuzheCompanyId || '').trim();
+      const synced = String(client.shouhuzheSyncedAt || '').slice(0, 19).replace('T', ' ');
+      const err = String(client.shouhuzheLastError || '').trim();
+      const statusBadge = exists
+        ? '<span class="vd-shz-badge vd-shz-badge--ok">已创建</span>'
+        : '<span class="vd-shz-badge vd-shz-badge--miss">未创建</span>';
+      return `
+        <section class="vd-shz-card" id="vd-shz-panel" data-client-id="${Number(client.id || 0)}">
+          <div class="vd-shz-card__head">
+            <div class="vd-shz-card__title">
+              <span class="vd-shz-card__icon" aria-hidden="true">◈</span>
+              <div>
+                <div class="vd-shz-card__label">守护者企业</div>
+                <div class="vd-shz-card__sub muted">按企业名称查询是否已创建及关联运营</div>
+              </div>
+            </div>
+            <button class="ghost tiny vd-shz-refresh" type="button" id="vd-shz-refresh"
+              onclick="app.refreshVideoDeliveryShouhuzheCompany(${Number(client.id || 0)})">刷新</button>
+          </div>
+          <div class="vd-shz-card__grid">
+            <div class="vd-shz-item">
+              <div class="vd-shz-item__k">是否创建</div>
+              <div class="vd-shz-item__v" id="vd-shz-exists">${statusBadge}</div>
+            </div>
+            <div class="vd-shz-item">
+              <div class="vd-shz-item__k">关联运营用户</div>
+              <div class="vd-shz-item__v" id="vd-shz-ops">${ops ? this.esc(ops) : '<span class="muted">未关联</span>'}</div>
+            </div>
+            <div class="vd-shz-item vd-shz-item--wide">
+              <div class="vd-shz-item__k">匹配企业</div>
+              <div class="vd-shz-item__v" id="vd-shz-match">${
+                matchName
+                  ? `${this.esc(matchName)}${matchId ? ` <span class="vd-shz-id">#${this.esc(matchId)}</span>` : ''}`
+                  : '<span class="muted">暂无匹配</span>'
+              }</div>
+            </div>
+          </div>
+          <div class="vd-shz-card__foot muted" id="vd-shz-foot">
+            ${synced ? `最近同步 ${this.esc(synced)}` : '尚未同步'}
+            ${err ? ` · <span class="vd-shz-err">${this.esc(err)}</span>` : ''}
+          </div>
+        </section>`;
+    },
+    patchVideoDeliveryShouhuzhePanel(client = {}) {
+      const panel = document.querySelector('#vd-shz-panel');
+      if (!panel) return;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = this.videoDeliveryShouhuzhePanelHtml(client);
+      const next = wrap.firstElementChild;
+      if (next) panel.replaceWith(next);
+    },
+    async syncVideoDeliveryShouhuzheCompany(clientId, { force = false, silent = false } = {}) {
+      const id = Number(clientId || 0);
+      if (!id) return null;
+      const btn = document.querySelector('#vd-shz-refresh');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = force ? '刷新中…' : '同步中…';
+      }
+      try {
+        const pack = await this.api(`/video-delivery-clients/${id}/shouhuzhe-company`, {
+          method: 'POST',
+          body: JSON.stringify({ force: !!force }),
+        });
+        const client = pack?.client || pack;
+        if (client) this.patchVideoDeliveryShouhuzhePanel(client);
+        if (!silent) this.toast(pack?.message || '守护者企业信息已更新');
+        return client;
+      } catch (e) {
+        try {
+          const fresh = await this.api(`/video-delivery-clients/${id}`);
+          if (fresh) this.patchVideoDeliveryShouhuzhePanel(fresh);
+        } catch (_) {}
+        if (!silent) this.toast(e.message || '守护者企业查询失败', true);
+        return null;
+      } finally {
+        const b = document.querySelector('#vd-shz-refresh');
+        if (b) {
+          b.disabled = false;
+          b.textContent = '刷新';
+        }
+      }
+    },
+    async refreshVideoDeliveryShouhuzheCompany(clientId) {
+      return this.syncVideoDeliveryShouhuzheCompany(clientId, { force: true, silent: false });
+    },
     async openVideoDeliveryAuth(clientId) {
       const id = Number(clientId || 0);
       if (!id) return;
@@ -441,6 +531,7 @@
             </div>
             ${authBadge}
           </div>
+          ${this.videoDeliveryShouhuzhePanelHtml(client)}
           <div class="vd-auth-form">
             <div class="vd-auth-row">
               <label for="vd-svc-version">服务版本</label>
@@ -487,6 +578,12 @@
           }
         },
       });
+      // 关联运营为空时自动请求守护者并入库
+      if (!String(client.shouhuzheOperatorName || '').trim()) {
+        setTimeout(() => {
+          this.syncVideoDeliveryShouhuzheCompany(id, { force: false, silent: true });
+        }, 40);
+      }
     },
     async saveVideoDeliveryService(clientId, opts = {}) {
       if (!this.canVideoDeliveryWrite()) return null;

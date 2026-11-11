@@ -914,6 +914,48 @@ button:active{transform:translateY(0) scale(.98)}
 .vd-auth-points b{color:#047857}
 .vd-btn-check{background:linear-gradient(135deg,#10b981,#059669)!important;border-color:transparent!important;color:#fff!important}
 
+/* 授权弹框 · 守护者企业信息 */
+.vd-shz-card{
+  display:flex;flex-direction:column;gap:12px;
+  padding:14px 16px;border-radius:14px;
+  background:linear-gradient(180deg,#f8fafc 0%,#ffffff 100%);
+  border:1px solid #e2e8f0;
+  box-shadow:0 10px 24px rgba(15,23,42,.04);
+}
+.vd-shz-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.vd-shz-card__title{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.vd-shz-card__icon{
+  width:34px;height:34px;border-radius:10px;flex:0 0 auto;
+  display:grid;place-items:center;font-size:14px;color:#0f766e;
+  background:rgba(15,118,110,.08);border:1px solid rgba(15,118,110,.14);
+}
+.vd-shz-card__label{font-size:13px;font-weight:750;color:#0f172a;letter-spacing:.01em}
+.vd-shz-card__sub{font-size:12px;line-height:1.4;margin-top:2px}
+.vd-shz-refresh{flex:0 0 auto}
+.vd-shz-card__grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;
+}
+.vd-shz-item{
+  padding:10px 12px;border-radius:10px;
+  background:#fff;border:1px solid #eef2f7;
+}
+.vd-shz-item--wide{grid-column:1 / -1}
+.vd-shz-item__k{font-size:11px;font-weight:650;color:#64748b;letter-spacing:.04em;text-transform:none;margin-bottom:4px}
+.vd-shz-item__v{font-size:13px;font-weight:650;color:#0f172a;line-height:1.4;word-break:break-word}
+.vd-shz-badge{
+  display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;
+  font-size:12px;font-weight:700;letter-spacing:.02em;
+}
+.vd-shz-badge--ok{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+.vd-shz-badge--miss{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+.vd-shz-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#64748b;font-weight:600}
+.vd-shz-card__foot{font-size:12px;line-height:1.45}
+.vd-shz-err{color:#b91c1c}
+@media (max-width:560px){
+  .vd-shz-card__grid{grid-template-columns:1fr}
+  .vd-shz-item--wide{grid-column:auto}
+}
+
 /* 积分充值弹框 */
 .vd-recharge{display:flex;flex-direction:column;gap:0;margin:-4px 0 0}
 .vd-recharge__hero{

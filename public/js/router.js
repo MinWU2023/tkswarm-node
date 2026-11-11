@@ -3,7 +3,7 @@
  */
 (function () {
   // �?pages/*.js 后必须同�?+1：子页面�??v=CACHE_V 加载，版本不变浏览器会一直用缓存的旧文件
-  const CACHE_V = '12.46';
+  const CACHE_V = '12.48';
   const VIEW_TO_PAGE = {
     accounts: 'accounts',
     proxies: 'proxies',
@@ -33,6 +33,9 @@
     dmWeightConfig: 'dmWeightConfig',
     nocaptchaKeys: 'nocaptchaKeys',
     videoDeliveryTypes: 'videoDeliveryTypes',
+    youtubeConfig: 'youtubeConfig',
+    youtubeAccounts: 'youtubeAccounts',
+    youtubeSync: 'youtubeSync',
     templates: 'templates',
     envInstallers: 'versions',
     uids: 'chat',
