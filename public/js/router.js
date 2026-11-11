@@ -2,8 +2,8 @@
  * Hash router + lazy page loader for tkswarm-node
  */
 (function () {
-  // �?pages/*.js 后必须同�?+1：子页面�??v=CACHE_V 加载，版本不变浏览器会一直用缓存的旧文件
-  const CACHE_V = '12.48';
+  // 改 pages/*.js 后必须同步 +1：子页面按 ?v=CACHE_V 加载，版本不变浏览器会一直用缓存的旧文件
+  const CACHE_V = '12.49';
   const VIEW_TO_PAGE = {
     accounts: 'accounts',
     proxies: 'proxies',
@@ -105,7 +105,7 @@
     if (['accounts', 'publish', 'warm', 'aiLeads'].includes(page)) {
       deps.push({ kind: 'page', name: 'industryData' });
     }
-    // 养号列表复用矩阵任务的三点菜�?/ 批量启停等方法（toggleTaskOps、taskAction…）
+    // 养号列表复用矩阵任务的三点菜单 / 批量启停等方法（toggleTaskOps、taskAction…）
     if (page === 'warm') {
       deps.push({ kind: 'page', name: 'publish' });
     }
@@ -145,7 +145,7 @@
     return page;
   }
 
-  /** 菜单一点就切导�?页壳，不等人脚本/接口 */
+  /** 菜单一点就切导航页壳，不等人脚本/接口 */
   function paintNavigateChrome(view, subview) {
     const app = window.app;
     if (!app || !app.canNavigateMenu(view, subview || '')) return;
@@ -155,7 +155,8 @@
       : view;
     const [pageTitle] = app.viewPageMeta?.(metaKey) || [];
     if (pageTitle) document.title = pageTitle + ' - TKSwarm';
-    // 同页矩阵 Tab 软切：不抢壳；但若仍停在 page-shell-loading 或矩阵壳未就绪，必须重画�?    if (view === 'publish' && app.view === 'publish') {
+    // 同页矩阵 Tab 软切：不抢壳；但若仍停在 page-shell-loading 或矩阵壳未就绪，必须重画
+    if (view === 'publish' && app.view === 'publish') {
       const content = document.querySelector('#content');
       const stuckShell = !!content?.querySelector?.('.page-shell-loading');
       const matrixReady = !!(content?.querySelector?.('#matrix-body') && content?.querySelector?.('.matrix-tabs'));
@@ -182,8 +183,8 @@
       const body = app.ensureMatrixShell(tab);
       if (body && (body.querySelector('.page-shell-loading') || !body.children.length || body.querySelector('.tk-list-loading'))) {
         body.innerHTML = (window.UI && UI.listLoadingHtml)
-          ? UI.listLoadingHtml({ title: '正在加载数据', desc: '同步列表中，请稍候�?, fill: true })
-          : '<div class="muted" style="padding:48px;text-align:center">加载中�?/div>';
+          ? UI.listLoadingHtml({ title: '正在加载数据', desc: '同步列表中，请稍候', fill: true })
+          : '<div class="muted" style="padding:48px;text-align:center">加载中…</div>';
       }
     } catch (e) {
       console.warn('[router] demotePublishShell', e);
@@ -194,7 +195,7 @@
     const app = window.app;
     if (!app) return;
     if (!app.canNavigateMenu(view, subview || '')) {
-      app.toast('当前角色无权访问该菜�?, true);
+      app.toast('当前角色无权访问该菜单', true);
       return;
     }
     paintNavigateChrome(view, subview || '');
@@ -207,13 +208,14 @@
       if (shell) {
         shell.classList.add('is-fail');
         const tip = shell.querySelector('.loader-text span') || shell.querySelector('.muted');
-        if (tip) tip.textContent = '加载失败�? + (e.message || '脚本未加�?);
+        if (tip) tip.textContent = '加载失败：' + (e.message || '脚本未加载');
         const title = shell.querySelector('.loader-text b');
         if (title) title.textContent = '加载失败';
       }
       return;
     }
-    // 脚本已就绪：立刻拆掉「正在加载页面」壳，再拉列表数�?    if (view === 'publish') demotePublishShell(app, subview || '');
+    // 脚本已就绪：立刻拆掉「正在加载页面」壳，再拉列表数据
+    if (view === 'publish') demotePublishShell(app, subview || '');
     navigating = true;
     try {
       if (typeof app._navigateInternal === 'function') {
@@ -265,7 +267,7 @@
       }
       const fn = this['render' + this.view[0].toUpperCase() + this.view.slice(1)];
       if (typeof fn !== 'function') {
-        this.toast('页面模块未加�? ' + this.view, true);
+        this.toast('页面模块未加载: ' + this.view, true);
         return;
       }
       return _refresh(opts);
