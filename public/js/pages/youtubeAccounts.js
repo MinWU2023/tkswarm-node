@@ -161,7 +161,7 @@
             <td>${this.esc(companyLabel)}</td>
             <td>${this.esc(r.channelId || '-')}<div class="muted" style="font-size:12px">${this.esc(r.channelCustomUrl || '')}</div></td>
             <td>${this.youtubeAuthBadge(r)}</td>
-            <td>${this.esc(r.lastLoginAt || r.updatedAt || '-')}</td>
+            <td title="Token刷新 / 最近登录">${this.esc(String(r.tokenRefreshedAt || r.lastLoginAt || r.updatedAt || '-').slice(0, 16))}</td>
             <td class="muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${this.esc(r.lastError || '')}">${this.esc(r.lastError || '-')}</td>
             <td><div class="task-ops-cell yt-acc-ops-cell" style="white-space:nowrap">
               <button class="tiny ghost" type="button" onclick="app.editYoutubeAccount(${r.id})">编辑</button>
@@ -195,7 +195,7 @@
             </div>
             <table class="ai-lead-table">
               <thead><tr>
-                <th>ID</th><th>备注名</th><th>频道</th><th>关联企业</th><th>Channel ID</th><th>授权</th><th>最近</th><th>错误</th><th>操作</th>
+                <th>ID</th><th>备注名</th><th>频道</th><th>关联企业</th><th>Channel ID</th><th>授权</th><th>Token刷新</th><th>错误</th><th>操作</th>
               </tr></thead>
               <tbody>${rows || '<tr><td colspan="9" class="empty">暂无账号，请先配置 OAuth 后添加并授权</td></tr>'}</tbody>
             </table>
