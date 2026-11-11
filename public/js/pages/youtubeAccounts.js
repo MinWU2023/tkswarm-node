@@ -443,6 +443,14 @@
         const renderTop = (c) => {
           const isCreator = !!c.isCreatorComment;
           const replied = !!c.creatorReplied;
+          const autoSt = String(c.autoHandleStatus || '');
+          const autoTag = !isCreator && autoSt === 'deleted'
+            ? '<span class="yt-cmt-tag yt-cmt-tag--deleted">已自动删除</span>'
+            : (!isCreator && autoSt === 'replied'
+              ? '<span class="yt-cmt-tag yt-cmt-tag--replied">已自动回复</span>'
+              : (!isCreator && autoSt === 'error'
+                ? `<span class="yt-cmt-tag yt-cmt-tag--pending" title="${this.esc(c.autoHandleNote || '')}">自动处理失败</span>`
+                : ''));
           const statusTag = isCreator
             ? '<span class="yt-cmt-tag yt-cmt-tag--creator">创作者评论</span>'
             : (replied
@@ -455,7 +463,7 @@
               <div class="yt-cmt-main">
                 <div class="yt-cmt-head">
                   <b>${this.esc(c.authorDisplayName || '用户')}</b>
-                  ${statusTag}
+                  ${statusTag}${autoTag}
                   <span class="muted">${this.esc(String(c.publishedAt || '').slice(0, 16))}</span>
                   <span class="yt-cmt-like">👍 ${this.ytFmtNum(c.likeCount)}</span>
                   ${c.moderationStatus ? `<span class="yt-chip">${this.esc(c.moderationStatus)}</span>` : ''}

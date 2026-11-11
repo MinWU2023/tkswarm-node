@@ -1681,6 +1681,7 @@ button:active{transform:translateY(0) scale(.98)}
 .yt-cmt-tag--creator{background:#dbeafe;color:#1d4ed8;border-color:#bfdbfe}
 .yt-cmt-tag--replied{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
 .yt-cmt-tag--pending{background:#ffedd5;color:#c2410c;border-color:#fdba74}
+.yt-cmt-tag--deleted{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
 .yt-cmt-avatar{
   width:34px;height:34px;border-radius:999px;object-fit:cover;flex:0 0 auto;
   background:#e2e8f0;
