@@ -172,6 +172,33 @@ async function ensureConsistentUaAndClientHints(page, openedMeta = null) {
       }
       await page.addInitScript(uaPatchScript).catch(() => {});
       await page.evaluate(uaPatchScript).catch(() => {});
+
+      // 指纹加固：补齐自研内核相对官方 Chrome 的缺失项（plugins/WebGL/chrome 对象/字体/时区等）。
+      // 必须与上面的 UA、语言保持一致，否则反而更容易被识别。
+      try {
+        const { hardenFingerprint } = require('./fingerprint-hardening');
+        const tz = String(meta?.timezone || meta?.fp?.timezone || meta?.timeZone || '').trim();
+        // 每环境固定种子：同一环境多次注册得到的噪声一致，避免出现「每次指纹都变」的异常特征
+        const seedBase = String(meta?.profileId || meta?.profile_id || meta?.id || page.url() || '').trim();
+        let seed = 1;
+        for (let i = 0; i < seedBase.length; i += 1) {
+          seed = (seed * 31 + seedBase.charCodeAt(i)) % 100000;
+        }
+        await hardenFingerprint(page, {
+          userAgent: ua,
+          platform: navPlatform,
+          locale: primaryLang,
+          timezone: tz,
+          seed: seed || 1,
+        }).catch(() => {});
+        // 时区只能通过 CDP 才能真正生效（JS 补丁只是兜底）
+        if (tz) {
+          const cdpForTz = page.__tkUaCdpSession;
+          if (cdpForTz) {
+            await cdpForTz.send('Emulation.setTimezoneOverride', { timezoneId: tz }).catch(() => {});
+          }
+        }
+      } catch { /* ignore */ }
     } catch { /* ignore */ }
   })();
   await page.__tkUaConsistentPromise.catch(() => {});

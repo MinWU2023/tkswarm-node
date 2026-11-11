@@ -350,6 +350,21 @@ async function connectAccount(accountId, url, action = 'publish', options = {}) 
     if (!openedInner?.ws && !openedInner?.http) {
       throw new Error(`${synced.provider.backendLabel || '本地浏览器'}未返回 CDP 地址`);
     }
+    // 把账号地区 / 时区 / 语言挂到 opened 上，供 CDP 层的指纹加固使用：
+    // 时区与出口 IP 矛盾是最强的风控信号（服务器 Asia/Shanghai、IP 在 US）
+    try {
+      const { timezoneForCountry } = require('./profile-provision');
+      const rawCountry = String(account.country || bundle.country || account.proxy_country || '').trim();
+      openedInner.country = openedInner.country || rawCountry;
+      openedInner.profileId = openedInner.profileId || synced.profileId;
+      if (!openedInner.timezone && rawCountry) {
+        openedInner.timezone = timezoneForCountry(rawCountry);
+      }
+      if (!openedInner.locale && openedInner.timezone) {
+        const { languageForCountry } = require('./profile-provision');
+        openedInner.locale = languageForCountry(rawCountry);
+      }
+    } catch { /* ignore */ }
     await synced.provider.heartbeat?.(synced.profileId)?.catch?.(() => {});
     const browserInner = await connectPlaywrightOverCDP(openedInner, {
       timeoutMs: 60000,

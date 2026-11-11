@@ -29,6 +29,45 @@ function languageForCountry(rawCountry) {
   return languageByCountry[key] || 'en-US';
 }
 
+/**
+ * 按国家推断代表时区。
+ * 时区与出口 IP 地区矛盾是风控最强的信号之一（服务器在 Asia/Shanghai、IP 在 US），
+ * 所以建环境时就要把时区定下来，由指纹加固模块通过 CDP setTimezoneOverride 生效。
+ */
+const timezoneByCountry = {
+  CN: 'Asia/Shanghai', TW: 'Asia/Taipei', HK: 'Asia/Hong_Kong', MO: 'Asia/Macau',
+  US: 'America/New_York', CA: 'America/Toronto', MX: 'America/Mexico_City', BR: 'America/Sao_Paulo',
+  GB: 'Europe/London', IE: 'Europe/Dublin', DE: 'Europe/Berlin', FR: 'Europe/Paris',
+  ES: 'Europe/Madrid', IT: 'Europe/Rome', NL: 'Europe/Amsterdam', BE: 'Europe/Brussels',
+  CH: 'Europe/Zurich', AT: 'Europe/Vienna', SE: 'Europe/Stockholm', NO: 'Europe/Oslo',
+  DK: 'Europe/Copenhagen', FI: 'Europe/Helsinki', PL: 'Europe/Warsaw', PT: 'Europe/Lisbon',
+  RU: 'Europe/Moscow', UA: 'Europe/Kiev', TR: 'Europe/Istanbul', AE: 'Asia/Dubai',
+  SA: 'Asia/Riyadh', IL: 'Asia/Jerusalem', IN: 'Asia/Kolkata', PK: 'Asia/Karachi',
+  BD: 'Asia/Dhaka', TH: 'Asia/Bangkok', VN: 'Asia/Ho_Chi_Minh', ID: 'Asia/Jakarta',
+  MY: 'Asia/Kuala_Lumpur', SG: 'Asia/Singapore', PH: 'Asia/Manila', JP: 'Asia/Tokyo',
+  KR: 'Asia/Seoul', AU: 'Australia/Sydney', NZ: 'Pacific/Auckland', ZA: 'Africa/Johannesburg',
+  EG: 'Africa/Cairo', NG: 'Africa/Lagos', KE: 'Africa/Nairobi',
+  // 中文国名
+  '中国': 'Asia/Shanghai', '台湾': 'Asia/Taipei', '香港': 'Asia/Hong_Kong', '澳门': 'Asia/Macau',
+  '美国': 'America/New_York', '加拿大': 'America/Toronto', '墨西哥': 'America/Mexico_City',
+  '巴西': 'America/Sao_Paulo', '英国': 'Europe/London', '德国': 'Europe/Berlin',
+  '法国': 'Europe/Paris', '西班牙': 'Europe/Madrid', '意大利': 'Europe/Rome',
+  '荷兰': 'Europe/Amsterdam', '瑞士': 'Europe/Zurich', '瑞典': 'Europe/Stockholm',
+  '波兰': 'Europe/Warsaw', '葡萄牙': 'Europe/Lisbon', '俄罗斯': 'Europe/Moscow',
+  '土耳其': 'Europe/Istanbul', '阿联酋': 'Asia/Dubai', '沙特阿拉伯': 'Asia/Riyadh',
+  '印度': 'Asia/Kolkata', '巴基斯坦': 'Asia/Karachi', '泰国': 'Asia/Bangkok',
+  '越南': 'Asia/Ho_Chi_Minh', '印度尼西亚': 'Asia/Jakarta', '马来西亚': 'Asia/Kuala_Lumpur',
+  '新加坡': 'Asia/Singapore', '菲律宾': 'Asia/Manila', '日本': 'Asia/Tokyo',
+  '韩国': 'Asia/Seoul', '澳大利亚': 'Australia/Sydney', '新西兰': 'Pacific/Auckland',
+  '南非': 'Africa/Johannesburg', '埃及': 'Africa/Cairo', '尼日利亚': 'Africa/Lagos',
+};
+
+function timezoneForCountry(rawCountry) {
+  const raw = String(rawCountry || '').trim();
+  const key = /[\u4e00-\u9fff]/.test(raw) ? raw : raw.toUpperCase();
+  return timezoneByCountry[key] || '';
+}
+
 function extractProfileId(profile, provider) {
   const raw = profile?.id ?? profile?.profileId ?? profile?.browserId ?? '';
   const id = String(raw || '').trim();
@@ -152,6 +191,8 @@ async function provisionProfileForAccount(account, provider, opts = {}) {
 module.exports = {
   languageByCountry,
   languageForCountry,
+  timezoneByCountry,
+  timezoneForCountry,
   extractProfileId,
   persistBrowserBinding,
   provisionProfileForAccount,
