@@ -16,6 +16,11 @@ function automationDir() {
 async function tryRefreshCaptchaOrErrorModal(page) {
   if (!page || page.isClosed?.()) return false;
   try {
+    // 手机验证弹框绝不能点「刷新/重试」：一点弹框就消失，或第二步直接空白。
+    // 这类弹框只能人工完成，检测到就直接返回，不碰页面。
+    const { detectPhoneVerify } = require('./browser/human-verify-gate');
+    const phone = await detectPhoneVerify(page);
+    if (phone.present) return false;
     const hasCaptchaShell = await page.evaluate(() => Boolean(
       document.querySelector(
         '#captcha-verify-container, .captcha_verify_container, [id*="captcha" i], [class*="captcha" i], [class*="secsdk" i], iframe[src*="captcha" i], iframe[src*="verify" i], iframe[src*="secsdk" i]'
@@ -51,6 +56,18 @@ async function tryRefreshCaptchaOrErrorModal(page) {
 }
 
 async function inspectPage(page) {
+  // 手机验证优先判定：命中后直接返回，既不点刷新、也不跑旋转验证码求解器，
+  // 避免自动化把弹框点掉或把第二步弹框弄成空白。旋转验证码逻辑完全不受影响。
+  const phone = await require('./browser/human-verify-gate').detectPhoneVerify(page).catch(() => ({ present: false }));
+  if (phone.present) {
+    const gate = page.__hvGate;
+    if (gate) {
+      gate.paused = true;
+      gate.reason = phone.reason;
+      gate.since = gate.since || Date.now();
+    }
+    return { blocked: true, kind: 'phone_verify', reason: `手机验证：${phone.reason}`, url: String(page.url() || '') };
+  }
   let rotSolved = false;
   try {
     const { solveRotateCaptchaIfPresent } = require('./browser/nocaptchaai');
@@ -92,6 +109,17 @@ async function inspectPage(page) {
  * 不应与验证码/全局风控混为一谈。
  */
 async function inspectPageForDm(page) {
+  // 同 inspectPage：手机验证优先，命中就不再动页面
+  const phone = await require('./browser/human-verify-gate').detectPhoneVerify(page).catch(() => ({ present: false }));
+  if (phone.present) {
+    const gate = page.__hvGate;
+    if (gate) {
+      gate.paused = true;
+      gate.reason = phone.reason;
+      gate.since = gate.since || Date.now();
+    }
+    return { blocked: true, kind: 'phone_verify', reason: `手机验证：${phone.reason}`, url: String(page.url() || '') };
+  }
   let rotSolved = false;
   try {
     const { solveRotateCaptchaIfPresent } = require('./browser/nocaptchaai');

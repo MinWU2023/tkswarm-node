@@ -1434,7 +1434,7 @@ async function executeWorkBatch(batch) {
             }
           } catch (error) {
             const msg = String(error?.message || error || '');
-            if (/人机验证|滑块|拼图|captcha|security.?check|verify you.?re/i.test(msg)) {
+            if (/人机验证|滑块|拼图|captcha|security.?check|verify you.?re|手机验证|手机号验证|短信验证码|验证码|phone verification|PHONE_VERIFY_WAIT/i.test(msg)) {
               holdBrowserForHumanVerify = true;
               await reportHumanVerifyAndPause({
                 accountId,

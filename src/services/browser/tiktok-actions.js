@@ -510,6 +510,11 @@ async function connectAccount(accountId, url, action = 'publish', options = {}) 
     opened,
   };
   await attachSaveTraffic(conn, saveTraffic);
+  // 手机验证门禁：所有走 connectAccount 的任务（发布/养号/私信/拓客…）统一生效。
+  // 检测到手机验证弹框就冻结页面动作，交给人在窗口里完成，不影响旋转验证码求解。
+  try {
+    require('./human-verify-gate').installPhoneVerifyGate(conn, { accountId, action });
+  } catch { /* 门禁安装失败不影响任务 */ }
   if (keepBrowser) setActiveConnection(conn);
   return conn;
 }
@@ -521,6 +526,7 @@ async function connectAccount(accountId, url, action = 'publish', options = {}) 
  */
 async function closeConnection(connection, options = {}) {
   if (!connection) return;
+  try { require('./human-verify-gate').uninstallPhoneVerifyGate(connection); } catch { /* ignore */ }
   const force = options.force === true;
   let keepBrowser = false;
   try {
