@@ -90,7 +90,8 @@
       const gs=this.ownedGroups('proxy');
       const kw=encodeURIComponent(this.proxyKeyword||'');
       const st=encodeURIComponent(this.proxyStatus||'');
-      const d=await this.api(`/proxies?page=${this.proxyPage||1}&pageSize=20&keyword=${kw}&status=${st}${this.proxyGroupId?`&groupId=${encodeURIComponent(this.proxyGroupId)}`:''}`);
+      this._proxyCountryChoices=await this.proxyCountryChoices();
+      const d=await this.api(`/proxies?page=${this.proxyPage||1}&pageSize=20&keyword=${kw}&status=${st}${this.proxyGroupId?`&groupId=${encodeURIComponent(this.proxyGroupId)}`:''}${this.proxyCountryQs()}`);
       if(!still())return;
       this.proxies=d.items;
       const content=document.querySelector('#content');
@@ -130,6 +131,7 @@
             <div class="search-bar">
               <input id="proxy-search" class="input" placeholder="搜索名称或地址" value="${this.esc(this.proxyKeyword||'')}" onkeydown="if(event.key==='Enter')app.searchProxies()">
               <select id="proxy-status"><option value="">全部状态</option><option value="available" ${this.proxyStatus==='available'?'selected':''}>可用</option><option value="unavailable" ${this.proxyStatus==='unavailable'?'selected':''}>不可用</option><option value="unchecked" ${this.proxyStatus==='unchecked'?'selected':''}>未检测</option></select>
+              ${this.proxyCountrySelectHtml()}
               <button class="primary" onclick="app.searchProxies()">查询</button>
               <button class="ghost" type="button" onclick="app.resetProxyFilters()">重置</button>
             </div>
@@ -140,7 +142,42 @@
       </div>`;
       this.bindProxyChecks();
     },
-    resetProxyFilters(){this.proxyPage=1;this.proxyGroupId='';this.proxyKeyword='';this.proxyStatus='';this.refresh()},
+    /** 库里实际存在的国家（同一国家的不同写法归一到 ISO 码去重），供筛选下拉使用 */
+    async proxyCountryChoices(){
+      let rows=[];
+      try{const g=await this.api('/proxies/geo');rows=g?.countries||[]}catch{}
+      const map=new Map();
+      for(const r of rows){
+        const raw=String(r?.name||'').trim();
+        if(!raw)continue;
+        const iso=typeof this.resolveCountryIsoCode==='function'?this.resolveCountryIsoCode(raw):'';
+        const key=iso||raw;
+        if(!map.has(key)){
+          const label=iso&&typeof this.countryDisplayLabel==='function'?this.countryDisplayLabel(iso,{withCode:true}):raw;
+          map.set(key,{value:key,label,raws:[]});
+        }
+        map.get(key).raws.push(raw);
+      }
+      return [...map.values()].sort((a,b)=>String(a.label).localeCompare(String(b.label),'zh'));
+    },
+    proxyCountrySelectHtml(){
+      const cur=String(this.proxyCountry||'');
+      const opts=(this._proxyCountryChoices||[]).map(c=>`<option value="${this.esc(c.value)}" ${cur===c.value?'selected':''}>${this.esc(c.label)}</option>`).join('');
+      return `<select id="proxy-country" title="按国家筛选"><option value="">全部国家</option><option value="none" ${cur==='none'?'selected':''}>未指定国家</option>${opts}</select>`;
+    },
+    /** 当前国家筛选对应的查询串：把该国家在库里的所有写法用 | 拼起来 */
+    proxyCountryQs(){
+      const v=String(this.proxyCountry||'').trim();
+      if(!v)return '';
+      if(v==='none')return '&country=none';
+      const choice=(this._proxyCountryChoices||[]).find(c=>c.value===v);
+      const names=new Set([v,...(choice?.raws||[])]);
+      if(typeof this.countryProxyNames==='function'){
+        for(const n of this.countryProxyNames(v))if(n)names.add(String(n));
+      }
+      return '&country='+encodeURIComponent([...names].join('|'));
+    },
+    resetProxyFilters(){this.proxyPage=1;this.proxyGroupId='';this.proxyKeyword='';this.proxyStatus='';this.proxyCountry='';this.refresh()},
     bindProxyChecks(){
       const update=()=>{
         const n=document.querySelectorAll('.proxy-check:checked').length;
@@ -272,7 +309,7 @@
       }
     },
     selectedProxyIds(){return [...document.querySelectorAll('.proxy-check:checked')].map(x=>Number(x.value))},
-    async searchProxies(){this.proxyKeyword=document.querySelector('#proxy-search')?.value||'';this.proxyStatus=document.querySelector('#proxy-status')?.value||'';this.proxyPage=1;this.refresh()},
+    async searchProxies(){this.proxyKeyword=document.querySelector('#proxy-search')?.value||'';this.proxyStatus=document.querySelector('#proxy-status')?.value||'';this.proxyCountry=document.querySelector('#proxy-country')?.value||'';this.proxyPage=1;this.refresh()},
     batchMoveProxies(){if(!this.canUpdateProxies()){this.toast('当前角色无权修改代理',true);return}const ids=this.selectedProxyIds();if(!ids.length){this.toast('请先选择要转移的代理',true);return}const gs=this.ownedGroups('proxy');this.modal('批量转移代理分组',`<div class="form-grid">${this.select('groupId','目标代理分组',gs)}<div class="field full"><div class="muted">已选择 ${ids.length} 个代理。目标分组留空表示移出分组。</div></div></div>`,async d=>{await this.api('/proxies/batch-move',{method:'POST',body:JSON.stringify({proxyIds:ids,groupId:d.groupId?Number(d.groupId):null})});this.toast(`已转移 ${ids.length} 个代理`);this.closeModal();this.invalidateProxyCatalog();await this.loadRefs({force:true});this.refresh()})},
     async batchDeleteProxies(){if(!this.canDeleteProxies()){this.toast('当前角色无权删除代理',true);return}const ids=this.selectedProxyIds();if(!ids.length){this.toast('请先选择要删除的代理',true);return}if(!(await this.ask(`确定删除选中的 ${ids.length} 个代理吗？绑定这些代理的账号将自动变为未绑定代理。`)))return;try{const r=await this.api('/proxies/batch-delete',{method:'POST',body:JSON.stringify({proxyIds:ids})});this.toast(`已删除 ${r.deleted} 个代理，解除 ${r.unboundAccounts} 个账号的代理绑定`);this.invalidateProxyCatalog();await this.loadRefs({force:true});this.refresh()}catch(e){this.toast(e.message,true)}},
     canAssignProxies(){
@@ -819,7 +856,7 @@
       if(!all)return this.selectedProxyIds();
       const kw=encodeURIComponent(this.proxyKeyword||'');
       const st=encodeURIComponent(this.proxyStatus||'');
-      const groupQs=this.proxyGroupId?`&groupId=${encodeURIComponent(this.proxyGroupId)}`:'';
+      const groupQs=(this.proxyGroupId?`&groupId=${encodeURIComponent(this.proxyGroupId)}`:'')+this.proxyCountryQs();
       const ids=[];
       let page=1;
       const pageSize=100;

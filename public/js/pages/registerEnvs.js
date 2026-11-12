@@ -113,12 +113,22 @@
     },
     async openRegisterEnv(id){
       if(!this.canEditRegisterEnvs()){this.toast('当前角色无权操作',true);return}
-      this.toast('正在按所选代理准备并打开环境…');
+      // 打开要经历：同步代理 → 探测出口 IP → 启动窗口，常需 15~45 秒；
+      // 只弹 2 秒 toast 会让人以为点击没反应而反复点，所以用常驻加载条并防重复点击
+      this._openingRegisterEnvs=this._openingRegisterEnvs||new Set();
+      if(this._openingRegisterEnvs.has(id)){this.toast('该环境正在打开中，请稍候…','info');return}
+      this._openingRegisterEnvs.add(id);
+      const task=window.UI&&UI.notifyLoading?UI.notifyLoading({title:'正在打开注册环境',message:'同步代理并启动浏览器，通常需要 15~45 秒…',key:'register-env-open-'+id}):null;
+      if(!task)this.toast('正在按所选代理准备并打开环境…');
       try{
         const r=await this.api(`/browser/register-envs/${id}/open`,{method:'POST',body:JSON.stringify({}),timeoutMs:120000});
-        this.toast('浏览器环境已打开'+(r?.profileId?`（${String(r.profileId).slice(0,8)}…）`:''));
+        const msg='浏览器环境已打开'+(r?.profileId?`（${String(r.profileId).slice(0,8)}…）`:'');
+        if(task)task.success(msg,3000);else this.toast(msg);
         this.refresh();
-      }catch(e){this.toast(e.message,true)}
+      }catch(e){
+        const msg='打开环境失败：'+(e.message||'未知错误');
+        if(task)task.error(msg,8000);else this.toast(msg,true,8000);
+      }finally{this._openingRegisterEnvs.delete(id)}
     },
     async publishRegisterEnv(id){
       if(!this.canEditRegisterEnvs()){this.toast('当前角色无权操作',true);return}

@@ -1896,11 +1896,30 @@ router.post('/register-envs/:id/open', async (req, res) => {
     const { provider } = registerEnvProvider(bundle);
     const r = await ensureRegisterEnvProfile(req.params.id, bundle, provider);
     if (!r.created && bundle.proxy) {
+      // 环境里的代理与注册记录一致就不重写：
+      // proxy/update 要先经代理探测出口 IP，代理慢或不可达时会拖很久甚至卡死，
+      // 而 open 本身并不依赖这一步，没变化时没必要冒险。
+      let sameProxy = false;
       try {
-        await provider.close(r.profileId).catch(() => {});
-        await provider.updateProxy(r.profileId, bundle.proxy);
-      } catch (e) {
-        return fail(res, `写入代理失败：${e?.message || e}`, 422);
+        const detail = await provider.detail(r.profileId);
+        const want = bundle.proxy;
+        sameProxy = !!detail
+          && String(detail.proxyType || '').toLowerCase() === provider.normalizeProxyType(want.protocol)
+          && String(detail.host || '') === String(want.host || '')
+          && Number(detail.port || 0) === Number(want.port || 0)
+          && String(detail.proxyUserName || '') === String(want.username || '')
+          && String(detail.proxyPassword || '') === String(want.password || '')
+          // 老环境时区为空（旧版本没对齐过地区）：代理没变也要走一次 proxy/update 补写时区/语言/经纬度
+          && String(detail.timezone || '').trim() !== ''
+          && String(detail.country || '').trim() !== '';
+      } catch { /* 读不到详情就按需重写 */ }
+      if (!sameProxy) {
+        try {
+          await provider.close(r.profileId).catch(() => {});
+          await provider.updateProxy(r.profileId, bundle.proxy);
+        } catch (e) {
+          return fail(res, `写入代理失败：${e?.message || e}`, 422);
+        }
       }
     }
     const data = await provider.open(r.profileId, { fastOpen: true });

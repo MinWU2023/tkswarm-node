@@ -349,6 +349,8 @@ class BitBrowserProvider {
       port: hasProxy ? portNum : 0,
       proxyUserName: hasProxy ? String(proxy.username || '') : '',
       proxyPassword: hasProxy ? String(proxy.password || '') : '',
+      // 中心库登记的代理国家：browses 本机探测出口 IP 失败时用它兜底对齐时区/语言
+      country: hasProxy ? String(proxy.country || '') : '',
     }, 30000);
 
     // 回读确认，避免「同步成功」但窗口仍是旧 SOCKS
@@ -426,6 +428,7 @@ class BitBrowserProvider {
       port: hasProxy ? proxy.port : '',
       proxyUserName: hasProxy ? proxy.username : '',
       proxyPassword: hasProxy ? proxy.password : '',
+      country: hasProxy ? String(proxy.country || '') : '',
       ipCheckService: 'ip2location',
       browserFingerPrint: {
         coreVersion: String(coreVersion || '148'),
