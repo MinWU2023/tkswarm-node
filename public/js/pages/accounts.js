@@ -77,7 +77,7 @@
       const statsQs=listExtra?String(listExtra).replace(/^&/,''):'';
       const [accStats,d]=await Promise.all([
         this.api(`/accounts/stats${statsQs?`?${statsQs}`:''}`),
-        this.api(`/accounts?page=${this.accountPage||1}&pageSize=20&keyword=${encodeURIComponent(this.accountKeyword||'')}&status=${encodeURIComponent(this.accountStatus||'')}${this.accountGroupId?`&groupId=${this.accountGroupId}`:''}${this.accountCapcut?`&capcut=${this.accountCapcut}`:''}${this.accountSession?`&session=${this.accountSession}`:''}${listExtra}`),
+        this.api(`/accounts?page=${this.accountPage||1}&pageSize=20&keyword=${encodeURIComponent(this.accountKeyword||'')}&status=${encodeURIComponent(this.accountStatus||'')}${this.accountGroupId?`&groupId=${this.accountGroupId}`:''}${this.accountCapcut?`&capcut=${this.accountCapcut}`:''}${this.accountSession?`&session=${this.accountSession}`:''}${this.accountType?`&accountType=${encodeURIComponent(this.accountType)}`:''}${listExtra}`),
         typeof this.ensureCountryOptions==='function'?this.ensureCountryOptions():Promise.resolve(),
       ]);
       if(!still())return;
@@ -125,6 +125,7 @@
             <select id="account-status"><option value="">登录状态</option>${this.loginStatusPairs().map(([v,n])=>`<option value="${v}" ${this.accountStatus===v?'selected':''}>${this.esc(n)}</option>`).join('')}</select>
             <select id="account-capcut" onchange="app.accountCapcut=this.value;app.accountPage=1;app.refresh()"><option value="">CapCut标记全部</option><option value="1" ${this.accountCapcut==='1'?'selected':''}>本地已标</option><option value="0" ${this.accountCapcut==='0'?'selected':''}>未标记</option></select>
             <select id="account-session" onchange="app.accountSession=this.value;app.accountPage=1;app.refresh()"><option value="">会话全部</option><option value="1" ${this.accountSession==='1'?'selected':''}>有CK</option></select>
+            ${this.accountTypeFilterSelectHtml('account-type',this.accountType||'',`onchange="app.accountType=this.value;app.accountPage=1;app.refresh()"`)}
             <button class="primary" onclick="app.searchAccounts()">查询</button>
             ${this.canAccountAdvancedFilter()?`<button class="ghost ${this.accountAdvFilterActive()?'is-active':''}" type="button" onclick="app.openAccountAdvancedFilterModal()">高级筛选${this.accountAdvFilterActive()?' ·':''}</button>`:''}
             <button class="ghost" type="button" onclick="app.resetAccountFilters()">重置</button>
@@ -431,7 +432,7 @@
         const ownerMeta=`<div class="account-owner-meta muted">${ownerUser}<div>所属行业：${this.esc(industryLabel)}</div><div>所属企业：${this.esc(companyLabel)}</div></div>`;
         return `<tr>
       <td><input class="account-check" type="checkbox" value="${x.id}"></td>
-      <td class="account-name-cell"><b>${this.esc(x.username)}</b><div class="muted">#${x.id}${x.account_status==='banned'?' · 封号':''}${x.browser_profile_id||x.tkswarm_browser_profile_id?` · ${this.envBackendText(x.browser_backend||'tkswarm')}环境`:''}${this.bitBrowserUiEnabled?.()&&x.tkswarm_browser_profile_id&&String(x.browser_backend)!=='tkswarm'?` · 另有${this.tkswarmBrowserLabel()}`:''}</div>${ownerMeta}</td>
+      <td class="account-name-cell"><b>${this.esc(x.username)}</b>${this.accountTypeTagHtml(x.account_type||x.accountType)}<div class="muted">#${x.id}${x.account_status==='banned'?' · 封号':''}${x.browser_profile_id||x.tkswarm_browser_profile_id?` · ${this.envBackendText(x.browser_backend||'tkswarm')}环境`:''}${this.bitBrowserUiEnabled?.()&&x.tkswarm_browser_profile_id&&String(x.browser_backend)!=='tkswarm'?` · 另有${this.tkswarmBrowserLabel()}`:''}</div>${ownerMeta}</td>
       <td>${this.esc(x.group_name||'-')}</td>
       <td title="${this.esc(accountCountryRaw)}">${accountCountryLabel?this.esc(accountCountryLabel):'<span class="muted">-</span>'}</td>
       <td title="${this.esc(proxyText)}">${this.esc(proxyText?proxyText.slice(0,28):'-')}${proxyRegionText?`<div class="muted">${this.esc(proxyRegionText)}</div>`:''}</td>
@@ -464,6 +465,7 @@
       this.accountStatus='';
       this.accountCapcut='';
       this.accountSession='';
+      this.accountType='';
       this.accountAdvFilter={ownerId:'',companyId:'',industryId:'',hasEnv:''};
       this.accountSidebarOwnerId='';
       this.accountPage=1;
@@ -872,7 +874,7 @@
       const industryField=(isEdit&&this.canEditAccounts())||(!isEdit&&this.canCreateAccounts())
         ?this.accountIndustryFieldHtml(x.industry_id||0,{mode:'edit'})
         :'';
-      this.modal(x.id?'编辑账号':'添加账号',`<div class="form-grid"><input type="hidden" name="id" value="${x.id||''}">${this.field('username','账号名称',x.username,'text',true)}${this.field('nickname','昵称',x.nickname)}${this.select('groupId','账号分组',gs,x.group_id)}${countryProxyBlock}${proxyHint}${industryField}${ownerField}${companyField}<div class="field"><label>执行后端</label><select name="browserBackend" onchange="app.onEditAccountBackendChange(this.value)">${this.envBackendPairs().map(([v,n])=>`<option value="${v}" ${v===curBackend?'selected':''}>${n}</option>`).join('')}</select><small class="muted">任务按此选择打开对应客户端；保存时环境 ID 会写入该后端对应的列。Linux 服务器浏览器强制 Electron（EL）核，与桌面自研共用环境包；AI 拓客与客服坐席缺包时等待本机推送，不在此手动绑定。</small></div><div class="field"><label>环境 ID</label><input name="browserProfileId" value="${this.esc(envIdsByBackend[curBackend]||'')}" placeholder="留空表示不绑定"><small class="muted" id="edit-env-hint">当前：${this.esc(this.envBackendText(curBackend))}。切换后端后请确认环境 ID 属于该客户端。</small></div>${this.selectRaw('loginStatus','登录状态',this.loginStatusPairs(),x.login_status||'offline')}${this.selectRaw('dmChannel','私信通道',[['auto','自动（有指纹走 API）'],['api','仅 API'],['browser','仅浏览器']],x.dm_channel||'auto')}${this.field('notes','备注',x.notes,'textarea')}${secretHint}${this.field('password',x.id?'新密码（留空不改）':'密码','','password')}${this.field('totpSecret',x.id?'新 2FA 密钥（留空不改）':'2FA 密钥','','password')}${this.field('cookie',x.id?'Cookie / CK（留空不改）':'Cookie / CK','','textarea')}${this.field('fingerprint','指纹备注（可选）')}</div>`,async data=>{
+      this.modal(x.id?'编辑账号':'添加账号',`<div class="form-grid"><input type="hidden" name="id" value="${x.id||''}">${this.field('username','账号名称',x.username,'text',true)}${this.field('nickname','昵称',x.nickname)}${this.select('groupId','账号分组',gs,x.group_id)}${countryProxyBlock}${proxyHint}${industryField}${ownerField}${companyField}<div class="field"><label>执行后端</label><select name="browserBackend" onchange="app.onEditAccountBackendChange(this.value)">${this.envBackendPairs().map(([v,n])=>`<option value="${v}" ${v===curBackend?'selected':''}>${n}</option>`).join('')}</select><small class="muted">任务按此选择打开对应客户端；保存时环境 ID 会写入该后端对应的列。Linux 服务器浏览器强制 Electron（EL）核，与桌面自研共用环境包；AI 拓客与客服坐席缺包时等待本机推送，不在此手动绑定。</small></div><div class="field"><label>环境 ID</label><input name="browserProfileId" value="${this.esc(envIdsByBackend[curBackend]||'')}" placeholder="留空表示不绑定"><small class="muted" id="edit-env-hint">当前：${this.esc(this.envBackendText(curBackend))}。切换后端后请确认环境 ID 属于该客户端。</small></div>${this.selectRaw('accountType','账号类型',this.accountTypePairs(),x.account_type||x.accountType||'main')}${this.selectRaw('loginStatus','登录状态',this.loginStatusPairs(),x.login_status||'offline')}${this.selectRaw('dmChannel','私信通道',[['auto','自动（有指纹走 API）'],['api','仅 API'],['browser','仅浏览器']],x.dm_channel||'auto')}${this.field('notes','备注',x.notes,'textarea')}${secretHint}${this.field('password',x.id?'新密码（留空不改）':'密码','','password')}${this.field('totpSecret',x.id?'新 2FA 密钥（留空不改）':'2FA 密钥','','password')}${this.field('cookie',x.id?'Cookie / CK（留空不改）':'Cookie / CK','','textarea')}${this.field('fingerprint','指纹备注（可选）')}</div>`,async data=>{
         const id=data.id;delete data.id;
         const password=String(data.password||'').trim();
         const totpSecret=String(data.totpSecret||'').trim();

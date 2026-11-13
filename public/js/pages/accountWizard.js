@@ -665,6 +665,7 @@
         username: String(a.username || '').replace(/^@+/, ''),
         nickname: String(a.nickname || ''),
         groupName: String(a.group_name || a.groupName || ''),
+        accountType: String(a.account_type || a.accountType || 'main'),
       })).filter((a) => a.id > 0);
       return this._avAccountOptions;
     },
@@ -672,10 +673,13 @@
       const still = typeof opts.still === 'function' ? opts.still : () => this.view === 'accountWizard' && this.awKind() === 'account_videos';
       const meta = this.awMeta();
       // soft 刷新可复用缓存；手动刷新 / 首次进入强制重拉
-      const accounts = await this.ensureAvAccountOptions(!opts.soft).catch(() => []);
+      const allAvAccounts = await this.ensureAvAccountOptions(!opts.soft).catch(() => []);
       if (!still()) return;
+      const avType = String(this.accountVideosType || '');
+      const accounts = avType ? allAvAccounts.filter((a) => a.accountType === avType) : allAvAccounts;
 
       let accountId = Number(this.accountVideosAccountId || 0);
+      if (accountId && avType && !accounts.some((a) => a.id === accountId)) accountId = 0;
       if (!accountId && accounts.length) {
         accountId = Number(accounts[0].id);
         this.accountVideosAccountId = accountId;
@@ -721,6 +725,10 @@
           <button class="ghost" type="button" onclick="app.refresh()">刷新</button>
         </div>
         <div class="av-toolbar">
+          <div class="av-field">
+            <label>账号类型</label>
+            ${this.accountTypeFilterSelectHtml('av-account-type', avType, 'onchange="app.accountVideosType=this.value;app.accountVideosAccountId=0;app.accountVideosPage=1;app.refresh()"')}
+          </div>
           <div class="av-field">
             <label>选择账号（共 ${accounts.length} 个）</label>
             <select id="av-account-select" class="input" onchange="app.onAvAccountChange(this.value)">

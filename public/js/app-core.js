@@ -2749,6 +2749,26 @@ const app = {
     }
     return out;
   },
+  /** 账号类型：main=主体号，operation=运营号 */
+  accountTypePairs(){
+    return [['main','主体号'],['operation','运营号']];
+  },
+  accountTypeLabel(v){
+    return String(v||'main')==='operation'?'运营号':'主体号';
+  },
+  /** 账号类型标签（列表 / 选号卡片共用） */
+  accountTypeTagHtml(v){
+    const op=String(v||'main')==='operation';
+    const style=op
+      ?'background:#fff7e6;color:#d46b08;border:1px solid #ffd591'
+      :'background:#e6f4ff;color:#0958d9;border:1px solid #91caff';
+    return `<span class="badge account-type-tag ${op?'is-operation':'is-main'}" style="${style};margin-left:6px;padding:0 6px;border-radius:4px;font-size:12px;font-weight:normal">${op?'运营号':'主体号'}</span>`;
+  },
+  /** 账号类型筛选下拉（选项文案：全部类型 / 主体号 / 运营号） */
+  accountTypeFilterSelectHtml(id,cur,attrs=''){
+    const c=String(cur||'');
+    return `<select class="input account-pick-type" id="${id}" title="按账号类型筛选" ${attrs}><option value="">全部类型</option>${this.accountTypePairs().map(([v,n])=>`<option value="${v}" ${c===v?'selected':''}>${n}</option>`).join('')}</select>`;
+  },
   /** 任务选号：运营专员用户筛选（超管、运营管理） */
   canAccountPickOperatorFilter(){
     return !!(this.authIsSuper||(typeof this.isOpsAdminRole==='function'&&this.isOpsAdminRole()));
@@ -2772,7 +2792,8 @@ const app = {
       const v=Number(this.getIndustryCascadeValue(this.accountPickIndustryPrefix(boxId))||0);
       if(v>0)industryId=String(v);
     }
-    return {groupId,keyword,ownerId,industryId};
+    const accountType=String(document.querySelector(`#${boxId}-type-filter`)?.value||'').trim();
+    return {groupId,keyword,ownerId,industryId,accountType};
   },
   buildAccountsQueryString(filters={}){
     const q=new URLSearchParams();
@@ -2785,6 +2806,7 @@ const app = {
     else if(gid)q.set('groupId',gid);
     if(filters.ownerId&&this.canAccountPickOperatorFilter())q.set('ownerId',String(filters.ownerId));
     if(filters.industryId&&this.canAccountPickIndustryFilter())q.set('industryId',String(filters.industryId));
+    if(filters.accountType==='main'||filters.accountType==='operation')q.set('accountType',filters.accountType);
     return q.toString();
   },
   async loadAccountsForPicker(filters={}){
@@ -2823,6 +2845,7 @@ const app = {
     return `<div class="account-pick-toolbar account-pick-toolbar--filters">
       <div class="account-pick-filters-row">
         <select class="input account-pick-group" id="${boxId}-group-filter" title="按分组筛选">${groupOpts}</select>
+        ${this.accountTypeFilterSelectHtml(`${boxId}-type-filter`,opts.accountType||'')}
         ${industryBlock}
         ${ownerBlock}
         <input class="input account-pick-search" id="${boxId}-search" type="search" placeholder="搜索账号 ID / 用户名 / 昵称" value="${this.esc(opts.keyword||'')}">
@@ -2984,7 +3007,7 @@ const app = {
       <div class="apt-head">
         ${avatarHtml}
         <span class="apt-id">#${id||'--'}</span>
-        <span class="apt-name" title="${this.esc(uname)}">${this.esc(uname||'--')}</span>
+        <span class="apt-name" title="${this.esc(uname)}">${this.esc(uname||'--')}</span>${this.accountTypeTagHtml((typeof a!=='undefined'&&a)?(a.account_type||a.accountType):'')}
       </div>
       <div class="apt-sec">
         <div class="apt-sec-title">基础信息</div>
@@ -3055,7 +3078,7 @@ const app = {
       <div class="apt-head">
         ${avatarHtml}
         <span class="apt-id">#${id}</span>
-        <span class="apt-name" title="${this.esc(uname)}">${this.esc(uname||'--')}</span>
+        <span class="apt-name" title="${this.esc(uname)}">${this.esc(uname||'--')}</span>${this.accountTypeTagHtml((typeof a!=='undefined'&&a)?(a.account_type||a.accountType):'')}
       </div>
       <div class="apt-sec">
         <div class="apt-sec-title">视频概览</div>

@@ -137,6 +137,7 @@
         'pageSize=20',
         `keyword=${encodeURIComponent(keywordAcc)}`,
         this.chatAccountId?`includeId=${Number(this.chatAccountId)}`:'',
+        this.chatAccountType?`accountType=${encodeURIComponent(this.chatAccountType)}`:'',
       ].filter(Boolean).join('&');
       const accountsPack=await this.api(`/chat/accounts?${accountQs}`);
       const accounts=accountsPack.items||[];
@@ -175,7 +176,7 @@
       const renderChatAccount=(a)=>{
         const loginOnline=a.login_status==='online';
         const loginActs=canManage?`<div class="chat-account-actions" onclick="event.stopPropagation()"><button class="tiny" type="button" onclick="app.chatDetectLogin(${a.id})">检测</button>${loginOnline?`<button class="tiny" type="button" onclick="app.chatAccountLogout(${a.id})">退出</button>`:`<button class="tiny primary" type="button" onclick="app.chatAccountLogin(${a.id})" ${a.browser_profile_id?'':'disabled'}>登录</button>`}</div>`:'';
-        return `<div class="chat-account ${Number(a.id)===Number(this.chatAccountId)?'active':''}" title="单击选择 · 双击查看资料卡" onclick="app.selectChatAccount(${a.id})" ondblclick="event.stopPropagation();app.openChatAccountCard(${a.id})"><div class="chat-avatar">${this.esc((a.username||'?')[0].toUpperCase())}</div><div class="chat-meta"><b>${this.esc(a.username)}${a.unread_count?` <span class="badge failed">${a.unread_count}</span>`:''}</b><small><span class="dot ${loginOnline?'on':''}"></span>${loginOnline?'已登录':'未登录'} · 好友 ${a.friend_count||0}</small>${loginActs}</div></div>`;
+        return `<div class="chat-account ${Number(a.id)===Number(this.chatAccountId)?'active':''}" title="单击选择 · 双击查看资料卡" onclick="app.selectChatAccount(${a.id})" ondblclick="event.stopPropagation();app.openChatAccountCard(${a.id})"><div class="chat-avatar">${this.esc((a.username||'?')[0].toUpperCase())}</div><div class="chat-meta"><b>${this.esc(a.username)}${this.accountTypeTagHtml(a.account_type)}${a.unread_count?` <span class="badge failed">${a.unread_count}</span>`:''}</b><small><span class="dot ${loginOnline?'on':''}"></span>${loginOnline?'已登录':'未登录'} · 好友 ${a.friend_count||0}</small>${loginActs}</div></div>`;
       };
       const renderChatBubble=(m)=>{
         const fid=this.chatFriendId;
@@ -198,7 +199,7 @@
         <aside class="chat-col chat-account-col">
           <div class="chat-col-head"><h3>账号</h3></div>
           <div class="chat-stats"><span>总 <b>${accountsPack.stats?.total??accountsPack.total??0}</b></span><span>在线 <b>${accountsPack.stats?.online||0}</b></span><span>未读 <b>${accountsPack.stats?.unread||0}</b></span></div>
-          <div class="chat-account-search"><input class="input" style="width:100%" placeholder="搜索账号（与账号列表同范围）" value="${this.esc(keywordAcc)}" onkeydown="if(event.key==='Enter'){app.chatAccountKeyword=this.value;app.chatAccountPage=1;app.refresh()}"></div>
+          <div class="chat-account-search">${this.accountTypeFilterSelectHtml('chat-account-type',this.chatAccountType||'','onchange="app.chatAccountType=this.value;app.chatAccountPage=1;app.refresh()" style="width:100%;margin-bottom:6px"')}<input class="input" style="width:100%" placeholder="搜索账号（与账号列表同范围）" value="${this.esc(keywordAcc)}" onkeydown="if(event.key==='Enter'){app.chatAccountKeyword=this.value;app.chatAccountPage=1;app.refresh()}"></div>
           <div class="chat-list">${shownAccounts.length?shownAccounts.map(renderChatAccount).join(''):'<div class="shell-note">暂无账号</div>'}</div>
           <div class="chat-account-pager">${UI.pager({page:accountsPack.page||1,pages:accountsPack.pages||1,total:accountsPack.total||0,pageSize:accountsPack.pageSize||20},'chatAccountPage')}</div>
         </aside>

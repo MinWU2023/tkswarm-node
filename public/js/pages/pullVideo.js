@@ -409,6 +409,7 @@
         </div>
         <div class="form-grid" style="padding:16px">
           <div class="field full"><label>选择账号</label>
+            ${this.accountPickToolbarHtml('pvl-accounts', {}).replace(`onclick="app.searchAccountPick('pvl-accounts')"`, `onclick="app.fillPullVideoListWizardAccounts()"`)}
             <div id="pvl-accounts" class="account-pick-grid" style="max-height:360px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px"></div>
           </div>
           <div class="field full muted">已选 <b id="pvl-account-count">0</b> 个账号</div>
@@ -423,9 +424,15 @@
       const box = document.querySelector('#pvl-accounts');
       if (!box) return;
       try {
-        const pack = await this.api('/accounts?pageSize=200');
-        const accounts = pack?.items || (Array.isArray(pack) ? pack : []);
+        if (typeof this.initAccountPickToolbar === 'function' && !box.dataset.toolbarInit) {
+          box.dataset.toolbarInit = '1';
+          await this.initAccountPickToolbar('pvl-accounts').catch(() => {});
+        }
+        const accounts = await this.loadAccountsForPicker(this.accountPickFilterParams('pvl-accounts'));
         const selected = new Set((this.pullVideoListWizard?.accountIds || []).map(Number));
+        this.selectedAccountPickIds('pvl-accounts').forEach((id) => selected.add(id));
+        const hint = document.querySelector('#pvl-accounts-search-hint');
+        if (hint) hint.textContent = accounts.length ? `共 ${accounts.length} 个` : '';
         box.innerHTML = accounts.length
           ? accounts.map((a) => this.accountPickTagHtml(a, selected, { onclick: "app.togglePullVideoListAccount(this)" })).join('')
           : '<div class="muted">暂无账号</div>';
